@@ -34,6 +34,7 @@ import static org.jboss.as.webservices.util.WebMetaDataHelper.getServlets;
 
 import java.util.List;
 
+import org.jboss.as.ee.component.ComponentDescription;
 import org.jboss.as.server.deployment.DeploymentUnit;
 import org.jboss.as.server.deployment.DeploymentUnitProcessingException;
 import org.jboss.as.server.deployment.annotation.CompositeIndex;
@@ -45,6 +46,7 @@ import org.jboss.jandex.ClassInfo;
 import org.jboss.metadata.web.jboss.JBossWebMetaData;
 import org.jboss.metadata.web.spec.ServletMappingMetaData;
 import org.jboss.metadata.web.spec.ServletMetaData;
+import org.jboss.msc.service.ServiceName;
 import org.jboss.wsf.spi.metadata.jms.JMSEndpointMetaData;
 import org.jboss.wsf.spi.metadata.jms.JMSEndpointsMetaData;
 
@@ -80,18 +82,20 @@ public class WSIntegrationProcessorJAXWS_POJO extends AbstractIntegrationProcess
                     found = true;
                     // creating component description for POJO endpoint
                     final String endpointName = getEndpointName(servletMD);
-                    createComponentDescription(unit, endpointName, endpointClassName, endpointName);
+                    final ComponentDescription pojoComponent = createComponentDescription(unit, endpointName, endpointClassName, endpointName);
+                    final ServiceName pojoViewName = registerView(pojoComponent, endpointClassName);
                     // register POJO endpoint
                     final String urlPattern = getUrlPattern(endpointName, unit);
-                    jaxwsDeployment.addEndpoint(new POJOEndpoint(endpointName, endpointClassName, urlPattern));
+                    jaxwsDeployment.addEndpoint(new POJOEndpoint(endpointName, endpointClassName, pojoViewName, urlPattern));
                 }
             }
             if (!found) {
                 // JSR 109, version 1.3 final spec, section 5.3.2.1 javax.jws.WebService annotation
-                createComponentDescription(unit, endpointClassName, endpointClassName, endpointClassName);
+                final ComponentDescription pojoComponent = createComponentDescription(unit, endpointClassName, endpointClassName, endpointClassName);
+                final ServiceName pojoViewName = registerView(pojoComponent, endpointClassName);
                 // register POJO endpoint
                 final String urlPattern = getUrlPattern(classInfo);
-                jaxwsDeployment.addEndpoint(new POJOEndpoint(endpointClassName, urlPattern));
+                jaxwsDeployment.addEndpoint(new POJOEndpoint(endpointClassName, pojoViewName, urlPattern));
             }
         }
     }
@@ -116,7 +120,7 @@ public class WSIntegrationProcessorJAXWS_POJO extends AbstractIntegrationProcess
         final String endpointClassName = classInfo.name().toString();
         final JMSEndpointsMetaData jmsEndpointsMD = getRequiredAttachment(unit, JMS_ENDPOINT_METADATA_KEY);
         for (final JMSEndpointMetaData endpoint : jmsEndpointsMD.getEndpointsMetaData()) {
-            if (endpointClassName.equals(endpoint.getImplementor())) return true;
+            if (endpointClassName.equals(endpoint.getImplementor())) { return true; }
         }
         return false;
     }

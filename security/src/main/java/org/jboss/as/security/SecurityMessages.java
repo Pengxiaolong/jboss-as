@@ -30,13 +30,13 @@ import javax.security.auth.login.LoginException;
 import javax.xml.stream.Location;
 import javax.xml.stream.XMLStreamException;
 
+import org.jboss.as.controller.OperationFailedException;
 import org.jboss.as.server.services.security.VaultReaderException;
 import org.jboss.logging.annotations.Cause;
 import org.jboss.logging.annotations.Message;
 import org.jboss.logging.annotations.MessageBundle;
 import org.jboss.logging.Messages;
 import org.jboss.logging.annotations.Param;
-import org.jboss.modules.ModuleClassLoader;
 import org.jboss.modules.ModuleLoadException;
 import org.jboss.msc.service.StartException;
 
@@ -62,7 +62,7 @@ public interface SecurityMessages {
     SecurityMessages MESSAGES = Messages.getBundle(SecurityMessages.class);
 
     /**
-     * Creates an exception indicating the inability to get the {@link ModuleClassLoader}
+     * Creates an exception indicating the inability to get the {@link org.jboss.modules.ModuleClassLoader}
      *
      * @return a {@link IllegalStateException} for the error.
      */
@@ -280,5 +280,25 @@ public interface SecurityMessages {
      */
     @Message(id = 13327, value = "Failure calling CallbackHandler '%s'")
     LoginException failureCallingSecurityRealm(String cause);
+
+    /**
+     * Create a OperationFailedException to indicate a failure to find an authentication cache
+     * @return the exception
+     */
+    @Message(id = 13328, value = "No authentication cache for security domain '%s' available")
+    OperationFailedException noAuthenticationCacheAvailable(String securityDomain);
+
+    /**
+     * Create an IllegalStateFoundException to indicate no UserPrincipal was found on the underlying connection.
+     * @return the exception
+     */
+    @Message(id= 13329, value = "No UserPrincipalFound constructing RemotingConnectionPrincipal.")
+    IllegalStateException noUserPrincipalFound();
+
+    @Message(id = 13330, value = "Interrupted waiting for security domain '%s'")
+    OperationFailedException interruptedWaitingForSecurityDomain(String securityDomainName);
+
+    @Message(id = 13331, value = "Required security domain is not available '%s'")
+    OperationFailedException requiredSecurityDomainServiceNotAvailable(String securityDomainName);
 
 }

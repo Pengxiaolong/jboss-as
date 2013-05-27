@@ -26,7 +26,6 @@ import org.jboss.logging.BasicLogger;
 import org.jboss.logging.annotations.Cause;
 import org.jboss.logging.annotations.LogMessage;
 import org.jboss.logging.Logger;
-import static org.jboss.logging.Logger.Level.ERROR;
 import static org.jboss.logging.Logger.Level.WARN;
 import org.jboss.logging.annotations.Message;
 import org.jboss.logging.annotations.MessageLogger;
@@ -54,5 +53,14 @@ public interface ControllerClientLogger extends BasicLogger {
     @LogMessage(level = WARN)
     @Message(id = 10600, value = "Closing leaked controller client")
     void leakedControllerClient(@Cause Throwable allocationStackTrace);
+
+    /**
+     * Logs a warnning message indicating a temp file could not be deleted.
+     *
+     * @param name temp filename
+     */
+    @LogMessage(level = WARN)
+    @Message(id = 10601, value = "Cannot delete temp file %s, will be deleted on exit")
+    void cannotDeleteTempFile(String name);
 
 }

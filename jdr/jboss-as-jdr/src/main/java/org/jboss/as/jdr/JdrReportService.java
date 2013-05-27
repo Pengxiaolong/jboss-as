@@ -22,22 +22,14 @@
 
 package org.jboss.as.jdr;
 
-import java.io.Console;
-import java.net.HttpURLConnection;
-import java.net.URL;
-import java.security.AccessController;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ThreadFactory;
-
 import org.jboss.as.controller.ModelController;
 import org.jboss.as.controller.OperationFailedException;
 import org.jboss.as.controller.ServiceVerificationHandler;
 import org.jboss.as.controller.client.ModelControllerClient;
-import org.jboss.as.network.NetworkUtils;
 import org.jboss.as.server.ServerEnvironment;
 import org.jboss.as.server.ServerEnvironmentService;
 import org.jboss.as.server.Services;
+import org.wildfly.security.manager.GetAccessControlContextAction;
 import org.jboss.msc.service.Service;
 import org.jboss.msc.service.ServiceController;
 import org.jboss.msc.service.ServiceName;
@@ -47,6 +39,12 @@ import org.jboss.msc.service.StartException;
 import org.jboss.msc.service.StopContext;
 import org.jboss.msc.value.InjectedValue;
 import org.jboss.threads.JBossThreadFactory;
+
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ThreadFactory;
+
+import static java.security.AccessController.doPrivileged;
 
 /**
  * Service that provides a {@link JdrReportCollector}.
@@ -79,8 +77,7 @@ public class JdrReportService implements JdrReportCollector, Service<JdrReportCo
     /**
      * Collect a JDR report when run outside the Application Server.
      */
-    public JdrReport standaloneCollect(String host, String port) throws OperationFailedException {
-        Console cons = System.console();
+    public JdrReport standaloneCollect(String protocol, String host, String port) throws OperationFailedException {
         String username = null;
         String password = null;
 
@@ -88,49 +85,34 @@ public class JdrReportService implements JdrReportCollector, Service<JdrReportCo
             host = "localhost";
         }
         if (port == null) {
-            port = "9990";
+            port = "9999";
+        }
+        if(protocol == null) {
+            protocol = "http-remoting";
         }
 
-        // Let's go ahead and see if we need to auth before prompting the user
-        // for a username and password
-        boolean must_auth = false;
-
-        try {
-            URL managementApi = new URL("http://" + NetworkUtils.formatPossibleIpv6Address(host) + ":" + port + "/management");
-            HttpURLConnection conn = (HttpURLConnection) managementApi.openConnection();
-            int code = conn.getResponseCode();
-            if (code != 200) {
-                must_auth = true;
-            }
-        } catch (Exception e) {
-        }
-
-        if (must_auth) {
-            if (cons != null) {
-                username = cons.readLine("Management username: ");
-                password = String.valueOf(cons.readPassword("Management password: "));
-            }
-        }
-        SosInterpreter interpreter = new SosInterpreter();
-        return interpreter.collect(username, password, host, port);
+        return new JdrRunner(protocol, username, password, host, port).collect();
     }
 
     /**
      * Collect a JDR report.
      */
     public JdrReport collect() throws OperationFailedException {
-        SosInterpreter interpreter = new SosInterpreter();
+        JdrRunner runner = new JdrRunner();
         serverEnvironment = serverEnvironmentValue.getValue();
-        interpreter.setJbossHomeDir(serverEnvironment.getHomeDir().getAbsolutePath());
-        interpreter.setReportLocationDir(serverEnvironment.getServerTempDir().getAbsolutePath());
-        interpreter.setControllerClient(controllerClient);
-        interpreter.setHostControllerName(serverEnvironment.getHostControllerName());
-        interpreter.setServerName(serverEnvironment.getServerName());
-        return interpreter.collect();
+        runner.setJbossHomeDir(serverEnvironment.getHomeDir().getAbsolutePath());
+        runner.setReportLocationDir(serverEnvironment.getServerTempDir().getAbsolutePath());
+        runner.setControllerClient(controllerClient);
+        runner.setHostControllerName(serverEnvironment.getHostControllerName());
+        runner.setServerName(serverEnvironment.getServerName());
+        return runner.collect();
     }
 
     public synchronized void start(StartContext context) throws StartException {
-        final ThreadFactory threadFactory = new JBossThreadFactory(new ThreadGroup("JdrReportCollector-threads"), Boolean.FALSE, null, "%G - %t", null, null, AccessController.getContext());
+        final ThreadFactory threadFactory = new JBossThreadFactory(
+                new ThreadGroup("JdrReportCollector-threads"),
+                Boolean.FALSE, null, "%G - %t", null, null,
+                doPrivileged(GetAccessControlContextAction.getInstance()));
         executorService = Executors.newCachedThreadPool(threadFactory);
         serverEnvironment = serverEnvironmentValue.getValue();
         controllerClient = modelControllerValue.getValue().createClient(executorService);

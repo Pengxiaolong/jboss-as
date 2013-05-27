@@ -40,13 +40,19 @@ public class ModClusterEnable implements OperationStepHandler {
                 @Override
                 public void execute(OperationContext context, ModelNode operation) throws OperationFailedException {
                     ServiceController<?> controller = context.getServiceRegistry(false).getService(ModClusterService.NAME);
-                    ModCluster modcluster = (ModCluster) controller.getValue();
+                    final ModCluster modcluster = (ModCluster) controller.getValue();
                     modcluster.enable();
-                    context.completeStep();
+
+                    context.completeStep(new OperationContext.RollbackHandler() {
+                        @Override
+                        public void handleRollback(OperationContext context, ModelNode operation) {
+                            modcluster.disable();
+                        }
+                    });
                 }
             }, OperationContext.Stage.RUNTIME);
         }
 
-        context.completeStep();
+        context.stepCompleted();
     }
 }

@@ -28,7 +28,6 @@ import org.jboss.as.controller.ListAttributeDefinition;
 import org.jboss.as.controller.OperationStepHandler;
 import org.jboss.as.controller.PathElement;
 import org.jboss.as.controller.PrimitiveListAttributeDefinition;
-import org.jboss.as.controller.ResourceDefinition;
 import org.jboss.as.controller.SimpleAttributeDefinition;
 import org.jboss.as.controller.SimpleAttributeDefinitionBuilder;
 import org.jboss.as.controller.SimpleResourceDefinition;
@@ -37,12 +36,12 @@ import org.jboss.as.controller.operations.validation.StringLengthValidator;
 import org.jboss.as.controller.registry.AttributeAccess;
 import org.jboss.as.controller.registry.ManagementResourceRegistration;
 import org.jboss.as.controller.registry.OperationEntry;
-import org.jboss.as.host.controller.descriptions.HostRootDescription;
+import org.jboss.as.host.controller.descriptions.HostResolver;
 import org.jboss.dmr.ModelNode;
 import org.jboss.dmr.ModelType;
 
 /**
- * {@link ResourceDefinition} for an ignored domain resource type.
+ * {@link org.jboss.as.controller.ResourceDefinition} for an ignored domain resource type.
  *
  * @author Brian Stansberry (c) 2011 Red Hat Inc.
  */
@@ -58,7 +57,7 @@ public class IgnoredDomainTypeResourceDefinition extends SimpleResourceDefinitio
             .build();
 
     IgnoredDomainTypeResourceDefinition() {
-        super(PathElement.pathElement(IGNORED_RESOURCE_TYPE), HostRootDescription.getResourceDescriptionResolver(IGNORED_RESOURCE_TYPE),
+        super(PathElement.pathElement(IGNORED_RESOURCE_TYPE), HostResolver.getResolver(IGNORED_RESOURCE_TYPE),
                 new IgnoredDomainTypeAddHandler(),
                 new IgnoredDomainTypeRemoveHandler(),
                 OperationEntry.Flag.RESTART_ALL_SERVICES, OperationEntry.Flag.RESTART_ALL_SERVICES);

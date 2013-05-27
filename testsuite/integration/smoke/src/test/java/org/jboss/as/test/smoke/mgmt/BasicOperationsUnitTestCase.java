@@ -22,21 +22,6 @@
 
 package org.jboss.as.test.smoke.mgmt;
 
-import java.io.IOException;
-import java.util.Collection;
-import java.util.List;
-
-import junit.framework.Assert;
-import org.jboss.arquillian.container.test.api.RunAsClient;
-import org.jboss.arquillian.junit.Arquillian;
-import org.jboss.as.arquillian.api.ContainerResource;
-import org.jboss.as.arquillian.container.ManagementClient;
-import org.jboss.as.controller.descriptions.ModelDescriptionConstants;
-import org.jboss.dmr.ModelNode;
-import org.jboss.dmr.ModelType;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.ADD;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.ANY_ADDRESS;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.ANY_IPV4_ADDRESS;
@@ -45,6 +30,7 @@ import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.ATT
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.COMPOSITE;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.DESCRIPTION;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.FAILED;
+import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.FAILURE_DESCRIPTION;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.INCLUDE_RUNTIME;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.INTERFACE;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.NAME;
@@ -64,6 +50,22 @@ import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.SUB
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.SUCCESS;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.VALUE;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.WRITE_ATTRIBUTE_OPERATION;
+
+import java.io.IOException;
+import java.util.Collection;
+import java.util.List;
+
+import org.jboss.arquillian.container.test.api.RunAsClient;
+import org.jboss.arquillian.junit.Arquillian;
+import org.jboss.as.arquillian.api.ContainerResource;
+import org.jboss.as.arquillian.container.ManagementClient;
+import org.jboss.as.controller.descriptions.ModelDescriptionConstants;
+import org.jboss.dmr.ModelNode;
+import org.jboss.dmr.ModelType;
+import org.junit.Assert;
+import org.junit.Ignore;
+import org.junit.Test;
+import org.junit.runner.RunWith;
 
 /**
  * Basic management operation unit test.
@@ -112,10 +114,8 @@ public class BasicOperationsUnitTestCase {
         Assert.assertEquals(SUCCESS, result.get(OUTCOME).asString());
         Assert.assertTrue(result.hasDefined(RESULT));
 
-        final ModelNode web = result.get(RESULT, SUBSYSTEM, "web");
-        Assert.assertTrue(web.hasDefined("connector"));
-        Assert.assertTrue(web.get("connector").has("http"));
-        Assert.assertFalse(web.get("connector").hasDefined("http"));
+        final ModelNode web = result.get(RESULT, SUBSYSTEM, "io");
+        Assert.assertTrue(web.hasDefined("worker"));
     }
 
     @Test
@@ -184,7 +184,7 @@ public class BasicOperationsUnitTestCase {
         operation.get(INCLUDE_RUNTIME).set(true);
 
         final ModelNode result = managementClient.getControllerClient().execute(operation);
-        Assert.assertEquals(SUCCESS, result.get(OUTCOME).asString());
+        Assert.assertEquals(result.get(FAILURE_DESCRIPTION).isDefined() ? result.get(FAILURE_DESCRIPTION).asString() : "", SUCCESS, result.get(OUTCOME).asString());
         Assert.assertTrue(result.hasDefined(RESULT));
     }
 
@@ -205,7 +205,7 @@ public class BasicOperationsUnitTestCase {
         final List<ModelNode> steps = getSteps(result.get(RESULT));
         Assert.assertEquals(1, steps.size());
         final ModelNode httpBinding = steps.get(0);
-        Assert.assertEquals(8080, httpBinding.get(RESULT, "port").asInt());
+        Assert.assertEquals(8080, httpBinding.get(RESULT, "port").resolve().asInt());
 
     }
 
@@ -223,9 +223,10 @@ public class BasicOperationsUnitTestCase {
     }
 
     @Test
+    @Ignore //TODO UNDERTOW reneable when we expose metrics from undertow
     public void testMetricReadAttribute() throws IOException {
         final ModelNode address = new ModelNode();
-        address.add("subsystem", "web");
+        address.add("subsystem", "undertow");
         address.add("connector", "http");
 
         final ModelNode operation = createReadAttributeOperation(address, "bytesReceived");

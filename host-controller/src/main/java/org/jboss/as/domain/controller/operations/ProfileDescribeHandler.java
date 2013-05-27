@@ -25,18 +25,19 @@ import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.OP_
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.PROFILE;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.RESULT;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.SUBSYSTEM;
-import static org.jboss.as.domain.controller.DomainControllerMessages.MESSAGES;
 
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
 
+import org.jboss.as.controller.ControllerMessages;
 import org.jboss.as.controller.OperationContext;
 import org.jboss.as.controller.OperationFailedException;
 import org.jboss.as.controller.OperationStepHandler;
 import org.jboss.as.controller.PathAddress;
 import org.jboss.as.controller.PathElement;
 import org.jboss.as.controller.registry.ImmutableManagementResourceRegistration;
+import org.jboss.as.controller.registry.Resource;
 import org.jboss.dmr.ModelNode;
 
 /**
@@ -60,7 +61,7 @@ public class ProfileDescribeHandler implements OperationStepHandler {
         final PathAddress address = PathAddress.pathAddress(operation.require(OP_ADDR));
 
         final ModelNode result = new ModelNode();
-        final ModelNode profile = context.readModel(PathAddress.EMPTY_ADDRESS);
+        final ModelNode profile =  Resource.Tools.readModel(context.readResource(PathAddress.EMPTY_ADDRESS));
         result.setEmptyList();
 
         final ImmutableManagementResourceRegistration registry = context.getResourceRegistration();
@@ -100,9 +101,9 @@ public class ProfileDescribeHandler implements OperationStepHandler {
                     }
                     context.getResult().set(result);
                 }
-                context.completeStep();
+                context.stepCompleted();
             }
-        }, OperationContext.Stage.IMMEDIATE);
+        }, OperationContext.Stage.MODEL, true);
 
         if (profile.hasDefined(SUBSYSTEM)) {
             for (final String subsystemName : profile.get(SUBSYSTEM).keys()) {
@@ -115,7 +116,14 @@ public class ProfileDescribeHandler implements OperationStepHandler {
                 PathAddress relativeAddress = PathAddress.pathAddress(pe);
                 OperationStepHandler subsysHandler = registry.getOperationHandler(relativeAddress, opName);
                 if (subsysHandler == null) {
-                    throw new OperationFailedException(new ModelNode().set(MESSAGES.noHandlerForOperation(opName, fullAddress)));
+                    String errMsg;
+                    ImmutableManagementResourceRegistration child = registry.getSubModel(relativeAddress);
+                    if (child == null) {
+                       errMsg = ControllerMessages.MESSAGES.noSuchResourceType(fullAddress);
+                    } else {
+                        errMsg = ControllerMessages.MESSAGES.noHandlerForOperation(opName, fullAddress);
+                    }
+                    throw new OperationFailedException(new ModelNode(errMsg));
                 }
 
                 // Step to store subsystem ops in overall list
@@ -131,12 +139,12 @@ public class ProfileDescribeHandler implements OperationStepHandler {
                                 }
                             }
                         }
-                        context.completeStep();
+                        context.stepCompleted();
                     }
-                }, OperationContext.Stage.IMMEDIATE);
+                }, OperationContext.Stage.MODEL, true);
 
                 // Step to determine subsystem ops
-                context.addStep(subsystemRsp, newOp, subsysHandler, OperationContext.Stage.IMMEDIATE);
+                context.addStep(subsystemRsp, newOp, subsysHandler, OperationContext.Stage.MODEL, true);
             }
         }
 
@@ -152,10 +160,10 @@ public class ProfileDescribeHandler implements OperationStepHandler {
                 final ModelNode newOp = operation.clone();
                 newOp.get(OP_ADDR).set(includeAddress);
 
-                context.addStep(includeRsp, newOp, INSTANCE, OperationContext.Stage.IMMEDIATE);
+                context.addStep(includeRsp, newOp, INSTANCE, OperationContext.Stage.MODEL, true);
             }
         }
 
-        context.completeStep();
+        context.stepCompleted();
     }
 }

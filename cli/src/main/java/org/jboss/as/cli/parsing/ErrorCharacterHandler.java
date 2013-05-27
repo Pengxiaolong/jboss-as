@@ -21,6 +21,7 @@
  */
 package org.jboss.as.cli.parsing;
 
+import org.jboss.as.cli.operation.MissingEndCharacterException;
 import org.jboss.as.cli.operation.OperationFormatException;
 
 /**
@@ -38,6 +39,10 @@ class ErrorCharacterHandler implements CharacterHandler {
     @Override
     public void handle(ParsingContext ctx)
             throws OperationFormatException {
-        throw new OperationFormatException(msg);
+        final MissingEndCharacterException e = new MissingEndCharacterException(msg);
+        ctx.setError(e);
+        if(ctx.isStrict()) {
+            throw e;
+        }
     }
 }

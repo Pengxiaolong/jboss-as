@@ -24,31 +24,33 @@ package org.jboss.as.domain.management.security;
 
 import org.jboss.as.controller.AttributeDefinition;
 import org.jboss.as.controller.PathElement;
-import org.jboss.as.controller.ResourceDefinition;
 import org.jboss.as.controller.SimpleAttributeDefinition;
 import org.jboss.as.controller.SimpleAttributeDefinitionBuilder;
 import org.jboss.as.controller.descriptions.ModelDescriptionConstants;
-import org.jboss.as.controller.descriptions.common.CommonDescriptions;
+import org.jboss.as.controller.descriptions.common.ControllerResolver;
 import org.jboss.as.controller.registry.AttributeAccess;
 import org.jboss.as.controller.registry.OperationEntry;
 import org.jboss.dmr.ModelNode;
 import org.jboss.dmr.ModelType;
 
 /**
- * {@link ResourceDefinition} for a management security realm's properties-file-based authentication resource.
+ * {@link org.jboss.as.controller.ResourceDefinition} for a management security realm's properties-file-based authentication resource.
  *
  * @author Brian Stansberry (c) 2011 Red Hat Inc.
  */
 public class PropertiesAuthenticationResourceDefinition extends PropertiesFileResourceDefinition {
 
     public static final SimpleAttributeDefinition PLAIN_TEXT = new SimpleAttributeDefinitionBuilder(ModelDescriptionConstants.PLAIN_TEXT, ModelType.BOOLEAN, true)
-            .setDefaultValue(new ModelNode(false)).setFlags(AttributeAccess.Flag.RESTART_RESOURCE_SERVICES).build();
+            .setDefaultValue(new ModelNode(false))
+            .setAllowExpression(true)
+            .setFlags(AttributeAccess.Flag.RESTART_RESOURCE_SERVICES)
+            .build();
 
     public static final AttributeDefinition[] ATTRIBUTE_DEFINITIONS = { PATH, RELATIVE_TO, PLAIN_TEXT };
 
     public PropertiesAuthenticationResourceDefinition() {
         super(PathElement.pathElement(ModelDescriptionConstants.AUTHENTICATION, ModelDescriptionConstants.PROPERTIES),
-                CommonDescriptions.getResourceDescriptionResolver("core.management.security-realm.authentication.properties"),
+                ControllerResolver.getResolver("core.management.security-realm.authentication.properties"),
                 new SecurityRealmChildAddHandler(true, ATTRIBUTE_DEFINITIONS), new SecurityRealmChildRemoveHandler(true),
                 OperationEntry.Flag.RESTART_RESOURCE_SERVICES, OperationEntry.Flag.RESTART_RESOURCE_SERVICES);
     }

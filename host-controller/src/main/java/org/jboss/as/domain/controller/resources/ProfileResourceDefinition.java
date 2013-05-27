@@ -34,7 +34,6 @@ import org.jboss.as.controller.descriptions.ModelDescriptionConstants;
 import org.jboss.as.controller.extension.ExtensionRegistry;
 import org.jboss.as.controller.operations.validation.StringLengthValidator;
 import org.jboss.as.controller.registry.ManagementResourceRegistration;
-import org.jboss.as.domain.controller.descriptions.DomainRootDescription;
 import org.jboss.as.domain.controller.operations.ProfileAddHandler;
 import org.jboss.as.domain.controller.operations.ProfileDescribeHandler;
 import org.jboss.as.domain.controller.operations.ProfileRemoveHandler;
@@ -43,24 +42,26 @@ import org.jboss.dmr.ModelType;
 /**
  * @author <a href="kabir.khan@jboss.com">Kabir Khan</a>
  */
-public class ProfileResourceDefinition extends SimpleResourceDefinition {
+class ProfileResourceDefinition extends SimpleResourceDefinition {
 
-    public static SimpleAttributeDefinition NAME = new SimpleAttributeDefinitionBuilder(ModelDescriptionConstants.NAME, ModelType.STRING)
-            .setValidator(new StringLengthValidator(1))
-            .setResourceOnly()
-            .build();
-
-    private static OperationDefinition DESCRIBE = new SimpleOperationDefinitionBuilder(ModelDescriptionConstants.DESCRIBE, DomainRootDescription.getResourceDescriptionResolver(PROFILE, false))
+    private static OperationDefinition DESCRIBE = new SimpleOperationDefinitionBuilder(ModelDescriptionConstants.DESCRIBE, DomainResolver.getResolver(PROFILE, false))
             .setReplyType(ModelType.LIST)
             .setReplyValueType(ModelType.OBJECT)
             .setPrivateEntry()
             .setReadOnly()
             .build();
 
+    //This attribute exists in 7.1.2 and 7.1.3 but was always nillable
+    private static final SimpleAttributeDefinition NAME = new SimpleAttributeDefinitionBuilder(ModelDescriptionConstants.NAME, ModelType.STRING)
+            .setValidator(new StringLengthValidator(1, true))
+            .setAllowNull(true)
+            .setResourceOnly()
+            .build();
+
     private final ExtensionRegistry extensionRegistry;
 
     public ProfileResourceDefinition(ExtensionRegistry extensionRegistry) {
-        super(PathElement.pathElement(PROFILE), DomainRootDescription.getResourceDescriptionResolver(PROFILE, false), ProfileAddHandler.INSTANCE, ProfileRemoveHandler.INSTANCE);
+        super(PathElement.pathElement(PROFILE), DomainResolver.getResolver(PROFILE, false), ProfileAddHandler.INSTANCE, ProfileRemoveHandler.INSTANCE);
         this.extensionRegistry = extensionRegistry;
     }
 
@@ -68,6 +69,7 @@ public class ProfileResourceDefinition extends SimpleResourceDefinition {
     public void registerOperations(ManagementResourceRegistration resourceRegistration) {
         super.registerOperations(resourceRegistration);
         resourceRegistration.registerOperationHandler(DESCRIBE, ProfileDescribeHandler.INSTANCE);
+        resourceRegistration.registerReadOnlyAttribute(NAME, ReadResourceNameOperationStepHandler.INSTANCE);
 
         extensionRegistry.setSubsystemParentResourceRegistrations(resourceRegistration, null);
     }
@@ -75,7 +77,6 @@ public class ProfileResourceDefinition extends SimpleResourceDefinition {
     @Override
     public void registerAttributes(ManagementResourceRegistration resourceRegistration) {
         super.registerAttributes(resourceRegistration);
-        resourceRegistration.registerReadOnlyAttribute(NAME, ReadResourceNameOperationStepHandler.INSTANCE);
     }
 
 

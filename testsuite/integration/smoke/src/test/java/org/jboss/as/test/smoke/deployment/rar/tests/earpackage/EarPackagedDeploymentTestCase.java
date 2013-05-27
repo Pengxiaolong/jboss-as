@@ -30,7 +30,7 @@ import org.jboss.arquillian.junit.Arquillian;
 import org.jboss.as.arquillian.api.ServerSetup;
 import org.jboss.as.arquillian.container.ManagementClient;
 import org.jboss.as.connector.subsystems.resourceadapters.Namespace;
-import org.jboss.as.connector.subsystems.resourceadapters.ResourceAdaptersExtension.ResourceAdapterSubsystemParser;
+import org.jboss.as.connector.subsystems.resourceadapters.ResourceAdapterSubsystemParser;
 import org.jboss.as.test.integration.management.base.AbstractMgmtServerSetupTask;
 import org.jboss.as.test.integration.management.base.AbstractMgmtTestBase;
 import org.jboss.as.test.integration.management.base.ContainerResourceMgmtTestBase;
@@ -65,7 +65,7 @@ public class EarPackagedDeploymentTestCase extends ContainerResourceMgmtTestBase
         @Override
         public void doSetup(final ManagementClient managementClient) throws Exception{
                 String xml = FileUtils.readFile(EarPackagedDeploymentTestCase.class, "ear_packaged.xml");
-                List<ModelNode> operations = xmlToModelOperations(xml, Namespace.CURRENT.getUriString(), new ResourceAdapterSubsystemParser());
+                List<ModelNode> operations = xmlToModelOperations(xml, Namespace.RESOURCEADAPTERS_1_0.getUriString(), new ResourceAdapterSubsystemParser());
                 executeOperation( operationListToCompositeOperation(operations));
         }
 

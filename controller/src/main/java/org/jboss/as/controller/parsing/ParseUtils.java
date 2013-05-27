@@ -30,7 +30,6 @@ import java.util.Collections;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Set;
-
 import javax.xml.XMLConstants;
 import javax.xml.stream.Location;
 import javax.xml.stream.XMLStreamException;
@@ -69,7 +68,8 @@ public final class ParseUtils {
 
         if (element == null) {
             return element;
-        } else if (expectedNamespace.equals(Namespace.forUri(reader.getNamespaceURI()))) {
+        } else if (element != Element.UNKNOWN
+                && expectedNamespace.equals(Namespace.forUri(reader.getNamespaceURI()))) {
             return element;
         }
 
@@ -128,6 +128,25 @@ public final class ParseUtils {
             final Object o = iterator.next();
             b.append(o.toString());
             if (iterator.hasNext()) {
+                b.append(", ");
+            }
+        }
+        return MESSAGES.missingRequiredAttributes(b, reader.getLocation());
+    }
+
+    /**
+     * Get an exception reporting a missing, required XML attribute.
+     * @param reader the stream reader
+     * @param required a set of enums whose toString method returns the
+     *        attribute name
+     * @return the exception
+     */
+    public static XMLStreamException missingRequired(final XMLExtendedStreamReader reader, final String... required) {
+        final StringBuilder b = new StringBuilder();
+        for (int i = 0; i < required.length; i++) {
+            final String o = required[i];
+            b.append(o);
+            if (required.length > i + 1) {
                 b.append(", ");
             }
         }
@@ -292,9 +311,13 @@ public final class ParseUtils {
     }
 
     public static Property readProperty(final XMLExtendedStreamReader reader) throws XMLStreamException {
+        return readProperty(reader, false);
+    }
+
+    public static Property readProperty(final XMLExtendedStreamReader reader, boolean supportsExpressions) throws XMLStreamException {
         final int cnt = reader.getAttributeCount();
         String name = null;
-        String value = null;
+        ModelNode value = null;
         for (int i = 0; i < cnt; i++) {
             String uri = reader.getAttributeNamespace(i);
             if (uri != null&&!"".equals(XMLConstants.NULL_NS_URI)) {
@@ -304,7 +327,11 @@ public final class ParseUtils {
             if (localName.equals("name")) {
                 name = reader.getAttributeValue(i);
             } else if (localName.equals("value")) {
-                value = reader.getAttributeValue(i);
+                if (supportsExpressions) {
+                    value = parsePossibleExpression(reader.getAttributeValue(i));
+                } else {
+                    value = new ModelNode(reader.getAttributeValue(i));
+                }
             } else {
                 throw unexpectedAttribute(reader, i);
             }
@@ -315,7 +342,7 @@ public final class ParseUtils {
         if (reader.next() != END_ELEMENT) {
             throw unexpectedElement(reader);
         }
-        return new Property(name, new ModelNode().set(value == null ? "" : value));
+        return new Property(name, new ModelNode().set(value == null ? new ModelNode() : value));
     }
 
     /**
@@ -414,12 +441,14 @@ public final class ParseUtils {
         }
     }
 
-
+    public static boolean isExpression(String value) {
+        int openIdx = value.indexOf("${");
+        return openIdx > -1 && value.lastIndexOf('}') > openIdx;
+    }
 
     public static ModelNode parsePossibleExpression(String value) {
         ModelNode result = new ModelNode();
-        int openIdx = value.indexOf("${");
-        if (openIdx > -1 && value.lastIndexOf('}') > openIdx) {
+        if (isExpression(value)) {
             result.setExpression(value);
         }
         else {

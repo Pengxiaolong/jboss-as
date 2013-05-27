@@ -27,16 +27,16 @@
     <modelVersion>4.0.0</modelVersion>
 
     <parent>
-        <groupId>org.jboss.as</groupId>
-        <artifactId>jboss-as-parent</artifactId>
-        <version>7.2.0.Alpha1-SNAPSHOT</version>
+        <groupId>org.wildfly</groupId>
+        <artifactId>wildfly-parent</artifactId>
+        <version>8.0.0.Alpha2-SNAPSHOT</version>
     </parent>
 
-    <groupId>org.jboss.as</groupId>
-    <artifactId>jboss-as-process-controller</artifactId>
-    <version>7.2.0.Alpha1-SNAPSHOT</version>
+    <groupId>org.wildfly</groupId>
+    <artifactId>wildfly-process-controller</artifactId>
+    <version>8.0.0.Alpha2-SNAPSHOT</version>
 
-    <name>JBoss Application Server: Process Controller</name>
+    <name>WildFly: Process Controller</name>
 
     <build>
       <plugins>
@@ -57,19 +57,18 @@
             <redirectTestOutputToFile>true</redirectTestOutputToFile>
           </configuration>
         </plugin>
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-compiler-plugin</artifactId>
-                <configuration>
-                    <compilerArgument>
-                        -AgeneratedTranslationFilesPath=${project.build.directory}/generated-translation-files
-                    </compilerArgument>
-                </configuration>
-            </plugin>
       </plugins>
     </build>
 
     <dependencies>
+        <dependency>
+            <groupId>org.wildfly</groupId>
+            <artifactId>wildfly-security-manager</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.wildfly</groupId>
+            <artifactId>wildfly-version</artifactId>
+        </dependency>
         <dependency>
             <groupId>org.jboss.logging</groupId>
             <artifactId>jboss-logging</artifactId>
@@ -77,10 +76,6 @@
         <dependency>
             <groupId>org.jboss.logmanager</groupId>
             <artifactId>jboss-logmanager</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>org.jboss.modules</groupId>
-            <artifactId>jboss-modules</artifactId>
         </dependency>
         <dependency>
             <groupId>org.jboss.logging</groupId>
@@ -109,15 +104,15 @@
         <profile>
             <id>tools</id>
             <activation>
-                <file><exists>${java.home}/../lib/tools.jar</exists></file>
+                <file><exists>${com.sun.tools.path}</exists></file>
             </activation>
             <dependencies>
-                <dependency>
-                    <groupId>system</groupId>
-                    <artifactId>jdk-tools</artifactId>
-                    <version>jdk</version>
+                    <dependency>
+                    <groupId>com.sun</groupId>
+                    <artifactId>tools</artifactId>
                     <scope>system</scope>
-                    <systemPath>${java.home}/../lib/tools.jar</systemPath>
+                    <version>${maven.compiler.source}</version>
+                    <systemPath>${com.sun.tools.path}</systemPath>
                 </dependency>
             </dependencies>
         </profile>

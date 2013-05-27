@@ -25,8 +25,6 @@ import java.net.InetAddress;
 import java.net.NetworkInterface;
 import java.net.SocketException;
 import java.net.UnknownHostException;
-import java.security.AccessController;
-import java.security.PrivilegedAction;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -47,6 +45,7 @@ import org.jboss.msc.service.ServiceName;
 import org.jboss.msc.service.StartContext;
 import org.jboss.msc.service.StartException;
 import org.jboss.msc.service.StopContext;
+import org.wildfly.security.manager.WildFlySecurityManager;
 
 /**
  * Service resolving the {@code NetworkInterfaceBinding} based on the configured interfaces in the domain model.
@@ -172,16 +171,6 @@ public class NetworkInterfaceService implements Service<NetworkInterfaceBinding>
     }
 
     private static boolean isPreferIPv4Stack() {
-
-        return AccessController.doPrivileged(new PrivilegedAction<Boolean>() {
-            @Override
-            public Boolean run() {
-                try {
-                    return Boolean.getBoolean("java.net.preferIPv4Stack");
-                } catch (Exception e) {
-                    return Boolean.FALSE;
-                }
-            }
-        });
+        return Boolean.parseBoolean(WildFlySecurityManager.getPropertyPrivileged("java.net.preferIPv4Stack", "false"));
     }
 }

@@ -122,21 +122,29 @@ public class StandaloneXml extends CommonXml implements ManagementXml.Delegate {
         }
 
         Namespace readerNS = Namespace.forUri(reader.getNamespaceURI());
+
         switch (readerNS) {
-            case DOMAIN_1_0: {
+            case DOMAIN_1_0:
                 readServerElement_1_0(reader, address, operationList);
                 break;
-            }
             case DOMAIN_1_1:
             case DOMAIN_1_2:
             case DOMAIN_1_3:
-            case DOMAIN_1_4: {
                 readServerElement_1_1(readerNS, reader, address, operationList);
                 break;
-            }
-            default: {
-                throw unexpectedElement(reader);
-            }
+            default:
+                // Instead of having to list the remaining versions we just check it is actually a valid version.
+                boolean validNamespace = false;
+                for (Namespace current : Namespace.domainValues()) {
+                    if (readerNS.equals(current)) {
+                        validNamespace = true;
+                        readServerElement_1_4(readerNS, reader, address, operationList);
+                        break;
+                    }
+                }
+                if (validNamespace == false) {
+                    throw unexpectedElement(reader);
+                }
         }
 
         if (ROOT_LOGGER.isDebugEnabled()) {
@@ -169,7 +177,7 @@ public class StandaloneXml extends CommonXml implements ManagementXml.Delegate {
                     final Attribute attribute = Attribute.forName(reader.getAttributeLocalName(i));
                     switch (attribute) {
                         case NAME: {
-                            serverName = ServerRootResourceDefinition.NAME.parse(value, reader.getLocation());
+                            serverName = ServerRootResourceDefinition.NAME.parse(value, reader);
                             break;
                         }
                         default:
@@ -275,7 +283,116 @@ public class StandaloneXml extends CommonXml implements ManagementXml.Delegate {
                     final Attribute attribute = Attribute.forName(reader.getAttributeLocalName(i));
                     switch (attribute) {
                         case NAME: {
-                            serverName = ServerRootResourceDefinition.NAME.parse(value, reader.getLocation());
+                            serverName = ServerRootResourceDefinition.NAME.parse(value, reader);
+                            break;
+                        }
+                        default:
+                            throw unexpectedAttribute(reader, i);
+                    }
+                    break;
+                }
+                case XML_SCHEMA_INSTANCE: {
+                    switch (Attribute.forName(reader.getAttributeLocalName(i))) {
+                        case SCHEMA_LOCATION: {
+                            parseSchemaLocations(reader, address, list, i);
+                            break;
+                        }
+                        case NO_NAMESPACE_SCHEMA_LOCATION: {
+                            // todo, jeez
+                            break;
+                        }
+                        default: {
+                            throw unexpectedAttribute(reader, i);
+                        }
+                    }
+                    break;
+                }
+                default:
+                    throw unexpectedAttribute(reader, i);
+            }
+        }
+
+        setServerName(address, list, serverName);
+
+        // elements - sequence
+
+        Element element = nextElement(reader, namespace);
+        if (element == Element.EXTENSIONS) {
+            extensionXml.parseExtensions(reader, address, namespace, list);
+            element = nextElement(reader, namespace);
+        }
+        // System properties
+        if (element == Element.SYSTEM_PROPERTIES) {
+            parseSystemProperties(reader, address, namespace, list, true);
+            element = nextElement(reader, namespace);
+        }
+        if (element == Element.PATHS) {
+            parsePaths(reader, address, namespace, list, true);
+            element = nextElement(reader, namespace);
+        }
+
+        if (element == Element.VAULT) {
+            parseVault(reader, address, namespace, list);
+            element = nextElement(reader, namespace);
+        }
+
+        if (element == Element.MANAGEMENT) {
+            ManagementXml managementXml = new ManagementXml(this);
+            managementXml.parseManagement(reader, address, namespace, list, true, false);
+            element = nextElement(reader, namespace);
+        }
+        // Single profile
+        if (element == Element.PROFILE) {
+            parseServerProfile(reader, address, list);
+            element = nextElement(reader, namespace);
+        }
+
+        // Interfaces
+        final Set<String> interfaceNames = new HashSet<String>();
+        if (element == Element.INTERFACES) {
+            parseInterfaces(reader, interfaceNames, address, namespace, list, true);
+            element = nextElement(reader, namespace);
+        }
+        // Single socket binding group
+        if (element == Element.SOCKET_BINDING_GROUP) {
+            parseSocketBindingGroup_1_1(reader, interfaceNames, address, namespace, list);
+            element = nextElement(reader, namespace);
+        }
+        if (element == Element.DEPLOYMENTS) {
+            parseDeployments(reader, address, namespace, list, EnumSet.of(Attribute.NAME, Attribute.RUNTIME_NAME, Attribute.ENABLED),
+                    EnumSet.of(Element.CONTENT, Element.FS_ARCHIVE, Element.FS_EXPLODED));
+            element = nextElement(reader, namespace);
+        }
+        if (element != null) {
+            throw unexpectedElement(reader);
+        }
+    }
+
+    /**
+     * Read the <server/> element based on version 1.4 of the schema.
+     *
+     * @param reader  the xml stream reader
+     * @param address address of the parent resource of any resources this method will add
+     * @param list    the list of boot operations to which any new operations should be added
+     * @throws XMLStreamException if a parsing error occurs
+     */
+    private void readServerElement_1_4(final Namespace namespace, final XMLExtendedStreamReader reader, final ModelNode address, final List<ModelNode> list)
+            throws XMLStreamException {
+
+        parseNamespaces(reader, address, list);
+
+        ModelNode serverName = null;
+
+        // attributes
+        final int count = reader.getAttributeCount();
+        for (int i = 0; i < count; i++) {
+            switch (Namespace.forUri(reader.getAttributeNamespace(i))) {
+                case NONE: {
+                    final String value = reader.getAttributeValue(i);
+                    final Attribute attribute = Attribute.forName(reader.getAttributeLocalName(i));
+                    switch (attribute) {
+                        case NAME: {
+                            serverName = ServerRootResourceDefinition.NAME.parse(value, reader);
                             break;
                         }
                         default:
@@ -357,7 +474,7 @@ public class StandaloneXml extends CommonXml implements ManagementXml.Delegate {
         }
 
         if (element == Element.DEPLOYMENT_OVERLAYS) {
-            parseDeploymentOverlays(reader, namespace, new ModelNode(), list);
+            parseDeploymentOverlays(reader, namespace, new ModelNode(), list, true, true);
             element = nextElement(reader, namespace);
         }
         if (element != null) {
@@ -561,6 +678,12 @@ public class StandaloneXml extends CommonXml implements ManagementXml.Delegate {
                     case CONSOLE_ENABLED: {
                         if (http) {
                             HttpManagementResourceDefinition.CONSOLE_ENABLED.parseAndSetParameter(value, addOp, reader);
+                        }
+                        break;
+                    }
+                    case HTTP_UPGRADE_ENABLED: {
+                        if (http) {
+                            HttpManagementResourceDefinition.HTTP_UPGRADE_ENABLED.parseAndSetParameter(value, addOp, reader);
                         }
                         break;
                     }
@@ -973,7 +1096,7 @@ public class StandaloneXml extends CommonXml implements ManagementXml.Delegate {
         }
 
         if (modelNode.hasDefined(PATH)) {
-            writePaths(writer, modelNode.get(PATH));
+            writePaths(writer, modelNode.get(PATH), false);
             writeNewLine(writer);
         }
 
@@ -1037,17 +1160,10 @@ public class StandaloneXml extends CommonXml implements ManagementXml.Delegate {
                     deploymentWritten = true;
                 }
 
-
                 writer.writeStartElement(Element.DEPLOYMENT.getLocalName());
                 writeAttribute(writer, Attribute.NAME, uniqueName);
-              //final String runtimeName = deployment.get(RUNTIME_NAME).asString();
-                //writeAttribute(writer, Attribute.RUNTIME_NAME, runtimeName);
                 DeploymentAttributes.RUNTIME_NAME.marshallAsAttribute(deployment, writer);
-              //boolean enabled = deployment.get(ENABLED).asBoolean();
-//                if (!enabled) {
-//                    writeAttribute(writer, Attribute.ENABLED, "false");
-//                }
-                DeploymentAttributes.ENABLED.marshallAsAttribute(deployment, false, writer);
+                DeploymentAttributes.ENABLED.marshallAsAttribute(deployment, writer);
                 final List<ModelNode> contentItems = deployment.require(CONTENT).asList();
                 for (ModelNode contentItem : contentItems) {
                     writeContentItem(writer, contentItem);
@@ -1117,6 +1233,7 @@ public class StandaloneXml extends CommonXml implements ManagementXml.Delegate {
         if (!consoleEnabled) {
             HttpManagementResourceDefinition.CONSOLE_ENABLED.marshallAsAttribute(protocol, writer);
         }
+        HttpManagementResourceDefinition.HTTP_UPGRADE_ENABLED.marshallAsAttribute(protocol, writer);
 
         if (HttpManagementResourceDefinition.INTERFACE.isMarshallable(protocol)) {
             writer.writeEmptyElement(Element.SOCKET.getLocalName());

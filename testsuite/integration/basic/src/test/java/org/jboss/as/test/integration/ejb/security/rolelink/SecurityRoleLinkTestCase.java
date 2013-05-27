@@ -28,6 +28,7 @@ import javax.security.auth.login.LoginContext;
 import org.jboss.arquillian.container.test.api.Deployment;
 import org.jboss.arquillian.junit.Arquillian;
 import org.jboss.as.arquillian.api.ServerSetup;
+import org.jboss.as.test.categories.CommonCriteria;
 import org.jboss.as.test.integration.ejb.security.EjbSecurityDomainSetup;
 import org.jboss.as.test.integration.security.common.AbstractSecurityDomainSetup;
 import org.jboss.as.test.shared.integration.ejb.security.Util;
@@ -36,6 +37,7 @@ import org.jboss.shrinkwrap.api.ShrinkWrap;
 import org.jboss.shrinkwrap.api.spec.JavaArchive;
 import org.junit.Assert;
 import org.junit.Test;
+import org.junit.experimental.categories.Category;
 import org.junit.runner.RunWith;
 
 /**
@@ -45,6 +47,7 @@ import org.junit.runner.RunWith;
  */
 @RunWith(Arquillian.class)
 @ServerSetup(SecurityRoleLinkTestCase.SecurityRoleLinkTestCaseSetup.class)
+@Category(CommonCriteria.class)
 public class SecurityRoleLinkTestCase {
 
     private static final String MODULE_NAME = "security-role-link-test";
@@ -63,10 +66,11 @@ public class SecurityRoleLinkTestCase {
         jar.addPackage(CallerRoleCheckerBean.class.getPackage());
         jar.addClasses(Util.class, SecurityRoleLinkTestCaseSetup.class);
         jar.addClasses(AbstractSecurityDomainSetup.class, EjbSecurityDomainSetup.class);
-        jar.addAsResource("ejb/security/rolelink/users.properties", "users.properties");
-        jar.addAsResource("ejb/security/rolelink/roles.properties", "roles.properties");
-        jar.addAsManifestResource("ejb/security/rolelink/ejb-jar.xml", "ejb-jar.xml");
-        jar.addAsManifestResource("ejb/security/rolelink/jboss-ejb3.xml", "jboss-ejb3.xml");
+        jar.addAsResource(SecurityRoleLinkTestCase.class.getPackage(), "users.properties", "users.properties");
+        jar.addAsResource(SecurityRoleLinkTestCase.class.getPackage(),"roles.properties", "roles.properties");
+        jar.addAsManifestResource(SecurityRoleLinkTestCase.class.getPackage(),"ejb-jar.xml", "ejb-jar.xml");
+        jar.addAsManifestResource(SecurityRoleLinkTestCase.class.getPackage(),"jboss-ejb3.xml", "jboss-ejb3.xml");
+        jar.addPackage(CommonCriteria.class.getPackage());
 
         return jar;
     }
@@ -96,7 +100,9 @@ public class SecurityRoleLinkTestCase {
             final String invalidRole = "UselessRole";
             final boolean callerInUselessRole = callerRoleCheckerBean.isCallerInRole(invalidRole);
             Assert.assertFalse("Caller wasn't expected to be in " + invalidRole + " but was", callerInUselessRole);
-
+        }catch (Exception e){
+            Assert.fail(e.toString());
+            throw e;
         } finally {
             loginContext.logout();
         }

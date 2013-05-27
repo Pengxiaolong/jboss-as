@@ -23,15 +23,14 @@
 package org.jboss.as.domain.management.security;
 
 import org.jboss.as.controller.PathElement;
-import org.jboss.as.controller.ResourceDefinition;
 import org.jboss.as.controller.SimpleResourceDefinition;
 import org.jboss.as.controller.descriptions.ModelDescriptionConstants;
-import org.jboss.as.controller.descriptions.common.CommonDescriptions;
+import org.jboss.as.controller.descriptions.common.ControllerResolver;
 import org.jboss.as.controller.registry.ManagementResourceRegistration;
 import org.jboss.as.controller.registry.OperationEntry;
 
 /**
- * {@link ResourceDefinition} for a management security realm's domain-configuration-user-registry-based authentication resource.
+ * {@link org.jboss.as.controller.ResourceDefinition} for a management security realm's domain-configuration-user-registry-based authentication resource.
  *
  * @author Brian Stansberry (c) 2011 Red Hat Inc.
  */
@@ -39,7 +38,7 @@ public class XmlAuthenticationResourceDefinition extends SimpleResourceDefinitio
 
     public XmlAuthenticationResourceDefinition() {
         super(PathElement.pathElement(ModelDescriptionConstants.AUTHENTICATION, ModelDescriptionConstants.USERS),
-                CommonDescriptions.getResourceDescriptionResolver("core.management.security-realm.authentication.xml"),
+                ControllerResolver.getResolver("core.management.security-realm.authentication.xml"),
                 new SecurityRealmChildAddHandler(true),
                 new SecurityRealmChildRemoveHandler(true),
                 OperationEntry.Flag.RESTART_RESOURCE_SERVICES,

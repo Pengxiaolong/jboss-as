@@ -27,33 +27,21 @@
     <modelVersion>4.0.0</modelVersion>
 
     <parent>
-        <groupId>org.jboss.as</groupId>
-        <artifactId>jboss-as-parent</artifactId>
-        <version>7.2.0.Alpha1-SNAPSHOT</version>
+        <groupId>org.wildfly</groupId>
+        <artifactId>wildfly-parent</artifactId>
+        <version>8.0.0.Alpha2-SNAPSHOT</version>
     </parent>
 
-    <groupId>org.jboss.as</groupId>
-    <artifactId>jboss-as-network</artifactId>
+    <groupId>org.wildfly</groupId>
+    <artifactId>wildfly-network</artifactId>
 
-    <name>JBoss Application Server: Network</name>
-
-    <build>
-        <plugins>
-            <plugin>
-                <artifactId>maven-compiler-plugin</artifactId>
-                <configuration>
-                    <compilerArgument>
-                        -AgeneratedTranslationFilesPath=${project.build.directory}/generated-translation-files
-                    </compilerArgument>
-                </configuration>
-            </plugin>
-            <plugin>
-                <artifactId>maven-source-plugin</artifactId>
-            </plugin>
-        </plugins>
-    </build>
+    <name>WildFly: Network</name>
 
     <dependencies>
+        <dependency>
+            <groupId>org.wildfly</groupId>
+            <artifactId>wildfly-security-manager</artifactId>
+        </dependency>
         <dependency>
             <groupId>org.jboss.logging</groupId>
             <artifactId>jboss-logging</artifactId>

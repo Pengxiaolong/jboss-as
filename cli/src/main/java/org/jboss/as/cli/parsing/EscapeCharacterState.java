@@ -29,25 +29,36 @@ import org.jboss.as.cli.CommandFormatException;
 */
 public final class EscapeCharacterState extends BaseParsingState {
 
+    public static final String ID = "ESCAPED_CHARACTER";
+
 /*    private static final CharacterHandler EOC = GlobalCharacterHandlers.newErrorCharacterHandler(
     "Error parsing escaped character: the character after '\' is missing.");
 */
 
     public static final EscapeCharacterState INSTANCE = new EscapeCharacterState();
 
+    private static final CharacterHandler HANDLER = new CharacterHandler() {
+        @Override
+        public void handle(ParsingContext ctx)
+                throws CommandFormatException {
+            ctx.getCallbackHandler().character(ctx);
+            ctx.leaveState();
+        }
+    };
+
     EscapeCharacterState() {
-        super("ESCAPED_CHARACTER");
+        super(ID);
+        setEnterHandler(new CharacterHandler(){
+            @Override
+            public void handle(ParsingContext ctx) throws CommandFormatException {
+                if(ctx.getLocation() + 1 < ctx.getInput().length() && ctx.getInput().charAt(ctx.getLocation() + 1) == '\\') {
+                    ctx.getCallbackHandler().character(ctx);
+                }
+            }});
     }
 
     @Override
     public CharacterHandler getHandler(char ch) {
-        return new CharacterHandler() {
-            @Override
-            public void handle(ParsingContext ctx)
-                    throws CommandFormatException {
-                ctx.getCallbackHandler().character(ctx);
-                ctx.leaveState();
-            }
-        };
+        return HANDLER;
     }
 }

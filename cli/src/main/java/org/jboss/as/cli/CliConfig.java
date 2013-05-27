@@ -30,6 +30,13 @@ package org.jboss.as.cli;
 public interface CliConfig {
 
     /**
+     * The default server controller protocol
+     *
+     * @return default server controller protocol
+     */
+    String getDefaultControllerProtocol();
+
+    /**
      * The default server controller host to connect to.
      *
      * @return default server controller host to connect to
@@ -72,6 +79,13 @@ public interface CliConfig {
     int getHistoryMaxSize();
 
     /**
+     * Connection timeout period in milliseconds.
+     *
+     * @return connection timeout in milliseconds
+     */
+    int getConnectionTimeout();
+
+    /**
      * The global SSL configuration if it has been defined.
      *
      * @return The SSLConfig
@@ -99,4 +113,20 @@ public interface CliConfig {
      * of the parameter values should happen on the server side.
      */
     boolean isResolveParameterValues();
+
+    /**
+     * Whether the info or error messages should be written to the terminal output.
+     *
+     * The output of the info and error messages is done in the following way:
+     * 1) the message is always logged using a logger
+     *    (which is disabled in the config by default);
+     * 2) if the output target was specified on the command line using '>'
+     *    it would be used;
+     * 3) if the output target was not specified, whether the message is
+     *    written or not to the terminal output will depend on
+     *    whether it's a silent mode or not.
+     *
+     * @return
+     */
+    boolean isSilent();
 }

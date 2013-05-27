@@ -42,6 +42,7 @@ import org.omg.CORBA_2_3.portable.OutputStream;
 import org.jboss.as.jacorb.rmi.marshal.CDRStream;
 import org.jboss.as.jacorb.rmi.marshal.CDRStreamReader;
 import org.jboss.as.jacorb.rmi.marshal.CDRStreamWriter;
+import org.wildfly.security.manager.WildFlySecurityManager;
 
 /**
  * An <code>StubStrategy</code> for a given method knows how to marshal
@@ -141,7 +142,7 @@ public class StubStrategy {
                          String[] excepTypes, String retvalType,
                          ClassLoader cl) {
         if (cl == null) {
-            cl = Thread.currentThread().getContextClassLoader();
+            cl = WildFlySecurityManager.getCurrentContextClassLoaderPrivileged();
         }
 
         // Initialize paramWriters

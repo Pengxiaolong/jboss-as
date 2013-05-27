@@ -67,6 +67,8 @@ public class MockCommandContext implements CommandContext {
     private File curDir = new File("");
     private boolean resolveParameterValues;
 
+    private boolean silent;
+
     public void parseCommandLine(String buffer) throws CommandFormatException {
         try {
             parsedCmd.parse(prefix, buffer);
@@ -185,7 +187,7 @@ public class MockCommandContext implements CommandContext {
     }
 
     @Override
-    public void connectController(String host, int port) {
+    public void connectController(String protocol, String host, int port) {
         throw new UnsupportedOperationException();
     }
 
@@ -327,7 +329,7 @@ public class MockCommandContext implements CommandContext {
 
     @Override
     public void connectController() {
-        connectController(null, -1);
+        connectController(null, null, -1);
     }
 
     @Override
@@ -343,5 +345,25 @@ public class MockCommandContext implements CommandContext {
     @Override
     public void setResolveParameterValues(boolean resolve) {
         resolveParameterValues = resolve;
+    }
+
+    @Override
+    public boolean isSilent() {
+        return silent;
+    }
+
+    @Override
+    public void setSilent(boolean silent) {
+        this.silent = silent;
+    }
+
+    @Override
+    public int getTerminalWidth() {
+        return -1;
+    }
+
+    @Override
+    public int getTerminalHeight() {
+        return -1;
     }
 }

@@ -26,9 +26,10 @@ import org.jboss.as.controller.OperationContext;
 import org.jboss.as.controller.OperationFailedException;
 import org.jboss.as.controller.OperationStepHandler;
 import org.jboss.as.controller.PathAddress;
+import org.jboss.as.controller.ServiceVerificationHandler;
 import org.jboss.dmr.ModelNode;
+import org.jboss.msc.service.ServiceName;
 
-import static org.jboss.as.connector.subsystems.resourceadapters.Constants.ARCHIVE;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.OP_ADDR;
 
 /**
@@ -47,14 +48,25 @@ public class RaActivate implements OperationStepHandler {
         if (context.isNormalServer()) {
             context.addStep(new OperationStepHandler() {
                 public void execute(final OperationContext context, ModelNode operation) throws OperationFailedException {
+                    final ServiceVerificationHandler svh = new ServiceVerificationHandler();
 
-                    RaOperationUtil.deactivateIfActive(context, raName);
+                    ServiceName restartedServiceName = RaOperationUtil.restartIfPresent(context, raName, svh);
 
-                    final String archiveName = model.get(ARCHIVE.getName()).asString();
+                    if (restartedServiceName == null) {
+                        RaOperationUtil.activate(context, raName, svh);
+                    }
+                    context.addStep(svh, OperationContext.Stage.VERIFY);
+                    context.completeStep(new OperationContext.RollbackHandler() {
+                        @Override
+                        public void handleRollback(OperationContext context, ModelNode operation) {
+                            try {
+                                RaOperationUtil.removeIfActive(context, raName);
+                            } catch (OperationFailedException e) {
 
-                    RaOperationUtil.activate(context, raName, archiveName);
-                    // TODO AS7-5608 handle rollback
-                    context.completeStep(OperationContext.RollbackHandler.NOOP_ROLLBACK_HANDLER);
+                            }
+
+                        }
+                    });
                 }
             }, OperationContext.Stage.RUNTIME);
         }

@@ -27,15 +27,15 @@
     <modelVersion>4.0.0</modelVersion>
 
     <parent>
-        <groupId>org.jboss.as</groupId>
-        <artifactId>jboss-as-parent</artifactId>
-        <version>7.2.0.Alpha1-SNAPSHOT</version>
+        <groupId>org.wildfly</groupId>
+        <artifactId>wildfly-parent</artifactId>
+        <version>8.0.0.Alpha2-SNAPSHOT</version>
     </parent>
 
-    <groupId>org.jboss.as</groupId>
-    <artifactId>jboss-as-config-assembly</artifactId>
+    <groupId>org.wildfly</groupId>
+    <artifactId>wildfly-config-assembly</artifactId>
 
-    <name>JBoss Application Server: Config Assembly</name>
+    <name>WildFly: Config Assembly</name>
 
     <properties>
         <test.level>INFO</test.level>
@@ -47,8 +47,8 @@
             <artifactId>staxmapper</artifactId>
         </dependency>
         <dependency>
-            <groupId>org.jboss.as</groupId>
-            <artifactId>jboss-as-controller</artifactId>
+            <groupId>org.wildfly</groupId>
+            <artifactId>wildfly-controller</artifactId>
         </dependency>
         <dependency>
             <groupId>junit</groupId>

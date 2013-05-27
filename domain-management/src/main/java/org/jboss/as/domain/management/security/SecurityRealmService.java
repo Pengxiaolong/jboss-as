@@ -42,9 +42,10 @@ import javax.security.auth.callback.UnsupportedCallbackException;
 import javax.security.sasl.AuthorizeCallback;
 
 import org.jboss.as.controller.security.SubjectUserInfo;
-import org.jboss.as.domain.management.AuthenticationMechanism;
+import org.jboss.as.domain.management.AuthMechanism;
 import org.jboss.as.domain.management.AuthorizingCallbackHandler;
 import org.jboss.as.domain.management.CallbackHandlerFactory;
+import org.jboss.as.domain.management.SSLIdentity;
 import org.jboss.as.domain.management.SecurityRealm;
 import org.jboss.msc.service.Service;
 import org.jboss.msc.service.ServiceName;
@@ -65,12 +66,12 @@ public class SecurityRealmService implements Service<SecurityRealm>, SecurityRea
     public static final ServiceName BASE_SERVICE_NAME = ServiceName.JBOSS.append("server", "controller", "management", "security_realm");
 
     private final InjectedValue<SubjectSupplementalService> subjectSupplemental = new InjectedValue<SubjectSupplementalService>();
-    private final InjectedValue<SSLIdentityService> sslIdentity = new InjectedValue<SSLIdentityService>();
+    private final InjectedValue<SSLIdentity> sslIdentity = new InjectedValue<SSLIdentity>();
     private final InjectedValue<CallbackHandlerFactory> secretCallbackFactory = new InjectedValue<CallbackHandlerFactory>();
     private final InjectedSetValue<CallbackHandlerService> callbackHandlerServices = new InjectedSetValue<CallbackHandlerService>();
 
     private final String name;
-    private final Map<AuthenticationMechanism, CallbackHandlerService> registeredServices = new HashMap<AuthenticationMechanism, CallbackHandlerService>();
+    private final Map<AuthMechanism, CallbackHandlerService> registeredServices = new HashMap<AuthMechanism, CallbackHandlerService>();
 
     public SecurityRealmService(String name) {
         this.name = name;
@@ -83,7 +84,7 @@ public class SecurityRealmService implements Service<SecurityRealm>, SecurityRea
     public void start(StartContext context) throws StartException {
         ROOT_LOGGER.debugf("Starting '%s' Security Realm Service", name);
         for (CallbackHandlerService current : callbackHandlerServices.getValue()) {
-            AuthenticationMechanism mechanism = current.getPreferredMechanism();
+            AuthMechanism mechanism = current.getPreferredMechanism();
             if (registeredServices.containsKey(mechanism)) {
                 registeredServices.clear();
                 throw MESSAGES.multipleCallbackHandlerForMechanism(mechanism.name());
@@ -110,13 +111,13 @@ public class SecurityRealmService implements Service<SecurityRealm>, SecurityRea
      * SecurityRealm Methods
      */
 
-    public Set<AuthenticationMechanism> getSupportedAuthenticationMechanisms() {
-        Set<AuthenticationMechanism> response = new TreeSet<AuthenticationMechanism>();
+    public Set<AuthMechanism> getSupportedAuthenticationMechanisms() {
+        Set<AuthMechanism> response = new TreeSet<AuthMechanism>();
         response.addAll(registeredServices.keySet());
         return response;
     }
 
-    public Map<String, String> getMechanismConfig(final AuthenticationMechanism mechanism) {
+    public Map<String, String> getMechanismConfig(final AuthMechanism mechanism) {
         CallbackHandlerService service = getCallbackHandlerService(mechanism);
 
         return service.getConfigurationOptions();
@@ -132,7 +133,7 @@ public class SecurityRealmService implements Service<SecurityRealm>, SecurityRea
         return true;
     }
 
-    public AuthorizingCallbackHandler getAuthorizingCallbackHandler(AuthenticationMechanism mechanism) {
+    public AuthorizingCallbackHandler getAuthorizingCallbackHandler(AuthMechanism mechanism) {
         /*
          * The returned AuthorizingCallbackHandler is used for a single authentication request - this means that state can be
          * shared to combine the authentication step and the loading of authorization data.
@@ -191,7 +192,7 @@ public class SecurityRealmService implements Service<SecurityRealm>, SecurityRea
         };
     }
 
-    private CallbackHandlerService getCallbackHandlerService(final AuthenticationMechanism mechanism) {
+    private CallbackHandlerService getCallbackHandlerService(final AuthMechanism mechanism) {
         if (registeredServices.containsKey(mechanism)) {
             return registeredServices.get(mechanism);
         }
@@ -215,7 +216,7 @@ public class SecurityRealmService implements Service<SecurityRealm>, SecurityRea
         return subjectSupplemental;
     }
 
-    public InjectedValue<SSLIdentityService> getSSLIdentityInjector() {
+    public InjectedValue<SSLIdentity> getSSLIdentityInjector() {
         return sslIdentity;
     }
 
@@ -228,17 +229,12 @@ public class SecurityRealmService implements Service<SecurityRealm>, SecurityRea
     }
 
     public SSLContext getSSLContext() {
-        SSLIdentityService service = sslIdentity.getOptionalValue();
+        SSLIdentity service = sslIdentity.getOptionalValue();
         if (service != null) {
-            return service.getSSLContext();
+            return service.getFullContext();
         }
 
         return null;
-    }
-
-    public boolean hasTrustStore() {
-        SSLIdentityService service;
-        return ((service = sslIdentity.getOptionalValue()) != null && service.hasTrustStore());
     }
 
     public CallbackHandlerFactory getSecretCallbackHandlerFactory() {

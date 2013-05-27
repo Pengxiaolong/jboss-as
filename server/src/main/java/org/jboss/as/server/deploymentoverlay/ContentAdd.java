@@ -1,3 +1,25 @@
+/*
+ * JBoss, Home of Professional Open Source.
+ * Copyright 2012, Red Hat, Inc., and individual contributors
+ * as indicated by the @author tags. See the copyright.txt file in the
+ * distribution for a full listing of individual contributors.
+ *
+ * This is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU Lesser General Public License as
+ * published by the Free Software Foundation; either version 2.1 of
+ * the License, or (at your option) any later version.
+ *
+ * This software is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with this software; if not, write to the Free
+ * Software Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA
+ * 02110-1301 USA, or see the FSF site: http://www.fsf.org.
+ */
+
 package org.jboss.as.server.deploymentoverlay;
 
 import java.io.ByteArrayInputStream;
@@ -42,11 +64,9 @@ import org.jboss.msc.service.ServiceName;
 
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.BYTES;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.CONTENT;
-import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.ENABLED;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.HASH;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.INPUT_STREAM_INDEX;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.OP_ADDR;
-import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.RUNTIME_NAME;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.URL;
 import static org.jboss.as.controller.operations.validation.ChainedParameterValidator.chain;
 
@@ -64,8 +84,6 @@ public class ContentAdd extends AbstractAddStepHandler {
     public ContentAdd(final ContentRepository contentRepository, final DeploymentFileRepository remoteRepository) {
         this.contentRepository = contentRepository;
         this.remoteRepository = remoteRepository;
-        this.validator.registerValidator(RUNTIME_NAME, new StringLengthValidator(1, Integer.MAX_VALUE, true, false));
-        this.validator.registerValidator(ENABLED, new ModelTypeValidator(ModelType.BOOLEAN, true));
         final ParametersValidator contentValidator = new ParametersValidator();
         // existing managed content
         contentValidator.registerValidator(HASH, new ModelTypeValidator(ModelType.BYTES, true));

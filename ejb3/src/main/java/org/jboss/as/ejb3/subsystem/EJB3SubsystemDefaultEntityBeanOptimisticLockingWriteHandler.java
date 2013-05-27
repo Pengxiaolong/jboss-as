@@ -44,11 +44,11 @@ public class EJB3SubsystemDefaultEntityBeanOptimisticLockingWriteHandler extends
 
     public static final ServiceName SERVICE_NAME = ServiceName.JBOSS.append("ejb3", "entity-bean", "optimistic-locking");
 
-    public static final EJB3SubsystemDefaultEntityBeanOptimisticLockingWriteHandler INSTANCE = new EJB3SubsystemDefaultEntityBeanOptimisticLockingWriteHandler();
+    public static final EJB3SubsystemDefaultEntityBeanOptimisticLockingWriteHandler INSTANCE =
+            new EJB3SubsystemDefaultEntityBeanOptimisticLockingWriteHandler();
 
-    @Override
-    protected void validateResolvedValue(String attributeName, ModelNode value) throws OperationFailedException {
-        // we're going to validate using the AttributeDefinition in applyModelToRuntime, so don't bother here
+    private EJB3SubsystemDefaultEntityBeanOptimisticLockingWriteHandler() {
+        super(EJB3SubsystemRootResourceDefinition.DEFAULT_ENTITY_BEAN_OPTIMISTIC_LOCKING);
     }
 
     @Override

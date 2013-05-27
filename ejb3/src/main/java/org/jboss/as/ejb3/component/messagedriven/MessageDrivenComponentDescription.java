@@ -22,17 +22,28 @@
 package org.jboss.as.ejb3.component.messagedriven;
 
 
+import java.util.Properties;
+import java.util.Set;
+
+import javax.ejb.MessageDrivenBean;
+import javax.ejb.TransactionManagementType;
+import javax.resource.spi.ResourceAdapter;
+
 import org.jboss.as.connector.util.ConnectorServices;
+import org.jboss.as.ee.component.Attachments;
 import org.jboss.as.ee.component.Component;
 import org.jboss.as.ee.component.ComponentConfiguration;
 import org.jboss.as.ee.component.ComponentConfigurator;
 import org.jboss.as.ee.component.ComponentDescription;
 import org.jboss.as.ee.component.DependencyConfigurator;
+import org.jboss.as.ee.component.EEApplicationClasses;
 import org.jboss.as.ee.component.ViewConfiguration;
 import org.jboss.as.ee.component.ViewConfigurator;
 import org.jboss.as.ee.component.ViewDescription;
+import org.jboss.as.ee.component.interceptors.InterceptorClassDescription;
 import org.jboss.as.ee.component.interceptors.InterceptorOrder;
 import org.jboss.as.ee.component.interceptors.InvocationType;
+import org.jboss.as.ee.metadata.MetadataCompleteMarker;
 import org.jboss.as.ejb3.EjbMessages;
 import org.jboss.as.ejb3.component.EJBComponentDescription;
 import org.jboss.as.ejb3.component.EJBUtilities;
@@ -44,6 +55,7 @@ import org.jboss.as.ejb3.component.pool.PoolConfigService;
 import org.jboss.as.ejb3.deployment.EjbJarDescription;
 import org.jboss.as.ejb3.tx.CMTTxInterceptor;
 import org.jboss.as.ejb3.tx.EjbBMTInterceptor;
+import org.jboss.as.ejb3.tx.LifecycleCMTTxInterceptor;
 import org.jboss.as.ejb3.tx.TimerCMTTxInterceptor;
 import org.jboss.as.server.deployment.DeploymentPhaseContext;
 import org.jboss.as.server.deployment.DeploymentUnitProcessingException;
@@ -57,12 +69,6 @@ import org.jboss.msc.service.Service;
 import org.jboss.msc.service.ServiceBuilder;
 import org.jboss.msc.service.ServiceName;
 
-import javax.ejb.MessageDrivenBean;
-import javax.ejb.TransactionManagementType;
-import javax.resource.spi.ResourceAdapter;
-import java.util.Properties;
-import java.util.Set;
-
 import static org.jboss.as.ejb3.EjbMessages.MESSAGES;
 
 /**
@@ -73,6 +79,7 @@ public class MessageDrivenComponentDescription extends EJBComponentDescription {
     private String resourceAdapterName;
 
     private String mdbPoolConfigName;
+    private final String messageListenerInterfaceName;
 
     /**
      * Construct a new instance.
@@ -95,7 +102,8 @@ public class MessageDrivenComponentDescription extends EJBComponentDescription {
         this.resourceAdapterName = defaultResourceAdapterName;
         this.activationProps = activationProps;
 
-        registerView(messageListenerInterfaceName, MethodIntf.MESSAGE_ENDPOINT);
+        this.messageListenerInterfaceName = messageListenerInterfaceName;
+        registerView(getEJBClassName(), MethodIntf.MESSAGE_ENDPOINT);
         // add the interceptor which will invoke the setMessageDrivenContext() method on a MDB which implements
         // MessageDrivenBean interface
         this.addSetMessageDrivenContextMethodInvocationInterceptor();
@@ -111,7 +119,13 @@ public class MessageDrivenComponentDescription extends EJBComponentDescription {
     public ComponentConfiguration createConfiguration(final ClassIndex classIndex, final ClassLoader moduleClassLoader, final ModuleLoader moduleLoader) {
         final ComponentConfiguration mdbComponentConfiguration = new ComponentConfiguration(this, classIndex, moduleClassLoader, moduleLoader);
         // setup the component create service
-        mdbComponentConfiguration.setComponentCreateServiceFactory(new MessageDrivenComponentCreateServiceFactory());
+        final Class<?> messageListenerInterface;
+        try {
+            messageListenerInterface = Class.forName(getMessageListenerInterfaceName(), true, moduleClassLoader);
+        } catch (ClassNotFoundException e) {
+            throw new RuntimeException(e);
+        }
+        mdbComponentConfiguration.setComponentCreateServiceFactory(new MessageDrivenComponentCreateServiceFactory(messageListenerInterface));
 
         // setup the configurator to inject the PoolConfig in the MessageDrivenComponentCreateService
         final MessageDrivenComponentDescription mdbComponentDescription = (MessageDrivenComponentDescription) mdbComponentConfiguration.getComponentDescription();
@@ -141,6 +155,12 @@ public class MessageDrivenComponentDescription extends EJBComponentDescription {
             getConfigurators().add(new ComponentConfigurator() {
                 @Override
                 public void configure(final DeploymentPhaseContext context, final ComponentDescription description, final ComponentConfiguration configuration) throws DeploymentUnitProcessingException {
+                    final EEApplicationClasses applicationClasses = context.getDeploymentUnit().getAttachment(Attachments.EE_APPLICATION_CLASSES_DESCRIPTION);
+                    InterceptorClassDescription interceptorConfig = ComponentDescription.mergeInterceptorConfig(configuration.getComponentClass(), applicationClasses.getClassByName(description.getComponentClassName()), description, MetadataCompleteMarker.isMetadataComplete(context.getDeploymentUnit()));
+
+                    configuration.addPostConstructInterceptor(new LifecycleCMTTxInterceptor.Factory(interceptorConfig.getPostConstruct(), true), InterceptorOrder.ComponentPostConstruct.TRANSACTION_INTERCEPTOR);
+                    configuration.addPreDestroyInterceptor(new LifecycleCMTTxInterceptor.Factory(interceptorConfig.getPreDestroy(), true), InterceptorOrder.ComponentPreDestroy.TRANSACTION_INTERCEPTOR);
+
                     configuration.addTimeoutViewInterceptor(TimerCMTTxInterceptor.FACTORY, InterceptorOrder.View.CMT_TRANSACTION_INTERCEPTOR);
                 }
             });
@@ -247,6 +267,10 @@ public class MessageDrivenComponentDescription extends EJBComponentDescription {
 
     public String getPoolConfigName() {
         return this.mdbPoolConfigName;
+    }
+
+    private String getMessageListenerInterfaceName() {
+        return messageListenerInterfaceName;
     }
 
     private class PoolInjectingConfigurator implements DependencyConfigurator<Service<Component>> {

@@ -27,10 +27,11 @@ import org.jboss.jbossts.xts.environment.WSCEnvironmentBean;
 import org.jboss.jbossts.xts.environment.XTSPropertyManager;
 import org.jboss.msc.service.AbstractService;
 import org.jboss.msc.service.StartContext;
-import org.jboss.msc.service.StopContext;
 import org.jboss.msc.service.StartException;
+import org.jboss.msc.service.StopContext;
 import org.jboss.msc.value.InjectedValue;
 import org.jboss.wsf.spi.management.ServerConfig;
+import org.wildfly.security.manager.WildFlySecurityManager;
 
 /**
  * Main XTS service
@@ -39,11 +40,13 @@ import org.jboss.wsf.spi.management.ServerConfig;
  */
 public class XTSManagerService extends AbstractService<XTSService> {
     private final String coordinatorURL;
+    private final boolean isDefaultContextPropagation;
     private volatile org.jboss.jbossts.XTSService xtsService;
     private InjectedValue<ServerConfig> wsServerConfig = new InjectedValue<ServerConfig>();
 
-    public XTSManagerService(String coordinatorURL) {
+    public XTSManagerService(String coordinatorURL, boolean isDefaultContextPropagation) {
         this.coordinatorURL = coordinatorURL;
+        this.isDefaultContextPropagation = isDefaultContextPropagation;
         this.xtsService = null;
     }
 
@@ -56,7 +59,7 @@ public class XTSManagerService extends AbstractService<XTSService> {
     public synchronized void start(final StartContext context) throws StartException {
         // XTS expects the TCCL to be set to something that will locate the XTS service implementation classes.
         final ClassLoader loader = XTSService.class.getClassLoader();
-        SecurityActions.setContextLoader(loader);
+        WildFlySecurityManager.setCurrentContextClassLoaderPrivileged(loader);
         try {
             ServerConfig serverConfigValue =  wsServerConfig.getValue();
             WSCEnvironmentBean wscEnVBean = XTSPropertyManager.getWSCEnvironmentBean();
@@ -83,8 +86,11 @@ public class XTSManagerService extends AbstractService<XTSService> {
             }
 
             xtsService = service;
+
+            XTSHandlersManager xtsHandlerManager = new XTSHandlersManager(serverConfigValue);
+            xtsHandlerManager.registerClientHandlers(isDefaultContextPropagation);
         } finally {
-            SecurityActions.setContextLoader(null);
+            WildFlySecurityManager.setCurrentContextClassLoaderPrivileged((ClassLoader) null);
         }
     }
 
@@ -101,4 +107,5 @@ public class XTSManagerService extends AbstractService<XTSService> {
     public InjectedValue<ServerConfig> getWSServerConfig() {
         return wsServerConfig;
     }
+
 }

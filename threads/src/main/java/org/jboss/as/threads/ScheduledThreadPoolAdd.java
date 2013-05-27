@@ -21,16 +21,12 @@
  */
 package org.jboss.as.threads;
 
-import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.NAME;
-import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.OP_ADDR;
-
 import java.util.List;
 
 import org.jboss.as.controller.AbstractAddStepHandler;
 import org.jboss.as.controller.AttributeDefinition;
 import org.jboss.as.controller.OperationContext;
 import org.jboss.as.controller.OperationFailedException;
-import org.jboss.as.controller.PathAddress;
 import org.jboss.as.controller.ServiceVerificationHandler;
 import org.jboss.as.threads.ThreadPoolManagementUtils.BaseThreadPoolParameters;
 import org.jboss.dmr.ModelNode;
@@ -61,10 +57,6 @@ public class ScheduledThreadPoolAdd extends AbstractAddStepHandler {
 
     @Override
     protected void populateModel(final ModelNode operation, final ModelNode model) throws OperationFailedException {
-        final PathAddress address = PathAddress.pathAddress(operation.require(OP_ADDR));
-        final String name = address.getLastElement().getValue();
-        model.get(NAME).set(name);
-
         for(final AttributeDefinition attribute : ATTRIBUTES) {
             attribute.validateAndSet(operation, model);
         }

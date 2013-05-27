@@ -22,15 +22,17 @@
 package org.jboss.as.host.controller.model.jvm;
 
 import org.jboss.as.controller.AttributeDefinition;
+import org.jboss.as.controller.ModelOnlyWriteAttributeHandler;
+import org.jboss.as.controller.OperationStepHandler;
 import org.jboss.as.controller.PathElement;
 import org.jboss.as.controller.SimpleResourceDefinition;
 import org.jboss.as.controller.descriptions.ModelDescriptionConstants;
 import org.jboss.as.controller.descriptions.StandardResourceDescriptionResolver;
-import org.jboss.as.controller.operations.global.WriteAttributeHandlers;
 import org.jboss.as.controller.registry.ManagementResourceRegistration;
-import org.jboss.as.host.controller.descriptions.HostEnvironmentResourceDescription;
+import org.jboss.as.host.controller.descriptions.HostEnvironmentResourceDefinition;
 
 /**
+ * {@link org.jboss.as.controller.ResourceDefinition} for JVM configuration resources.
  *
  * @author <a href="kabir.khan@jboss.com">Kabir Khan</a>
  */
@@ -44,7 +46,7 @@ public class JvmResourceDefinition extends SimpleResourceDefinition {
 
     protected JvmResourceDefinition(boolean server) {
         super(PathElement.pathElement(ModelDescriptionConstants.JVM),
-                new StandardResourceDescriptionResolver("jvm", HostEnvironmentResourceDescription.class.getPackage().getName() + ".LocalDescriptions", HostEnvironmentResourceDescription.class.getClassLoader(), true, false),
+                new StandardResourceDescriptionResolver("jvm", HostEnvironmentResourceDefinition.class.getPackage().getName() + ".LocalDescriptions", HostEnvironmentResourceDefinition.class.getClassLoader(), true, false),
                 new JVMAddHandler(JvmAttributes.getAttributes(server)),
                 JVMRemoveHandler.INSTANCE);
         this.server = server;
@@ -52,21 +54,17 @@ public class JvmResourceDefinition extends SimpleResourceDefinition {
 
     @Override
     public void registerAttributes(ManagementResourceRegistration resourceRegistration) {
+        AttributeDefinition[] defs = JvmAttributes.getAttributes(server);
+        OperationStepHandler handler = new ModelOnlyWriteAttributeHandler(defs);
         for (AttributeDefinition attr : JvmAttributes.getAttributes(server)) {
-            resourceRegistration.registerReadWriteAttribute(attr, null, new WriteAttributeHandlers.AttributeDefinitionValidatingHandler(attr));
+            resourceRegistration.registerReadWriteAttribute(attr, null, handler);
         }
     }
 
     @Override
     public void registerOperations(ManagementResourceRegistration resourceRegistration) {
         super.registerOperations(resourceRegistration);
-        resourceRegistration.registerOperationHandler(JVMOptionAddHandler.OPERATION_NAME, JVMOptionAddHandler.INSTANCE, JVMOptionAddHandler.INSTANCE, false);
-        resourceRegistration.registerOperationHandler(JVMOptionRemoveHandler.OPERATION_NAME, JVMOptionRemoveHandler.INSTANCE, JVMOptionRemoveHandler.INSTANCE, false);
-
-        //AS7-4437 is scheduled for 7.2.0 so uncomment these once we have decided on the format of the operation names
-        //There are some tests in AbstractJvmModelTest for these which need uncommenting as well
-
-        //resourceRegistration.registerOperationHandler(JVMEnvironmentVariableAddHandler.OPERATION_NAME, JVMEnvironmentVariableAddHandler.INSTANCE, JVMEnvironmentVariableAddHandler.INSTANCE, false);
-        //resourceRegistration.registerOperationHandler(JVMEnvironmentVariableRemoveHandler.OPERATION_NAME, JVMEnvironmentVariableRemoveHandler.INSTANCE, JVMEnvironmentVariableRemoveHandler.INSTANCE, false);
+        resourceRegistration.registerOperationHandler(JVMOptionAddHandler.DEFINITION, JVMOptionAddHandler.INSTANCE);
+        resourceRegistration.registerOperationHandler(JVMOptionRemoveHandler.DEFINITION, JVMOptionRemoveHandler.INSTANCE);
     }
 }

@@ -20,7 +20,7 @@
   ~ 02110-1301 USA, or see the FSF site: http://www.fsf.org.
   -->
 
-<subsystem xmlns="urn:jboss:domain:logging:1.1">
+<subsystem xmlns="urn:jboss:domain:logging:1.2">
     <async-handler name="async">
         <queue-length value="10"/>
         <overflow-action value="block"/>
@@ -32,27 +32,21 @@
 
     <console-handler name="CONSOLE">
         <level name="INFO"/>
-        <filter>
-            <level-range min-level="TRACE" max-level="WARN"/>
-        </filter>
+        <filter-spec value="levelRange(TRACE,WARN)" />
         <formatter>
-            <pattern-formatter pattern="%d{HH:mm:ss,SSS} %-5p [%c] (%t) %s%E%n"/>
+            <pattern-formatter pattern="%K{level}%d{HH:mm:ss,SSS} %-5p [%c] (%t) %s%E%n"/>
         </formatter>
     </console-handler>
 
-    <file-handler name="anotherFile">
-        <filter>
-            <level-range min-level="TRACE" max-level="WARN" max-inclusive="false"/>
-        </filter>
+    <file-handler name="anotherFile" enabled="false">
+        <filter-spec value="levelRange(TRACE,WARN]" />
         <file relative-to="jboss.server.log.dir" path="another.log"/>
         <append value="true"/>
     </file-handler>
 
     <file-handler name="simpleFile">
         <level name="INFO"/>
-        <filter>
-            <deny/>
-        </filter>
+        <filter-spec value="deny"/>
         <file relative-to="jboss.server.log.dir" path="fileHandler.log"/>
         <append value="true"/>
     </file-handler>
@@ -76,14 +70,7 @@
 
     <periodic-rotating-file-handler name="FILE">
         <encoding value="UTF-8"/>
-        <filter>
-            <any>
-                <level name="INFO"/>
-                <not>
-                    <level name="TRACE"/>
-                </not>
-            </any>
-        </filter>
+        <filter-spec value="any(levels(INFO),not(levels(TRACE)))"/>
         <formatter>
             <pattern-formatter pattern="%d{HH:mm:ss,SSS} %-5p [%c] (%t) %s%E%n"/>
         </formatter>
@@ -94,12 +81,7 @@
     <size-rotating-file-handler name="sizeLogger">
         <level name="DEBUG"/>
         <encoding value="UTF-8"/>
-        <filter>
-            <all>
-                <change-level new-level="DEBUG"/>
-                <match pattern=".*"/>
-            </all>
-        </filter>
+        <filter-spec value="all(levelChange(DEBUG),match(&quot;JBAS+\\d&quot;))"/>
         <formatter>
             <pattern-formatter pattern="%d{HH:mm:ss,SSS} %-5p [%c] (%t) %s%E%n"/>
         </formatter>
@@ -109,11 +91,21 @@
         <append value="false"/>
     </size-rotating-file-handler>
 
+    <syslog-handler name="syslog" enabled="false">
+        <level name="INFO"/>
+        <server-address value="127.0.0.1"/>
+        <hostname value="jboss.org"/>
+        <port value="514"/>
+        <app-name value="my-app"/>
+        <formatter>
+            <syslog-format syslog-type="RFC5424"/>
+        </formatter>
+        <facility value="user-level"/>
+    </syslog-handler>
+
     <logger category="com.example" use-parent-handlers="false">
         <level name="TRACE"/>
-        <filter>
-            <level-range min-level="TRACE" max-level="WARN" min-inclusive="true"/>
-        </filter>
+        <filter-spec value="levelRange[TRACE,WARN)"/>
         <handlers>
             <handler name="sizeLogger"/>
             <handler name="CONSOLE"/>
@@ -122,9 +114,7 @@
 
     <logger category="com.arjuna">
         <level name="WARN"/>
-        <filter>
-            <level-range min-level="TRACE" max-level="WARN" min-inclusive="true"/>
-        </filter>
+        <filter-spec value="levelRange[TRACE,WARN]"/>
     </logger>
 
     <root-logger>
@@ -134,4 +124,42 @@
             <handler name="FILE"/>
         </handlers>
     </root-logger>
+
+    <logging-profiles>
+        <logging-profile name="test-profile">
+
+            <console-handler name="CONSOLE">
+                <level name="ALL"/>
+                <filter-spec value="levelRange(TRACE,WARN)"/>
+                <formatter>
+                    <pattern-formatter pattern="%d{HH:mm:ss,SSS} %-5p [%c] (%t) %s%E%n"/>
+                </formatter>
+            </console-handler>
+
+            <syslog-handler name="syslog">
+                <level name="WARN"/>
+                <server-address value="localhost"/>
+                <hostname value="community.jboss.org"/>
+                <port value="514"/>
+                <app-name value="my-app"/>
+                <formatter>
+                    <syslog-format syslog-type="RFC3164"/>
+                </formatter>
+                <facility value="user-level"/>
+            </syslog-handler>
+
+            <logger category="org.jboss.as.logging">
+                <level name="TRACE"/>
+                <filter-spec value="levelRange[TRACE,WARN)"/>
+            </logger>
+
+            <root-logger>
+                <level name="INFO"/>
+                <handlers>
+                    <handler name="CONSOLE"/>
+                    <handler name="syslog"/>
+                </handlers>
+            </root-logger>
+        </logging-profile>
+    </logging-profiles>
 </subsystem>

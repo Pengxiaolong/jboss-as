@@ -25,7 +25,6 @@ package org.jboss.as.host.controller;
 import java.util.HashMap;
 import java.util.Map;
 
-import org.jboss.as.controller.descriptions.ModelDescriptionConstants;
 import org.jboss.dmr.ModelNode;
 
 /**
@@ -83,22 +82,5 @@ public enum DirectoryGrouping {
      */
     public static DirectoryGrouping defaultValue() {
         return BY_SERVER;
-    }
-
-    /**
-     * Returns the value of found in the model.
-     *
-     * @param model the model that contains the key and value.
-     *
-     * @return the directory grouping found in the model.
-     *
-     * @throws IllegalArgumentException if the {@link ModelDescriptionConstants#DIRECTORY_GROUPING directory grouping}
-     *                                  was not found in the model.
-     */
-    public static DirectoryGrouping fromModel(final ModelNode model) {
-        if (model.hasDefined(ModelDescriptionConstants.DIRECTORY_GROUPING)) {
-            return DirectoryGrouping.forName(model.get(ModelDescriptionConstants.DIRECTORY_GROUPING).asString());
-        }
-        return defaultValue();
     }
 }

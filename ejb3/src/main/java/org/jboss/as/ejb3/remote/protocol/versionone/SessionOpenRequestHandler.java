@@ -22,6 +22,12 @@
 
 package org.jboss.as.ejb3.remote.protocol.versionone;
 
+import java.io.DataInputStream;
+import java.io.DataOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.util.concurrent.ExecutorService;
+
 import org.jboss.as.ee.component.Component;
 import org.jboss.as.ejb3.EjbLogger;
 import org.jboss.as.ejb3.EjbMessages;
@@ -33,14 +39,8 @@ import org.jboss.ejb.client.SessionID;
 import org.jboss.ejb.client.remoting.PackedInteger;
 import org.jboss.marshalling.Marshaller;
 import org.jboss.marshalling.MarshallerFactory;
-import org.jboss.remoting3.MessageInputStream;
 import org.jboss.remoting3.MessageOutputStream;
 import org.xnio.IoUtils;
-
-import java.io.DataInputStream;
-import java.io.DataOutputStream;
-import java.io.IOException;
-import java.util.concurrent.ExecutorService;
 
 /**
  * @author Jaikiran Pai
@@ -61,11 +61,11 @@ class SessionOpenRequestHandler extends EJBIdentifierBasedMessageHandler {
     }
 
     @Override
-    public void processMessage(ChannelAssociation channelAssociation, MessageInputStream messageInputStream) throws IOException {
-        if (messageInputStream == null) {
+    public void processMessage(ChannelAssociation channelAssociation, InputStream inputStream) throws IOException {
+        if (inputStream == null) {
             throw EjbMessages.MESSAGES.messageInputStreamCannotBeNull();
         }
-        final DataInputStream dataInputStream = new DataInputStream(messageInputStream);
+        final DataInputStream dataInputStream = new DataInputStream(inputStream);
         // read invocation id
         final short invocationId = dataInputStream.readShort();
         final String appName = dataInputStream.readUTF();
@@ -80,7 +80,7 @@ class SessionOpenRequestHandler extends EJBIdentifierBasedMessageHandler {
         }
         final Component component = ejbDeploymentInformation.getEjbComponent();
         if (!(component instanceof StatefulSessionComponent)) {
-            final String failureMessage = EjbLogger.ROOT_LOGGER.notStatefulSessionBean(beanName, appName, moduleName, distinctName).getLocalizedMessage();
+            final String failureMessage = EjbMessages.MESSAGES.notStatefulSessionBean(beanName, appName, moduleName, distinctName).getLocalizedMessage();
             this.writeInvocationFailure(channelAssociation, HEADER_EJB_NOT_STATEFUL, invocationId, failureMessage);
             return;
         }
@@ -145,6 +145,7 @@ class SessionOpenRequestHandler extends EJBIdentifierBasedMessageHandler {
                 try {
                     sessionID = statefulSessionComponent.createSession();
                 } catch (Throwable t) {
+                    EjbLogger.ROOT_LOGGER.exceptionGeneratingSessionId(t, statefulSessionComponent.getComponentName(), invocationId, channelAssociation.getChannel());
                     SessionOpenRequestHandler.this.writeException(channelAssociation, SessionOpenRequestHandler.this.marshallerFactory, invocationId, t, null);
                     return;
                 }
@@ -152,7 +153,7 @@ class SessionOpenRequestHandler extends EJBIdentifierBasedMessageHandler {
                 final Affinity hardAffinity = statefulSessionComponent.getCache().getStrictAffinity();
                 SessionOpenRequestHandler.this.writeSessionId(channelAssociation, invocationId, sessionID, hardAffinity);
             } catch (IOException ioe) {
-                EjbLogger.ROOT_LOGGER.exceptionGeneratingSessionId(ioe, invocationId, channelAssociation.getChannel());
+                EjbLogger.ROOT_LOGGER.exceptionGeneratingSessionId(ioe, statefulSessionComponent.getComponentName(), invocationId, channelAssociation.getChannel());
                 // close the channel
                 IoUtils.safeClose(this.channelAssociation.getChannel());
                 return;

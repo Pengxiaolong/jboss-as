@@ -27,40 +27,40 @@
     <modelVersion>4.0.0</modelVersion>
 
     <parent>
-        <groupId>org.jboss.as</groupId>
-        <artifactId>jboss-as-clustering</artifactId>
-        <version>7.2.0.Alpha1-SNAPSHOT</version>
+        <groupId>org.wildfly</groupId>
+        <artifactId>wildfly-clustering</artifactId>
+        <version>8.0.0.Alpha2-SNAPSHOT</version>
     </parent>
 
-    <artifactId>jboss-as-clustering-infinispan</artifactId>
+    <artifactId>wildfly-clustering-infinispan</artifactId>
     <packaging>jar</packaging>
 
-    <name>JBoss Application Server: Infinispan Subsystem</name>
+    <name>WildFly: Infinispan Subsystem</name>
 
     <dependencies>
         <dependency>
-            <groupId>org.jboss.as</groupId>
-            <artifactId>jboss-as-clustering-api</artifactId>
+            <groupId>org.wildfly</groupId>
+            <artifactId>wildfly-clustering-api</artifactId>
         </dependency>
         <dependency>
-            <groupId>org.jboss.as</groupId>
-            <artifactId>jboss-as-clustering-jgroups</artifactId>
+            <groupId>org.wildfly</groupId>
+            <artifactId>wildfly-clustering-jgroups</artifactId>
         </dependency>
         <dependency>
-            <groupId>org.jboss.as</groupId>
-            <artifactId>jboss-as-ee</artifactId>
+            <groupId>org.wildfly</groupId>
+            <artifactId>wildfly-ee</artifactId>
         </dependency>
         <dependency>
-            <groupId>org.jboss.as</groupId>
-            <artifactId>jboss-as-jmx</artifactId>
+            <groupId>org.wildfly</groupId>
+            <artifactId>wildfly-jmx</artifactId>
         </dependency>
         <dependency>
-            <groupId>org.jboss.as</groupId>
-            <artifactId>jboss-as-threads</artifactId>
+            <groupId>org.wildfly</groupId>
+            <artifactId>wildfly-threads</artifactId>
         </dependency>
         <dependency>
-            <groupId>org.jboss.as</groupId>
-            <artifactId>jboss-as-transactions</artifactId>
+            <groupId>org.wildfly</groupId>
+            <artifactId>wildfly-transactions</artifactId>
         </dependency>
         <dependency>
             <groupId>org.infinispan</groupId>
@@ -83,15 +83,16 @@
             <artifactId>jcip-annotations</artifactId>
         </dependency>
         <dependency>
-            <groupId>org.jboss.as</groupId>
-            <artifactId>jboss-as-clustering-common</artifactId>
+            <groupId>org.wildfly</groupId>
+            <artifactId>wildfly-clustering-common</artifactId>
             <version>${project.version}</version><!--$NO-MVN-MAN-VER$-->
             <scope>test</scope>
             <classifier>tests</classifier>
         </dependency>
         <dependency>
-            <groupId>org.jboss.as</groupId>
-            <artifactId>jboss-as-subsystem-test</artifactId>
+            <groupId>org.wildfly</groupId>
+            <artifactId>wildfly-subsystem-test</artifactId>
+						<type>pom</type>
             <scope>test</scope>
         </dependency>
         <dependency>
@@ -112,31 +113,33 @@
             <scope>provided</scope>
             <optional>true</optional>
         </dependency>
-        <!-- Unfortunately we have to include this because of http://bugs.sun.com/view_bug.do?bug_id=6550655 -->
-        <dependency>
-            <groupId>org.rhq.helpers</groupId>
-            <artifactId>rhq-pluginAnnotations</artifactId>
-            <scope>provided</scope>
-         </dependency>
     </dependencies>
 
     <build>
         <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-dependency-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <goals><goal>properties</goal></goals>
+                    </execution>
+                </executions>
+            </plugin>
             <plugin>
                 <artifactId>maven-surefire-plugin</artifactId>
                 <configuration>
                     <redirectTestOutputToFile>true</redirectTestOutputToFile>
                     <useManifestOnlyJar>false</useManifestOnlyJar>
                     <parallel>false</parallel>
-                </configuration>
-            </plugin>
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-compiler-plugin</artifactId>
-                <configuration>
-                    <compilerArgument>
-                        -AgeneratedTranslationFilesPath=${project.basedir}/target/generated-translation-files
-                    </compilerArgument>
+                    <argLine>-javaagent:${org.jboss.byteman:byteman:jar}=port:9091,boot:${org.jboss.byteman:byteman:jar}</argLine>
+                    <systemPropertyVariables>
+                        <org.jboss.byteman.contrib.bmunit.agent.inhibit>true</org.jboss.byteman.contrib.bmunit.agent.inhibit>
+                        <org.jboss.byteman.contrib.bmunit.agent.port>9091</org.jboss.byteman.contrib.bmunit.agent.port>
+                        <org.jboss.model.test.cache.root>${org.jboss.model.test.cache.root}</org.jboss.model.test.cache.root>
+	                    <org.jboss.model.test.classpath.cache>${org.jboss.model.test.classpath.cache}</org.jboss.model.test.classpath.cache>
+                        <org.jboss.model.test.maven.repository.urls>${org.jboss.model.test.maven.repository.urls}</org.jboss.model.test.maven.repository.urls>
+		            </systemPropertyVariables>
                 </configuration>
             </plugin>
         </plugins>

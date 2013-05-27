@@ -21,23 +21,16 @@
  */
 package org.jboss.as.osgi.parser;
 
-import java.util.EnumSet;
-
 import org.jboss.as.controller.Extension;
 import org.jboss.as.controller.ExtensionContext;
-import org.jboss.as.controller.PathElement;
-import org.jboss.as.controller.ReloadRequiredRemoveStepHandler;
+import org.jboss.as.controller.ModelVersion;
 import org.jboss.as.controller.SubsystemRegistration;
-import org.jboss.as.controller.descriptions.ModelDescriptionConstants;
 import org.jboss.as.controller.parsing.ExtensionParsingContext;
-import org.jboss.as.controller.registry.AttributeAccess;
-import org.jboss.as.controller.registry.AttributeAccess.Storage;
-import org.jboss.as.controller.registry.ManagementResourceRegistration;
-import org.jboss.as.controller.registry.OperationEntry;
-import org.jboss.as.osgi.management.ActivateOperationHandler;
-import org.jboss.as.osgi.management.ActivationAttributeHandler;
-import org.jboss.as.osgi.management.BundleResourceHandler;
-import org.jboss.as.osgi.management.StartLevelHandler;
+import org.jboss.as.controller.transform.description.DiscardAttributeChecker;
+import org.jboss.as.controller.transform.description.RejectAttributeChecker;
+import org.jboss.as.controller.transform.description.ResourceTransformationDescriptionBuilder;
+import org.jboss.as.controller.transform.description.TransformationDescription;
+import org.jboss.as.controller.transform.description.TransformationDescriptionBuilder;
 
 /**
  * Domain extension used to initialize the OSGi subsystem.
@@ -51,7 +44,7 @@ public class OSGiExtension implements Extension {
     public static final String SUBSYSTEM_NAME = "osgi";
 
     private static final int MANAGEMENT_API_MAJOR_VERSION = 1;
-    private static final int MANAGEMENT_API_MINOR_VERSION = 0;
+    private static final int MANAGEMENT_API_MINOR_VERSION = 1;
     private static final int MANAGEMENT_API_MICRO_VERSION = 0;
 
     @Override
@@ -68,31 +61,36 @@ public class OSGiExtension implements Extension {
 
         final SubsystemRegistration subsystem = context.registerSubsystem(SUBSYSTEM_NAME, MANAGEMENT_API_MAJOR_VERSION,
                 MANAGEMENT_API_MINOR_VERSION, MANAGEMENT_API_MICRO_VERSION);
-        final ManagementResourceRegistration registration = subsystem.registerSubsystemModel(OSGiDescriptionProviders.SUBSYSTEM);
-        registration.registerOperationHandler(ModelDescriptionConstants.ADD, OSGiSubsystemAdd.INSTANCE, OSGiDescriptionProviders.SUBSYSTEM_ADD, false);
-        registration.registerReadWriteAttribute(ModelConstants.ACTIVATION, null, ActivationAttributeHandler.INSTANCE, EnumSet.of(AttributeAccess.Flag.STORAGE_CONFIGURATION, AttributeAccess.Flag.RESTART_JVM));
-        registration.registerOperationHandler(ModelDescriptionConstants.DESCRIBE, OSGiSubsystemDescribeHandler.INSTANCE, OSGiDescriptionProviders.SUBSYSTEM_ADD, false, OperationEntry.EntryType.PRIVATE);
-        registration.registerOperationHandler(ModelDescriptionConstants.REMOVE, ReloadRequiredRemoveStepHandler.INSTANCE, OSGiDescriptionProviders.SUBSYSTEM_REMOVE, false);
-
-        // Framework Properties
-        ManagementResourceRegistration properties = registration.registerSubModel(PathElement.pathElement(ModelConstants.PROPERTY), OSGiDescriptionProviders.PROPERTY_DESCRIPTION);
-        properties.registerOperationHandler(ModelDescriptionConstants.ADD, OSGiFrameworkPropertyAdd.INSTANCE, OSGiFrameworkPropertyAdd.DESCRIPTION, false);
-        properties.registerOperationHandler(ModelDescriptionConstants.REMOVE, OSGiFrameworkPropertyRemove.INSTANCE, OSGiFrameworkPropertyRemove.DESCRIPTION, false);
-        properties.registerReadWriteAttribute(ModelConstants.VALUE, null, OSGiFrameworkPropertyWrite.INSTANCE, Storage.CONFIGURATION);
-
-        // Framework Capabilities
-        ManagementResourceRegistration capabilities = registration.registerSubModel(PathElement.pathElement(ModelConstants.CAPABILITY), OSGiDescriptionProviders.CAPABILITY_DESCRIPTION);
-        capabilities.registerOperationHandler(ModelDescriptionConstants.ADD, OSGiCapabilityAdd.INSTANCE, OSGiCapabilityAdd.DESCRIPTION, false);
-        capabilities.registerOperationHandler(ModelDescriptionConstants.REMOVE, OSGiCapabilityRemove.INSTANCE, OSGiCapabilityRemove.DESCRIPTION, false);
-        capabilities.registerReadOnlyAttribute(ModelConstants.STARTLEVEL, null, Storage.RUNTIME);
-
-        // Runtime attributes/operations
-        if (registerRuntimeOnly) {
-            registration.registerOperationHandler(ModelConstants.ACTIVATE, ActivateOperationHandler.INSTANCE, OSGiDescriptionProviders.ACTIVATE_OPERATION, EnumSet.of(OperationEntry.Flag.RESTART_NONE));
-            registration.registerReadWriteAttribute(ModelConstants.STARTLEVEL, StartLevelHandler.READ_HANDLER, StartLevelHandler.WRITE_HANDLER, Storage.RUNTIME);
-            BundleResourceHandler.INSTANCE.register(registration.registerSubModel(PathElement.pathElement(ModelConstants.BUNDLE), OSGiDescriptionProviders.BUNDLE_DESCRIPTION));
-        }
+        subsystem.registerSubsystemModel(new OSGiRootResource(registerRuntimeOnly));
 
         subsystem.registerXMLElementWriter(OSGiSubsystemWriter.INSTANCE);
+
+        if (context.isRegisterTransformers()) {
+            registerTransformers1_0_0(subsystem);
+        }
     }
+
+    private void registerTransformers1_0_0(SubsystemRegistration subsystem) {
+
+        // Root resource
+        final ResourceTransformationDescriptionBuilder subsystemRoot = TransformationDescriptionBuilder.Factory.createSubsystemInstance();
+        subsystemRoot.getAttributeBuilder()
+                .addRejectCheck(RejectAttributeChecker.SIMPLE_EXPRESSIONS, OSGiRootResource.ACTIVATION);
+
+        // Capabilities
+        subsystemRoot.addChildResource(FrameworkCapabilityResource.CAPABILITY_PATH)
+                .getAttributeBuilder()
+                /** 1.0.0 does not like "start-level"=>undefined, so we remove this here */
+                .setDiscard(DiscardAttributeChecker.UNDEFINED, FrameworkCapabilityResource.STARTLEVEL)
+                .addRejectCheck(RejectAttributeChecker.SIMPLE_EXPRESSIONS, FrameworkCapabilityResource.STARTLEVEL);
+
+        // Properties
+        subsystemRoot.addChildResource(FrameworkPropertyResource.PROPERTY_PATH)
+                .getAttributeBuilder()
+                .addRejectCheck(RejectAttributeChecker.SIMPLE_EXPRESSIONS, FrameworkPropertyResource.VALUE);
+
+        // Register
+        TransformationDescription.Tools.register(subsystemRoot.build(), subsystem, ModelVersion.create(1, 0, 0));
+    }
+
 }

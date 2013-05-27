@@ -28,7 +28,6 @@ import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.INT
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.MULTICAST_ADDRESS;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.MULTICAST_PORT;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.NAME;
-import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.OP;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.OP_ADDR;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.PORT;
 
@@ -45,10 +44,8 @@ public class SocketBindingAddHandler extends AbstractAddStepHandler {
 
     public static final String OPERATION_NAME = ADD;
 
-    public static ModelNode getOperation(ModelNode address, ModelNode socketBinding) {
-        ModelNode op = new ModelNode();
-        op.get(OP).set(OPERATION_NAME);
-        op.get(OP_ADDR).set(address);
+    public static ModelNode getOperation(PathAddress address, ModelNode socketBinding) {
+        ModelNode op = Util.createAddOperation(address);
         if (socketBinding.get(INTERFACE).isDefined()) {
             op.get(INTERFACE).set(socketBinding.get(INTERFACE));
         }

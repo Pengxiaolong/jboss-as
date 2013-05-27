@@ -22,6 +22,18 @@
 
 package org.jboss.as.domain.controller.operations;
 
+import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.DOMAIN_MODEL;
+import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.EXTENSION;
+import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.HOST;
+import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.OP;
+import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.OP_ADDR;
+import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.SERVER;
+import static org.jboss.as.domain.controller.DomainControllerLogger.ROOT_LOGGER;
+
+import java.util.HashSet;
+import java.util.Map;
+import java.util.Set;
+
 import org.jboss.as.controller.Extension;
 import org.jboss.as.controller.OperationContext;
 import org.jboss.as.controller.OperationFailedException;
@@ -29,17 +41,11 @@ import org.jboss.as.controller.OperationStepHandler;
 import org.jboss.as.controller.PathAddress;
 import org.jboss.as.controller.PathElement;
 import org.jboss.as.controller.ProxyController;
-import org.jboss.as.controller.descriptions.DescriptionProvider;
-import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.DOMAIN_MODEL;
-import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.EXTENSION;
-import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.HOST;
-import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.OP;
-import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.OP_ADDR;
-import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.SERVER;
+import org.jboss.as.controller.SimpleOperationDefinition;
+import org.jboss.as.controller.SimpleOperationDefinitionBuilder;
 import org.jboss.as.controller.extension.ExtensionRegistry;
 import org.jboss.as.controller.extension.ExtensionResource;
 import org.jboss.as.controller.registry.Resource;
-import static org.jboss.as.domain.controller.DomainControllerLogger.ROOT_LOGGER;
 import org.jboss.as.domain.controller.DomainControllerMessages;
 import org.jboss.as.domain.controller.LocalHostControllerInfo;
 import org.jboss.as.domain.controller.ServerIdentity;
@@ -51,23 +57,26 @@ import org.jboss.modules.Module;
 import org.jboss.modules.ModuleIdentifier;
 import org.jboss.modules.ModuleLoadException;
 
-import java.util.HashSet;
-import java.util.Locale;
-import java.util.Map;
-import java.util.Set;
-
 /**
  * Step handler responsible for adding the extensions as part of the host registration process.
  *
  * @author Emanuel Muckenhuber
  */
-public class ApplyExtensionsHandler implements OperationStepHandler, DescriptionProvider {
+public class ApplyExtensionsHandler implements OperationStepHandler {
 
+    static final String APPLY_MISSING = "apply-missing";
     public static final String OPERATION_NAME = "resolve-subsystems";
+
     private final Set<String> appliedExtensions = new HashSet<String>();
     private final ExtensionRegistry extensionRegistry;
     private final LocalHostControllerInfo localHostInfo;
     private final IgnoredDomainResourceRegistry ignoredResourceRegistry;
+
+    //Private method does not need resources for description
+    public static final SimpleOperationDefinition DEFINITION = new SimpleOperationDefinitionBuilder(OPERATION_NAME, null)
+        .setPrivateEntry()
+        .build();
+
 
     public ApplyExtensionsHandler(ExtensionRegistry extensionRegistry, LocalHostControllerInfo localHostInfo, final IgnoredDomainResourceRegistry ignoredResourceRegistry) {
         this.extensionRegistry = extensionRegistry;
@@ -87,7 +96,7 @@ public class ApplyExtensionsHandler implements OperationStepHandler, Description
         }
 
         for (final ModelNode resourceDescription : domainModel.asList()) {
-            final PathAddress resourceAddress = PathAddress.pathAddress(resourceDescription.require("domain-resource-address"));
+            final PathAddress resourceAddress = PathAddress.pathAddress(resourceDescription.require(ReadMasterDomainModelUtil.DOMAIN_RESOURCE_ADDRESS));
             if (ignoredResourceRegistry.isResourceExcluded(resourceAddress)) {
                 continue;
             }
@@ -102,7 +111,7 @@ public class ApplyExtensionsHandler implements OperationStepHandler, Description
             } else {
                 continue;
             }
-            resource.writeModel(resourceDescription.get("domain-resource-model"));
+            resource.writeModel(resourceDescription.get(ReadMasterDomainModelUtil.DOMAIN_RESOURCE_MODEL));
         }
         if (!context.isBooting()) {
             final Resource domainRootResource = context.readResourceForUpdate(PathAddress.EMPTY_ADDRESS);
@@ -130,12 +139,12 @@ public class ApplyExtensionsHandler implements OperationStepHandler, Description
                     final ModelNode op = new ModelNode();
                     op.get(OP).set(ServerRestartRequiredHandler.OPERATION_NAME);
                     op.get(OP_ADDR).set(serverAddress.toModelNode());
-                    context.addStep(op, handler, OperationContext.Stage.IMMEDIATE);
+                    context.addStep(op, handler, OperationContext.Stage.MODEL, true);
                 }
             }
         }
 
-        context.completeStep();
+        context.stepCompleted();
     }
 
     private Resource getResource(PathAddress resourceAddress, Resource rootResource, OperationContext context) {
@@ -171,7 +180,7 @@ public class ApplyExtensionsHandler implements OperationStepHandler, Description
                 ClassLoader oldTccl = SecurityActions.setThreadContextClassLoader(extension.getClass());
                 try {
                     extension.initializeParsers(extensionRegistry.getExtensionParsingContext(module, null));
-                    extension.initialize(extensionRegistry.getExtensionContext(module));
+                    extension.initialize(extensionRegistry.getExtensionContext(module, false));
                 } finally {
                     SecurityActions.setThreadContextClassLoader(oldTccl);
                 }
@@ -180,10 +189,4 @@ public class ApplyExtensionsHandler implements OperationStepHandler, Description
             throw DomainControllerMessages.MESSAGES.failedToLoadModule(e, module);
         }
     }
-
-    @Override
-    public ModelNode getModelDescription(Locale locale) {
-        return new ModelNode(); // PRIVATE operation requires no description
-    }
-
 }

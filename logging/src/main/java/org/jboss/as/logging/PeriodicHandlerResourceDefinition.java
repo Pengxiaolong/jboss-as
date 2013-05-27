@@ -25,26 +25,58 @@ package org.jboss.as.logging;
 import static org.jboss.as.logging.CommonAttributes.APPEND;
 import static org.jboss.as.logging.CommonAttributes.AUTOFLUSH;
 import static org.jboss.as.logging.CommonAttributes.FILE;
-import static org.jboss.as.logging.CommonAttributes.PERIODIC_ROTATING_FILE_HANDLER;
-import static org.jboss.as.logging.CommonAttributes.SUFFIX;
 
 import org.jboss.as.controller.AttributeDefinition;
+import org.jboss.as.controller.PathElement;
+import org.jboss.as.controller.services.path.ResolvePathHandler;
+import org.jboss.as.controller.transform.description.RejectAttributeChecker;
+import org.jboss.as.controller.transform.description.ResourceTransformationDescriptionBuilder;
+import org.jboss.as.logging.validators.SuffixValidator;
+import org.jboss.dmr.ModelType;
 import org.jboss.logmanager.handlers.PeriodicRotatingFileHandler;
 
 /**
  * @author <a href="mailto:tomaz.cerar@redhat.com">Tomaz Cerar</a>
+ * @author <a href="mailto:jperkins@redhat.com">James R. Perkins</a>
  */
 class PeriodicHandlerResourceDefinition extends AbstractFileHandlerDefinition {
 
-    static final AttributeDefinition[] ATTRIBUTES = appendDefaultWritableAttributes(AUTOFLUSH, APPEND, FILE, SUFFIX);
+    public static final String PERIODIC_ROTATING_FILE_HANDLER = "periodic-rotating-file-handler";
+    static final PathElement PERIODIC_HANDLER_PATH = PathElement.pathElement(PERIODIC_ROTATING_FILE_HANDLER);
 
-    static final PeriodicHandlerResourceDefinition INSTANCE = new PeriodicHandlerResourceDefinition();
+    public static final PropertyAttributeDefinition SUFFIX = PropertyAttributeDefinition.Builder.of("suffix", ModelType.STRING)
+            .setAllowExpression(true)
+            .setAttributeMarshaller(ElementAttributeMarshaller.VALUE_ATTRIBUTE_MARSHALLER)
+            .setValidator(new SuffixValidator())
+            .build();
 
-    private PeriodicHandlerResourceDefinition() {
-        super(LoggingExtension.PERIODIC_HANDLER_PATH,
-                PERIODIC_ROTATING_FILE_HANDLER,
-                new HandlerOperations.HandlerAddOperationStepHandler(PeriodicRotatingFileHandler.class, ATTRIBUTES, FILE, APPEND),
-                ATTRIBUTES);
+    static final AttributeDefinition[] ATTRIBUTES = Logging.join(DEFAULT_ATTRIBUTES, AUTOFLUSH, APPEND, FILE, SUFFIX);
+
+    public PeriodicHandlerResourceDefinition(final ResolvePathHandler resolvePathHandler, final boolean includeLegacyAttributes) {
+        super(PERIODIC_HANDLER_PATH, PeriodicRotatingFileHandler.class, resolvePathHandler,
+                (includeLegacyAttributes ? Logging.join(ATTRIBUTES, LEGACY_ATTRIBUTES) : ATTRIBUTES));
+    }
+
+    /**
+     * Add the transformers for the periodic file handler.
+     *
+     * @param subsystemBuilder      the default subsystem builder
+     * @param loggingProfileBuilder the logging profile builder
+     *
+     * @return the builder created for the resource
+     */
+    static ResourceTransformationDescriptionBuilder addTransformers(final ResourceTransformationDescriptionBuilder subsystemBuilder,
+                                                                    final ResourceTransformationDescriptionBuilder loggingProfileBuilder) {
+        // Register the logger resource
+        final ResourceTransformationDescriptionBuilder child = subsystemBuilder.addChildResource(PERIODIC_HANDLER_PATH)
+                .getAttributeBuilder()
+                .addRejectCheck(RejectAttributeChecker.SIMPLE_EXPRESSIONS, AUTOFLUSH, APPEND, FILE, SUFFIX)
+                .end();
+
+        // Reject logging profile resources
+        loggingProfileBuilder.rejectChildResource(PERIODIC_HANDLER_PATH);
+
+        return registerTransformers(child);
     }
 
 }

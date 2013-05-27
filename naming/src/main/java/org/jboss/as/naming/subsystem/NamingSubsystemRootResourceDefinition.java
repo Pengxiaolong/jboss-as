@@ -22,9 +22,6 @@
 
 package org.jboss.as.naming.subsystem;
 
-import java.util.EnumSet;
-
-import org.jboss.as.controller.OperationDefinition;
 import org.jboss.as.controller.PathElement;
 import org.jboss.as.controller.SimpleOperationDefinition;
 import org.jboss.as.controller.SimpleOperationDefinitionBuilder;
@@ -49,8 +46,7 @@ public class NamingSubsystemRootResourceDefinition extends SimpleResourceDefinit
     private NamingSubsystemRootResourceDefinition() {
         super(PathElement.pathElement(ModelDescriptionConstants.SUBSYSTEM, NamingExtension.SUBSYSTEM_NAME),
                 NamingExtension.getResourceDescriptionResolver(NamingExtension.SUBSYSTEM_NAME),
-                NamingSubsystemAdd.INSTANCE, NamingSubsystemRemove.INSTANCE,
-                OperationEntry.Flag.RESTART_ALL_SERVICES, OperationEntry.Flag.RESTART_ALL_SERVICES);
+                NamingSubsystemAdd.INSTANCE, NamingSubsystemRemove.INSTANCE);
     }
 
 

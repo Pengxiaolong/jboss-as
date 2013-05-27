@@ -56,6 +56,7 @@ import org.omg.CORBA.ORB;
 import org.omg.PortableServer.IdAssignmentPolicyValue;
 import org.omg.PortableServer.LifespanPolicyValue;
 import org.omg.PortableServer.POA;
+import org.wildfly.security.manager.WildFlySecurityManager;
 
 /**
  * <p>
@@ -91,6 +92,11 @@ public class JacORBSubsystemAdd extends AbstractAddStepHandler {
         for (AttributeDefinition attrDefinition : JacORBSubsystemDefinitions.SUBSYSTEM_ATTRIBUTES) {
             attrDefinition.validateAndSet(operation, model);
         }
+
+        if (model.hasDefined(JacORBSubsystemDefinitions.ORB_INIT_SECURITY.getName())
+                && "on".equals(model.get(JacORBSubsystemDefinitions.ORB_INIT_SECURITY.getName()).asString())) {
+            model.get(JacORBSubsystemDefinitions.ORB_INIT_SECURITY.getName()).set(JacORBSubsystemConstants.IDENTITY);
+        }
         // if generic properties have been specified, add them to the model as well.
        /* String properties = JacORBSubsystemConstants.PROPERTIES;
         if (operation.hasDefined(properties))
@@ -105,7 +111,7 @@ public class JacORBSubsystemAdd extends AbstractAddStepHandler {
         JacORBLogger.ROOT_LOGGER.activatingSubsystem();
 
         // set the ORBUseDynamicStub system property.
-        SecurityActions.setSystemProperty("org.jboss.com.sun.CORBA.ORBUseDynamicStub", "true");
+        WildFlySecurityManager.setPropertyPrivileged("org.jboss.com.sun.CORBA.ORBUseDynamicStub", "true");
         //we set the same stub factory to both the static and dynamic stub factory. As there is no way to dynamically change
         //the userDynamicStubs's property at runtime it is possible for the ORB class's <clinit> method to be
         //called before this property is set.
@@ -257,8 +263,12 @@ public class JacORBSubsystemAdd extends AbstractAddStepHandler {
 
         // check which groups of initializers are to be installed.
         String installSecurity = (String) props.remove(JacORBSubsystemConstants.ORB_INIT_SECURITY);
-        if (installSecurity.equalsIgnoreCase("on"))
-            orbInitializers.addAll(Arrays.asList(ORBInitializer.SECURITY.getInitializerClasses()));
+        if (installSecurity.equalsIgnoreCase(JacORBSubsystemConstants.CLIENT)) {
+            orbInitializers.addAll(Arrays.asList(ORBInitializer.SECURITY_CLIENT.getInitializerClasses()));
+        } else if (installSecurity.equalsIgnoreCase(JacORBSubsystemConstants.IDENTITY)
+                || installSecurity.equalsIgnoreCase("on")) {
+            orbInitializers.addAll(Arrays.asList(ORBInitializer.SECURITY_IDENTITY.getInitializerClasses()));
+        }
 
         String installTransaction = (String) props.remove(JacORBSubsystemConstants.ORB_INIT_TRANSACTIONS);
         if (installTransaction.equalsIgnoreCase("on")) {

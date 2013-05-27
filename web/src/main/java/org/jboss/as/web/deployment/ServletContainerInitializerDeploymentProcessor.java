@@ -58,6 +58,7 @@ import org.jboss.jandex.MethodParameterInfo;
 import org.jboss.modules.Module;
 import org.jboss.modules.ModuleLoadException;
 import org.jboss.vfs.VirtualFile;
+import org.jboss.as.web.common.WarMetaData;
 
 /**
  * SCI deployment processor.
@@ -167,6 +168,7 @@ public class ServletContainerInitializerDeploymentProcessor implements Deploymen
     }
 
     public void undeploy(final DeploymentUnit context) {
+        context.removeAttachment(ScisMetaData.ATTACHMENT_KEY);
     }
 
     private ServletContainerInitializer loadSci(ClassLoader classLoader, VirtualFile sci, String jar, boolean error) throws DeploymentUnitProcessingException {

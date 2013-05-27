@@ -26,6 +26,7 @@ import static org.jboss.as.osgi.OSGiConstants.SERVICE_BASE_NAME;
 import static org.jboss.as.osgi.OSGiLogger.LOGGER;
 import static org.jboss.as.osgi.OSGiMessages.MESSAGES;
 import static org.jboss.as.osgi.parser.SubsystemState.PROP_JBOSS_OSGI_SYSTEM_MODULES;
+
 import java.io.File;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -50,17 +51,18 @@ import org.jboss.msc.service.ServiceBuilder;
 import org.jboss.msc.service.ServiceContainer;
 import org.jboss.msc.service.ServiceController;
 import org.jboss.msc.service.ServiceController.Mode;
-import org.jboss.msc.service.ServiceListener.Inheritance;
 import org.jboss.msc.service.ServiceName;
 import org.jboss.msc.service.ServiceTarget;
 import org.jboss.msc.service.StartContext;
 import org.jboss.msc.service.StartException;
 import org.jboss.msc.service.StopContext;
 import org.jboss.msc.value.InjectedValue;
-import org.jboss.osgi.framework.IntegrationService;
-import org.jboss.osgi.framework.SystemPathsPlugin;
-import org.jboss.osgi.framework.internal.FrameworkBuilder;
+import org.jboss.osgi.framework.spi.FrameworkBuilderFactory;
+import org.jboss.osgi.framework.spi.FrameworkBuilder;
+import org.jboss.osgi.framework.spi.SystemPaths;
+import org.jboss.osgi.framework.spi.FrameworkBuilder.FrameworkPhase;
 import org.osgi.framework.Constants;
+import org.wildfly.security.manager.WildFlySecurityManager;
 
 /**
  * Service responsible for creating and managing the life-cycle of the OSGi Framework.
@@ -71,25 +73,28 @@ import org.osgi.framework.Constants;
  */
 public class FrameworkBootstrapService implements Service<Void> {
 
-    static final ServiceName FRAMEWORK_BOOTSTRAP_NAME = SERVICE_BASE_NAME.append("framework", "bootstrap");
-    static final String MAPPED_OSGI_SOCKET_BINDINGS = "org.jboss.as.osgi.socket.bindings";
+    public static final ServiceName SERVICE_NAME = SERVICE_BASE_NAME.append("framework", "bootstrap");
+    public static final String MAPPED_OSGI_SOCKET_BINDINGS = "org.jboss.as.osgi.socket.bindings";
 
     private final InjectedValue<ServerEnvironment> injectedServerEnvironment = new InjectedValue<ServerEnvironment>();
     private final InjectedValue<SubsystemState> injectedSubsystemState = new InjectedValue<SubsystemState>();
+    private final InitialDeploymentTracker deploymentTracker;
+    private final ServiceVerificationHandler verificationHandler;
     private final List<SubsystemExtension> extensions;
     private final OSGiRuntimeResource resource;
 
-    public static ServiceController<Void> addService(ServiceTarget target, OSGiRuntimeResource resource, List<SubsystemExtension> extensions,
-            ServiceVerificationHandler verificationHandler) {
-        FrameworkBootstrapService service = new FrameworkBootstrapService(resource, extensions);
-        ServiceBuilder<Void> builder = target.addService(FRAMEWORK_BOOTSTRAP_NAME, service);
+    public static ServiceController<Void> addService(ServiceTarget target, OSGiRuntimeResource resource, InitialDeploymentTracker deploymentTracker, List<SubsystemExtension> extensions, ServiceVerificationHandler verificationHandler) {
+        FrameworkBootstrapService service = new FrameworkBootstrapService(resource, deploymentTracker, extensions, verificationHandler);
+        ServiceBuilder<Void> builder = target.addService(FrameworkBootstrapService.SERVICE_NAME, service);
         builder.addDependency(ServerEnvironmentService.SERVICE_NAME, ServerEnvironment.class, service.injectedServerEnvironment);
         builder.addDependency(OSGiConstants.SUBSYSTEM_STATE_SERVICE_NAME, SubsystemState.class, service.injectedSubsystemState);
-        builder.addListener(Inheritance.ONCE, verificationHandler);
+        builder.addListener(verificationHandler);
         return builder.install();
     }
 
-    private FrameworkBootstrapService(OSGiRuntimeResource resource, List<SubsystemExtension> extensions) {
+    private FrameworkBootstrapService(OSGiRuntimeResource resource, InitialDeploymentTracker deploymentTracker, List<SubsystemExtension> extensions, ServiceVerificationHandler verificationHandler) {
+        this.verificationHandler = verificationHandler;
+        this.deploymentTracker = deploymentTracker;
         this.extensions = extensions;
         this.resource = resource;
     }
@@ -103,7 +108,7 @@ public class FrameworkBootstrapService implements Service<Void> {
 
             // Setup the OSGi {@link Framework} properties
             SubsystemState subsystemState = injectedSubsystemState.getValue();
-            Map<String, Object> props = new HashMap<String, Object>(subsystemState.getProperties());
+            Map<String, String> props = new HashMap<String, String>(subsystemState.getProperties());
             setupIntegrationProperties(context, props);
 
             // Register the URLStreamHandlerFactory
@@ -113,35 +118,41 @@ public class FrameworkBootstrapService implements Service<Void> {
 
             ServiceTarget serviceTarget = context.getChildTarget();
             JAXPServiceProvider.addService(serviceTarget);
-            ResolverService.addService(serviceTarget);
             RepositoryService.addService(serviceTarget);
 
+            Activation activation = subsystemState.getActivationPolicy();
+            Mode initialMode = (activation == Activation.EAGER ? Mode.ACTIVE : Mode.LAZY);
+
             // Configure the {@link Framework} builder
-            FrameworkBuilder builder = new FrameworkBuilder(props);
+            FrameworkBuilder builder = FrameworkBuilderFactory.create(props, initialMode);
             builder.setServiceContainer(serviceContainer);
             builder.setServiceTarget(serviceTarget);
 
-            // Install the integration services
-            builder.installIntegrationService(serviceContainer, serviceTarget, new BundleInstallIntegration());
-            builder.installIntegrationService(serviceContainer, serviceTarget, new FrameworkModuleIntegration(props));
-            builder.installIntegrationService(serviceContainer, serviceTarget, new ModuleLoaderIntegration());
-            builder.installIntegrationService(serviceContainer, serviceTarget, new SystemServicesIntegration(resource, extensions));
+            builder.createFrameworkServices(serviceContainer, true);
+            builder.registerIntegrationService(FrameworkPhase.CREATE, new BundleLifecycleIntegration());
+            builder.registerIntegrationService(FrameworkPhase.CREATE, new FrameworkModuleIntegration(props));
+            builder.registerIntegrationService(FrameworkPhase.CREATE, new ModuleLoaderIntegration());
+            builder.registerIntegrationService(FrameworkPhase.CREATE, new LockManagerIntegration());
+            builder.registerIntegrationService(FrameworkPhase.CREATE, new SystemServicesIntegration(resource, extensions));
+            builder.registerIntegrationService(FrameworkPhase.INIT, new BootstrapBundlesIntegration());
+            builder.registerIntegrationService(FrameworkPhase.INIT, new PersistentBundlesIntegration(deploymentTracker));
 
-            Activation activation = subsystemState.getActivationPolicy();
-            if (activation == Activation.EAGER) {
-                // Install the bootstrap bundle services
-                builder.installIntegrationService(serviceContainer, serviceTarget, new BootstrapBundlesIntegration());
-                builder.installIntegrationService(serviceContainer, serviceTarget, new PersistentBundlesIntegration());
-                builder.setInitialMode(Mode.ACTIVE);
-            } else {
-                // Exclude the bootstrap bundle services - see {@link FrameworkActivator}
-                builder.addExcludedService(IntegrationService.BOOTSTRAP_BUNDLES_INSTALL);
-                builder.addExcludedService(IntegrationService.PERSISTENT_BUNDLES_INSTALL);
-                builder.setInitialMode(Mode.LAZY);
+            // Add integration services from the extensions
+            for(SubsystemExtension extension : extensions) {
+                extension.registerIntegrationServices(builder, subsystemState);
             }
 
-            // Create the {@link Framework} services
-            builder.createFrameworkServices(true);
+            // Install the services to create the framework
+            builder.installServices(FrameworkPhase.CREATE, serviceTarget, verificationHandler);
+
+            if (activation == Activation.EAGER) {
+                builder.installServices(FrameworkPhase.INIT, serviceTarget, verificationHandler);
+                builder.installServices(FrameworkPhase.ACTIVE, serviceTarget, verificationHandler);
+            }
+
+            // Create the framework activator
+            FrameworkActivator.create(builder);
+
         } catch (Throwable th) {
             throw MESSAGES.startFailedToCreateFrameworkServices(th);
         }
@@ -158,10 +169,10 @@ public class FrameworkBootstrapService implements Service<Void> {
         return null;
     }
 
-    private void setupIntegrationProperties(StartContext context, Map<String, Object> props) {
+    private void setupIntegrationProperties(StartContext context, Map<String, String> props) {
 
         // Setup the Framework's storage area.
-        String storage = (String) props.get(Constants.FRAMEWORK_STORAGE);
+        String storage = props.get(Constants.FRAMEWORK_STORAGE);
         if (storage == null) {
             ServerEnvironment environment = injectedServerEnvironment.getValue();
             File dataDir = environment.getServerDataDir();
@@ -175,7 +186,7 @@ public class FrameworkBootstrapService implements Service<Void> {
             props.put(ModuleLogger.class.getName(), moduleLogger.getClass().getName());
 
         // Setup default system modules
-        String sysmodules = (String) props.get(PROP_JBOSS_OSGI_SYSTEM_MODULES);
+        String sysmodules = props.get(PROP_JBOSS_OSGI_SYSTEM_MODULES);
         if (sysmodules == null) {
             Set<String> sysModules = new LinkedHashSet<String>();
             sysModules.addAll(Arrays.asList(SystemPackagesIntegration.DEFAULT_SYSTEM_MODULES));
@@ -185,20 +196,29 @@ public class FrameworkBootstrapService implements Service<Void> {
         }
 
         // Setup default system packages
-        String syspackages = (String) props.get(Constants.FRAMEWORK_SYSTEMPACKAGES);
+        String syspackages = (String) getPropertyWithSystemFallback(props, Constants.FRAMEWORK_SYSTEMPACKAGES);
         if (syspackages == null) {
             Set<String> sysPackages = new LinkedHashSet<String>();
             sysPackages.addAll(Arrays.asList(SystemPackagesIntegration.JAVAX_API_PACKAGES));
-            sysPackages.addAll(Arrays.asList(SystemPathsPlugin.DEFAULT_FRAMEWORK_PACKAGES));
+            sysPackages.addAll(Arrays.asList(SystemPaths.DEFAULT_FRAMEWORK_PACKAGES));
             sysPackages.addAll(Arrays.asList(SystemPackagesIntegration.DEFAULT_INTEGRATION_PACKAGES));
             syspackages = sysPackages.toString();
             syspackages = syspackages.substring(1, syspackages.length() - 1);
             props.put(Constants.FRAMEWORK_SYSTEMPACKAGES, syspackages);
         }
 
-        String extrapackages = (String) props.get(Constants.FRAMEWORK_SYSTEMPACKAGES_EXTRA);
+        String extrapackages = (String) getPropertyWithSystemFallback(props, Constants.FRAMEWORK_SYSTEMPACKAGES_EXTRA);
         if (extrapackages != null) {
             props.put(Constants.FRAMEWORK_SYSTEMPACKAGES_EXTRA, extrapackages);
         }
+    }
+
+    // [TODO] Remove this hack when the TCK setup can configure the subsystem properly
+    Object getPropertyWithSystemFallback(Map<String, String> props, String key) {
+        Object value = props.get(key);
+        if (value == null) {
+            value = WildFlySecurityManager.getPropertyPrivileged(key, null);
+        }
+        return value;
     }
 }

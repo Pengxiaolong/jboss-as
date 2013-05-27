@@ -34,12 +34,11 @@ import org.jboss.as.server.deployment.DeploymentUnitProcessor;
 import org.jboss.as.server.deployment.module.ModuleSpecification;
 import org.jboss.modules.Module;
 import org.jboss.osgi.metadata.OSGiMetaData;
-import org.jboss.osgi.resolver.XEnvironment;
 
 /**
  * Processes deployments that have a Module attached.
  *
- * If so, register the module with the {@link XEnvironment}.
+ * If so, register the module with the {@link org.jboss.osgi.resolver.XEnvironment}.
  *
  * @author Thomas.Diesler@jboss.com
  * @since 03-Jun-2011
@@ -55,13 +54,13 @@ public class ModuleRegisterProcessor implements DeploymentUnitProcessor {
     @Override
     public void deploy(final DeploymentPhaseContext phaseContext) throws DeploymentUnitProcessingException {
 
-        // Don't register EAR deployments
+        // Don't register EAR nor WAR deployments
         final DeploymentUnit depUnit = phaseContext.getDeploymentUnit();
-        if (DeploymentTypeMarker.isType(DeploymentType.EAR, depUnit))
+        if (DeploymentTypeMarker.isType(DeploymentType.EAR, depUnit) || DeploymentTypeMarker.isType(DeploymentType.WAR, depUnit))
             return;
 
         // Don't register Bundle deployments
-        if (depUnit.hasAttachment(OSGiConstants.BUNDLE_KEY))
+        if (depUnit.hasAttachment(OSGiConstants.BUNDLE_REVISION_KEY))
             return;
 
         // Don't register private module deployments

@@ -62,13 +62,36 @@ public interface ExtensionContext {
      * @param name the name of the subsystem
      * @param majorVersion the major version of the subsystem's management interface
      * @param minorVersion the minor version of the subsystem's management interface
-     * @param minorVersion the micro version of the subsystem's management interface
+     * @param microVersion the micro version of the subsystem's management interface
      *
      * @return the {@link SubsystemRegistration}
      *
      * @throws IllegalStateException if the subsystem name has already been registered
      */
     SubsystemRegistration registerSubsystem(String name, int majorVersion, int minorVersion, int microVersion);
+
+    /**
+     * Register a new subsystem type.  The returned registration object should be used
+     * to configure XML parsers, operation handlers, and other subsystem-specific constructs
+     * for the new subsystem.  If the subsystem registration is deemed invalid by the time the
+     * extension registration is complete, the subsystem registration will be ignored, and an
+     * error message will be logged.
+     * <p>
+     * The new subsystem registration <em>must</em> register a handler and description for the
+     * {@code add} operation at its root address.  The new subsystem registration <em>must</em> register a
+     * {@code remove} operation at its root address.
+     *
+     * @param name the name of the subsystem
+     * @param majorVersion the major version of the subsystem's management interface
+     * @param minorVersion the minor version of the subsystem's management interface
+     * @param microVersion the micro version of the subsystem's management interface
+     * @param deprecated mark this extension as deprecated
+     *
+     * @return the {@link SubsystemRegistration}
+     *
+     * @throws IllegalStateException if the subsystem name has already been registered
+     */
+    SubsystemRegistration registerSubsystem(String name, int majorVersion, int minorVersion, int microVersion, boolean deprecated);
 
     /**
      * Gets the type of the current process.
@@ -114,4 +137,14 @@ public interface ExtensionContext {
      * @throws IllegalStateException if the process is not a {@link ProcessType#isServer() server}
      */
     PathManager getPathManager();
+
+    /**
+     * Returns true if subsystems should register transformers. This is true if {@link #getProcessType()} equals {@link ProcessType#HOST_CONTROLLER} and the
+     * process controller is the master domain controller.
+     *
+     * @return {@code true} if transformers should be registered
+     * @deprecated Experimental, the way transformers are registered may change to be the same as we do for parsers
+     */
+    @Deprecated
+    boolean isRegisterTransformers();
 }

@@ -23,8 +23,10 @@
 package org.jboss.as.weld.injection;
 
 import java.lang.reflect.AccessibleObject;
-import java.security.AccessController;
 import java.security.PrivilegedAction;
+import org.wildfly.security.manager.WildFlySecurityManager;
+
+import static java.security.AccessController.doPrivileged;
 
 final class SecurityActions {
 
@@ -32,48 +34,11 @@ final class SecurityActions {
         // forbidden inheritance
     }
 
-    /**
-     * Gets context classloader.
-     *
-     * @return the current context classloader
-     */
-    static ClassLoader getContextClassLoader() {
-        if (System.getSecurityManager() == null) {
-            return Thread.currentThread().getContextClassLoader();
-        } else {
-            return AccessController.doPrivileged(new PrivilegedAction<ClassLoader>() {
-                public ClassLoader run() {
-                    return Thread.currentThread().getContextClassLoader();
-                }
-            });
-        }
-    }
-
-    /**
-     * Sets context classloader.
-     *
-     * @param classLoader
-     *            the classloader
-     */
-    static void setContextClassLoader(final ClassLoader classLoader) {
-        if (System.getSecurityManager() == null) {
-            Thread.currentThread().setContextClassLoader(classLoader);
-        } else {
-            AccessController.doPrivileged(new PrivilegedAction<Object>() {
-                public Object run() {
-                    Thread.currentThread().setContextClassLoader(classLoader);
-                    return null;
-                }
-            });
-        }
-    }
-
-
     static void setAccessible(final AccessibleObject object) {
-        if (System.getSecurityManager() == null) {
+        if (! WildFlySecurityManager.isChecking()) {
             object.setAccessible(true);
         } else {
-            AccessController.doPrivileged(new PrivilegedAction<Object>() {
+            doPrivileged(new PrivilegedAction<Object>() {
                 public Object run() {
                     object.setAccessible(true);
                     return null;

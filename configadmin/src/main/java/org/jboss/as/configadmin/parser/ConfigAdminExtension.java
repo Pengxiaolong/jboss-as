@@ -23,13 +23,14 @@ package org.jboss.as.configadmin.parser;
 
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.ADD;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.COMPOSITE;
-import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.DESCRIBE;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.OP;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.OP_ADDR;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.REMOVE;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.STEPS;
+import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.SUBSYSTEM;
 
-import org.jboss.as.configadmin.service.ConfigAdminService;
+import org.jboss.as.configadmin.ConfigAdmin;
+import org.jboss.as.configadmin.service.ConfigAdminInternal;
 import org.jboss.as.configadmin.service.ConfigAdminServiceImpl;
 import org.jboss.as.controller.Extension;
 import org.jboss.as.controller.ExtensionContext;
@@ -38,17 +39,17 @@ import org.jboss.as.controller.OperationContext;
 import org.jboss.as.controller.OperationFailedException;
 import org.jboss.as.controller.PathAddress;
 import org.jboss.as.controller.PathElement;
-import org.jboss.as.controller.ReloadRequiredRemoveStepHandler;
 import org.jboss.as.controller.SubsystemRegistration;
+import org.jboss.as.controller.descriptions.ResourceDescriptionResolver;
+import org.jboss.as.controller.descriptions.StandardResourceDescriptionResolver;
 import org.jboss.as.controller.parsing.ExtensionParsingContext;
-import org.jboss.as.controller.registry.AttributeAccess;
-import org.jboss.as.controller.registry.ManagementResourceRegistration;
-import org.jboss.as.controller.registry.OperationEntry;
 import org.jboss.as.controller.transform.OperationResultTransformer;
 import org.jboss.as.controller.transform.OperationTransformer;
-import org.jboss.as.controller.transform.ResourceTransformer;
 import org.jboss.as.controller.transform.TransformationContext;
-import org.jboss.as.controller.transform.TransformersSubRegistration;
+import org.jboss.as.controller.transform.description.RejectAttributeChecker;
+import org.jboss.as.controller.transform.description.ResourceTransformationDescriptionBuilder;
+import org.jboss.as.controller.transform.description.TransformationDescription;
+import org.jboss.as.controller.transform.description.TransformationDescriptionBuilder;
 import org.jboss.dmr.ModelNode;
 import org.jboss.msc.service.ServiceController;
 
@@ -61,13 +62,21 @@ import org.jboss.msc.service.ServiceController;
 public class ConfigAdminExtension implements Extension {
 
     public static final String SUBSYSTEM_NAME = "configadmin";
+    static final PathElement SUBSYSTEM_PATH = PathElement.pathElement(SUBSYSTEM, SUBSYSTEM_NAME);
 
     private static final int MANAGEMENT_API_MAJOR_VERSION = 1;
     private static final int MANAGEMENT_API_MINOR_VERSION = 1;
     private static final int MANAGEMENT_API_MICRO_VERSION = 0;
 
-    static ConfigAdminServiceImpl getConfigAdminService(OperationContext context) {
-        ServiceController<?> controller = context.getServiceRegistry(true).getService(ConfigAdminService.SERVICE_NAME);
+    private static final String RESOURCE_NAME = ConfigAdminExtension.class.getPackage().getName() + ".LocalDescriptions";
+
+    static ResourceDescriptionResolver getResourceDescriptionResolver(final String keyPrefix) {
+        return new StandardResourceDescriptionResolver(keyPrefix, RESOURCE_NAME, ConfigAdminExtension.class.getClassLoader(), true, true);
+    }
+
+
+    static ConfigAdminInternal getConfigAdminService(OperationContext context) {
+        ServiceController<?> controller = context.getServiceRegistry(true).getService(ConfigAdmin.SERVICE_NAME);
         return controller != null ? (ConfigAdminServiceImpl) controller.getValue() : null;
     }
 
@@ -81,48 +90,44 @@ public class ConfigAdminExtension implements Extension {
 
         final SubsystemRegistration subsystem = context.registerSubsystem(SUBSYSTEM_NAME, MANAGEMENT_API_MAJOR_VERSION,
                 MANAGEMENT_API_MINOR_VERSION, MANAGEMENT_API_MICRO_VERSION);
-        final ManagementResourceRegistration registration = subsystem.registerSubsystemModel(ConfigAdminProviders.SUBSYSTEM);
-        registration.registerOperationHandler(ADD, ConfigAdminAdd.INSTANCE, ConfigAdminAdd.DESCRIPTION, false);
-        registration.registerOperationHandler(DESCRIBE, ConfigAdminDescribeHandler.INSTANCE, ConfigAdminAdd.DESCRIPTION, false, OperationEntry.EntryType.PRIVATE);
-        registration.registerOperationHandler(REMOVE, ReloadRequiredRemoveStepHandler.INSTANCE, ConfigAdminProviders.SUBSYSTEM_REMOVE, false);
+        subsystem.registerSubsystemModel(new ConfigAdminRootResource());
 
-        // Configuration Admin Settings
-        ManagementResourceRegistration configuration = registration.registerSubModel(PathElement.pathElement(ModelConstants.CONFIGURATION), ConfigAdminProviders.CONFIGURATION_DESCRIPTION);
-        configuration.registerOperationHandler(ADD, ConfigurationAdd.INSTANCE, ConfigurationAdd.DESCRIPTION, false);
-        configuration.registerOperationHandler(REMOVE, ConfigurationRemove.INSTANCE, ConfigurationRemove.DESCRIPTION, false);
-        configuration.registerOperationHandler(ModelConstants.UPDATE, ConfigurationUpdate.INSTANCE, ConfigurationUpdate.DESCRIPTION, false);
-        configuration.registerReadOnlyAttribute(ModelConstants.ENTRIES, null, AttributeAccess.Storage.CONFIGURATION);
+        if (context.isRegisterTransformers()) {
+            registerTransformers_1_0_0(subsystem);
+        }
 
-        registerTransformers_1_0_0(subsystem);
-
-        subsystem.registerXMLElementWriter(ConfigAdminWriter.INSTANCE);
+        subsystem.registerXMLElementWriter(ConfigAdminParser.INSTANCE);
     }
 
     private void registerTransformers_1_0_0(final SubsystemRegistration subsystemRegistration) {
         final ModelVersion version = ModelVersion.create(1, 0, 0);
-        final TransformersSubRegistration subsystemTransformers = subsystemRegistration.registerModelTransformers(version, ResourceTransformer.DEFAULT);
-        final TransformersSubRegistration configurationTransformers = subsystemTransformers.registerSubResource(PathElement.pathElement(ModelConstants.CONFIGURATION));
-        configurationTransformers.registerOperationTransformer(ModelConstants.UPDATE, new OperationTransformer() {
 
-            @Override
-            public TransformedOperation transformOperation(TransformationContext context, PathAddress address, ModelNode operation)
-                    throws OperationFailedException {
+        ResourceTransformationDescriptionBuilder builder = TransformationDescriptionBuilder.Factory.createSubsystemInstance();
+        builder.addChildResource(PathElement.pathElement(ModelConstants.CONFIGURATION))
+            .getAttributeBuilder()
+                .addRejectCheck(RejectAttributeChecker.SIMPLE_EXPRESSIONS, ConfigurationResource.ENTRIES)
+                .end()
+            .addOperationTransformationOverride(ModelConstants.UPDATE)
+                .setCustomOperationTransformer(new OperationTransformer() {
+                    @Override
+                    public TransformedOperation transformOperation(TransformationContext context, PathAddress address, ModelNode operation)
+                            throws OperationFailedException {
+                        ModelNode remove = operation.clone();
+                        remove.get(OP).set(REMOVE);
+                        remove.remove(ModelConstants.ENTRIES);
 
-                ModelNode remove = operation.clone();
-                remove.get(OP).set(REMOVE);
-                remove.remove(ModelConstants.ENTRIES);
+                        ModelNode add = operation.clone();
+                        add.get(OP).set(ADD);
 
-                ModelNode add = operation.clone();
-                add.get(OP).set(ADD);
+                        ModelNode composite = new ModelNode();
+                        composite.get(OP).set(COMPOSITE);
+                        composite.get(OP_ADDR).setEmptyList();
+                        composite.get(STEPS).add(remove);
+                        composite.get(STEPS).add(add);
 
-                ModelNode composite = new ModelNode();
-                composite.get(OP).set(COMPOSITE);
-                composite.get(OP_ADDR).setEmptyList();
-                composite.get(STEPS).add(remove);
-                composite.get(STEPS).add(add);
-
-                return new TransformedOperation(composite, OperationResultTransformer.ORIGINAL_RESULT);
-            }
-        });
+                        return new TransformedOperation(composite, OperationResultTransformer.ORIGINAL_RESULT);
+                    }
+                });
+        TransformationDescription.Tools.register(builder.build(), subsystemRegistration, version);
     }
 }

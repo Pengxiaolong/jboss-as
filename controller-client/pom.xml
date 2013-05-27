@@ -27,15 +27,15 @@
     <modelVersion>4.0.0</modelVersion>
 
     <parent>
-        <groupId>org.jboss.as</groupId>
-        <artifactId>jboss-as-parent</artifactId>
-        <version>7.2.0.Alpha1-SNAPSHOT</version>
+        <groupId>org.wildfly</groupId>
+        <artifactId>wildfly-parent</artifactId>
+        <version>8.0.0.Alpha2-SNAPSHOT</version>
     </parent>
 
-    <groupId>org.jboss.as</groupId>
-    <artifactId>jboss-as-controller-client</artifactId>
+    <groupId>org.wildfly</groupId>
+    <artifactId>wildfly-controller-client</artifactId>
 
-    <name>JBoss Application Server: Controller Client</name>
+    <name>WildFly: Controller Client</name>
 
     <build>
         <plugins>
@@ -49,22 +49,13 @@
                     <enableAssertions>false</enableAssertions>
                 </configuration>
             </plugin>
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-compiler-plugin</artifactId>
-                <configuration>
-                    <compilerArgument>
-                        -AgeneratedTranslationFilesPath=${project.build.directory}/generated-translation-files
-                    </compilerArgument>
-                </configuration>
-            </plugin>
         </plugins>
     </build>
 
     <dependencies>
         <dependency>
-            <groupId>org.jboss.as</groupId>
-            <artifactId>jboss-as-protocol</artifactId>
+            <groupId>org.wildfly</groupId>
+            <artifactId>wildfly-protocol</artifactId>
         </dependency>
         <dependency>
             <groupId>org.jboss</groupId>

@@ -1,3 +1,5 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
 <!--
   ~ JBoss, Home of Professional Open Source.
   ~ Copyright (c) 2011, Red Hat, Inc., and individual contributors
@@ -31,30 +33,30 @@
 
    <xs:element name="security-role" type="security-roleType" substitutionGroup="javaee:assembly-descriptor-entry"/>
 
-   <xsd:complexType name="security-roleType">
-      <xsd:annotation>
-         <xsd:documentation> The security-role element contains the definition of a security role.
-            The definition consists of an the security role name and principal name element(s). </xsd:documentation>
-      </xsd:annotation>
-      <xsd:sequence>
-         <xsd:element name="description"
+   <xs:complexType name="security-roleType">
+      <xs:annotation>
+         <xs:documentation> The security-role element contains the definition of a security role.
+            The definition consists of an the security role name and principal name element(s). </xs:documentation>
+      </xs:annotation>
+      <xs:sequence>
+         <xs:element name="description"
             type="javaee:descriptionType"
             minOccurs="0"
             maxOccurs="unbounded"/>
-         <xsd:element name="role-name"
+         <xs:element name="role-name"
             type="javaee:role-nameType"/>
-         <xsd:element name="principal-name" type="principal-nameType" maxOccurs="unbounded"/>
-      </xsd:sequence>
-      <xsd:attribute name="id" type="xsd:ID"/>
-   </xsd:complexType>
+         <xs:element name="principal-name" type="principal-nameType" maxOccurs="unbounded"/>
+      </xs:sequence>
+      <xs:attribute name="id" type="xs:ID"/>
+   </xs:complexType>
    
-   <xsd:complexType name="principal-nameType">
-      <xsd:annotation>
-         <xsd:documentation> The principal-name element is the name of the principal that is mapped
-            to the assembly role-name. </xsd:documentation>
-      </xsd:annotation>
-      <xsd:simpleContent>
-         <xsd:restriction base="javaee:string"/>
-      </xsd:simpleContent>
-   </xsd:complexType>
+   <xs:complexType name="principal-nameType">
+      <xs:annotation>
+         <xs:documentation> The principal-name element is the name of the principal that is mapped
+            to the assembly role-name. </xs:documentation>
+      </xs:annotation>
+      <xs:simpleContent>
+         <xs:restriction base="javaee:string"/>
+      </xs:simpleContent>
+   </xs:complexType>
 </xs:schema>

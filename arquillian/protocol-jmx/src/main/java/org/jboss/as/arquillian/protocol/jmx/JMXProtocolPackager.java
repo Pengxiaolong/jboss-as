@@ -51,8 +51,8 @@ import org.jboss.as.arquillian.service.InContainerManagementClientExtension;
 import org.jboss.as.arquillian.service.JMXProtocolEndpointExtension;
 import org.jboss.logging.Logger;
 import org.jboss.msc.service.ServiceActivator;
-import org.jboss.osgi.spi.ManifestBuilder;
-import org.jboss.osgi.spi.OSGiManifestBuilder;
+import org.jboss.osgi.metadata.ManifestBuilder;
+import org.jboss.osgi.metadata.OSGiManifestBuilder;
 import org.jboss.shrinkwrap.api.Archive;
 import org.jboss.shrinkwrap.api.ArchivePath;
 import org.jboss.shrinkwrap.api.ArchivePaths;
@@ -84,6 +84,7 @@ public class JMXProtocolPackager implements DeploymentPackager {
         defaultDependencies.add("org.jboss.modules");
         defaultDependencies.add("org.jboss.msc");
         defaultDependencies.add("org.osgi.core");
+        defaultDependencies.add("org.wildfly.security.manager");
     }
 
     private static final Logger log = Logger.getLogger(JMXProtocolPackager.class);
@@ -155,7 +156,8 @@ public class JMXProtocolPackager implements DeploymentPackager {
                 dependencies.append("org.jboss.dmr,");
                 dependencies.append("org.jboss.msc,");
                 dependencies.append("org.jboss.osgi.framework,");
-                dependencies.append("org.osgi.core");
+                dependencies.append("org.osgi.core,");
+                dependencies.append("org.wildfly.security.manager");
                 builder.addManifestHeader("Dependencies", dependencies.toString());
                 return builder.openStream();
             }

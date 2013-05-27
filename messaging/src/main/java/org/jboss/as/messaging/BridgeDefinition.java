@@ -23,30 +23,24 @@
 package org.jboss.as.messaging;
 
 import static org.jboss.as.controller.SimpleAttributeDefinitionBuilder.create;
-import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.START;
-import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.STOP;
+import static org.jboss.as.messaging.CommonAttributes.BRIDGE_CONFIRMATION_WINDOW_SIZE;
 import static org.jboss.as.messaging.CommonAttributes.CONNECTOR_REF_STRING;
+import static org.jboss.as.messaging.CommonAttributes.HA;
 import static org.jboss.as.messaging.CommonAttributes.STATIC_CONNECTORS;
 import static org.jboss.dmr.ModelType.BOOLEAN;
 import static org.jboss.dmr.ModelType.INT;
 import static org.jboss.dmr.ModelType.STRING;
 
-import org.hornetq.core.config.impl.ConfigurationImpl;
+import org.hornetq.api.config.HornetQDefaultConfiguration;
 import org.jboss.as.controller.AttributeDefinition;
-import org.jboss.as.controller.OperationContext;
-import org.jboss.as.controller.OperationFailedException;
-import org.jboss.as.controller.OperationStepHandler;
-import org.jboss.as.controller.PathAddress;
 import org.jboss.as.controller.PathElement;
 import org.jboss.as.controller.PrimitiveListAttributeDefinition;
 import org.jboss.as.controller.SimpleAttributeDefinition;
 import org.jboss.as.controller.SimpleResourceDefinition;
-import org.jboss.as.controller.descriptions.ModelDescriptionConstants;
 import org.jboss.as.controller.operations.validation.StringLengthValidator;
 import org.jboss.as.controller.registry.AttributeAccess;
 import org.jboss.as.controller.registry.ManagementResourceRegistration;
 import org.jboss.dmr.ModelNode;
-
 
 /**
  * Bridge resource definition
@@ -55,8 +49,7 @@ import org.jboss.dmr.ModelNode;
  */
 public class BridgeDefinition extends SimpleResourceDefinition {
 
-    public static final String[] OPERATIONS = {START, STOP};
-    private static final PathElement BRIDGE_PATH = PathElement.pathElement(CommonAttributes.BRIDGE);
+    public static final PathElement PATH = PathElement.pathElement(CommonAttributes.BRIDGE);
 
     private final boolean registerRuntimeOnly;
 
@@ -69,7 +62,7 @@ public class BridgeDefinition extends SimpleResourceDefinition {
             .setRestartAllServices()
             .build();
 
-    public static SimpleAttributeDefinition DISCOVERY_GROUP_NAME = create(CommonAttributes.DISCOVERY_GROUP_NAME, STRING)
+    public static final SimpleAttributeDefinition DISCOVERY_GROUP_NAME = create(CommonAttributes.DISCOVERY_GROUP_NAME, STRING)
             .setAllowNull(true)
             .setAlternatives(STATIC_CONNECTORS)
             .setAttributeMarshaller(AttributeMarshallers.DISCOVERY_GROUP_MARSHALLER)
@@ -77,42 +70,46 @@ public class BridgeDefinition extends SimpleResourceDefinition {
             .build();
 
     public static final SimpleAttributeDefinition QUEUE_NAME = create(CommonAttributes.QUEUE_NAME, STRING)
+            .setAllowExpression(true)
             .setRestartAllServices()
             .build();
 
     public static final SimpleAttributeDefinition PASSWORD = create("password", STRING)
             .setAllowNull(true)
             .setAllowExpression(true)
-            .setDefaultValue(new ModelNode().set(ConfigurationImpl.DEFAULT_CLUSTER_PASSWORD))
+            .setDefaultValue(new ModelNode().set(HornetQDefaultConfiguration.getDefaultClusterPassword()))
             .setRestartAllServices()
             .build();
 
     public static final SimpleAttributeDefinition USER = create("user", STRING)
             .setAllowNull(true)
             .setAllowExpression(true)
-            .setDefaultValue(new ModelNode().set(ConfigurationImpl.DEFAULT_CLUSTER_USER))
+            .setDefaultValue(new ModelNode().set(HornetQDefaultConfiguration.getDefaultClusterUser()))
             .setRestartAllServices()
             .build();
 
     public static final SimpleAttributeDefinition USE_DUPLICATE_DETECTION = create("use-duplicate-detection", BOOLEAN)
             .setAllowNull(true)
-            .setDefaultValue(new ModelNode().set(ConfigurationImpl.DEFAULT_BRIDGE_DUPLICATE_DETECTION))
+            .setDefaultValue(new ModelNode().set(HornetQDefaultConfiguration.isDefaultBridgeDuplicateDetection()))
+            .setAllowExpression(true)
             .setRestartAllServices()
             .build();
 
     public static final SimpleAttributeDefinition RECONNECT_ATTEMPTS = create("reconnect-attempts", INT)
             .setAllowNull(true)
-            .setDefaultValue(new ModelNode().set(ConfigurationImpl.DEFAULT_BRIDGE_RECONNECT_ATTEMPTS))
+            .setDefaultValue(new ModelNode().set(HornetQDefaultConfiguration.getDefaultBridgeReconnectAttempts()))
+            .setAllowExpression(true)
             .setRestartAllServices()
             .build();
 
     public static final SimpleAttributeDefinition FORWARDING_ADDRESS = create("forwarding-address", STRING)
             .setAllowNull(true)
+            .setAllowExpression(true)
             .setRestartAllServices()
             .build();
 
     public static final AttributeDefinition[] ATTRIBUTES = {
-            BridgeDefinition.QUEUE_NAME, FORWARDING_ADDRESS, CommonAttributes.HA,
+            QUEUE_NAME, FORWARDING_ADDRESS, CommonAttributes.HA,
             CommonAttributes.FILTER, CommonAttributes.TRANSFORMER_CLASS_NAME,
             CommonAttributes.MIN_LARGE_MESSAGE_SIZE, CommonAttributes.CHECK_PERIOD, CommonAttributes.CONNECTION_TTL,
             CommonAttributes.RETRY_INTERVAL, CommonAttributes.RETRY_INTERVAL_MULTIPLIER, CommonAttributes.MAX_RETRY_INTERVAL,
@@ -121,9 +118,15 @@ public class BridgeDefinition extends SimpleResourceDefinition {
             USER, PASSWORD,
             CONNECTOR_REFS, DISCOVERY_GROUP_NAME
     };
+    public static final AttributeDefinition[] ATTRIBUTES_WITH_EXPRESSION_ALLOWED_IN_1_2_0 = { QUEUE_NAME, USE_DUPLICATE_DETECTION,
+            RECONNECT_ATTEMPTS, FORWARDING_ADDRESS,
+            CommonAttributes.FILTER, HA, CommonAttributes.MIN_LARGE_MESSAGE_SIZE,
+            CommonAttributes.CHECK_PERIOD, CommonAttributes.CONNECTION_TTL,
+            CommonAttributes.RETRY_INTERVAL, CommonAttributes.RETRY_INTERVAL_MULTIPLIER, CommonAttributes.MAX_RETRY_INTERVAL,
+            BRIDGE_CONFIRMATION_WINDOW_SIZE };
 
     public BridgeDefinition(final boolean registerRuntimeOnly) {
-        super(BRIDGE_PATH,
+        super(PATH,
                 MessagingExtension.getResourceDescriptionResolver(CommonAttributes.BRIDGE),
                 BridgeAdd.INSTANCE,
                 BridgeRemove.INSTANCE);
@@ -143,17 +146,7 @@ public class BridgeDefinition extends SimpleResourceDefinition {
             BridgeControlHandler.INSTANCE.registerAttributes(registry);
         }
 
-        registry.registerReadWriteAttribute(CommonAttributes.FAILOVER_ON_SERVER_SHUTDOWN, null, new OperationStepHandler() {
-
-            @Override
-            public void execute(OperationContext context, ModelNode operation) throws OperationFailedException {
-
-                if (operation.hasDefined(CommonAttributes.FAILOVER_ON_SERVER_SHUTDOWN.getName())) {
-                    PathAddress pa = PathAddress.pathAddress(operation.require(ModelDescriptionConstants.OP_ADDR));
-                    MessagingLogger.MESSAGING_LOGGER.deprecatedAttribute(CommonAttributes.FAILOVER_ON_SERVER_SHUTDOWN.getName(), pa);
-                }
-            }
-        });
+        registry.registerReadWriteAttribute(CommonAttributes.FAILOVER_ON_SERVER_SHUTDOWN, null, new DeprecatedAttributeWriteHandler(CommonAttributes.FAILOVER_ON_SERVER_SHUTDOWN.getName()));
     }
 
     @Override

@@ -41,6 +41,7 @@ import org.jboss.as.protocol.StreamUtils;
 import org.jboss.staxmapper.XMLElementReader;
 import org.jboss.staxmapper.XMLExtendedStreamReader;
 import org.jboss.staxmapper.XMLMapper;
+import org.wildfly.security.manager.WildFlySecurityManager;
 
 /**
  * Represents the JBoss CLI configuration.
@@ -62,7 +63,10 @@ class CliConfigImpl implements CliConfig {
     private static final String HOST = "host";
     private static final String MAX_SIZE = "max-size";
     private static final String PORT = "port";
+    private static final String PROTOCOL = "protocol";
+    private static final String CONNECTION_TIMEOUT = "connection-timeout";
     private static final String RESOLVE_PARAMETER_VALUES = "resolve-parameter-values";
+    private static final String SILENT = "silent";
     private static final String VALIDATE_OPERATION_REQUESTS = "validate-operation-requests";
 
     static CliConfig load(final CommandContext ctx) throws CliInitializationException {
@@ -85,14 +89,14 @@ class CliConfigImpl implements CliConfig {
     }
 
     private static File findCLIFileFromSystemProperty() {
-        final String jbossCliConfig = SecurityActions.getSystemProperty(JBOSS_XML_CONFIG);
+        final String jbossCliConfig = WildFlySecurityManager.getPropertyPrivileged(JBOSS_XML_CONFIG, null);
         if (jbossCliConfig == null) return null;
 
         return new File(jbossCliConfig);
     }
 
     private static File findCLIFileInCurrentDirectory() {
-        final String currentDir = SecurityActions.getSystemProperty(CURRENT_WORKING_DIRECTORY);
+        final String currentDir = WildFlySecurityManager.getPropertyPrivileged(CURRENT_WORKING_DIRECTORY, null);
         if (currentDir == null) return null;
 
         File jbossCliFile = new File(currentDir, JBOSS_CLI_FILE);
@@ -103,7 +107,7 @@ class CliConfigImpl implements CliConfig {
     }
 
     private static File findCLIFileInJBossHome() {
-        final String jbossHome = SecurityActions.getEnvironmentVariable("JBOSS_HOME");
+        final String jbossHome = WildFlySecurityManager.getEnvPropertyPrivileged("JBOSS_HOME", null);
         if (jbossHome == null) return null;
 
         File jbossCliFile = new File(jbossHome + File.separatorChar + "bin", JBOSS_CLI_FILE);
@@ -150,7 +154,7 @@ class CliConfigImpl implements CliConfig {
         }
         if(str.startsWith("${") && str.endsWith("}")) {
             str = str.substring(2, str.length() - 1);
-            final String resolved = SecurityActions.getSystemProperty(str);
+            final String resolved = WildFlySecurityManager.getPropertyPrivileged(str, null);
             if(resolved == null) {
                 throw new XMLStreamException("Failed to resolve '" + str + "' to a non-null value.");
             }
@@ -164,15 +168,19 @@ class CliConfigImpl implements CliConfig {
     }
 
     private CliConfigImpl() {
+        defaultControllerProtocol = "http-remoting";
         defaultControllerHost = "localhost";
-        defaultControllerPort = 9999;
+        defaultControllerPort = 9990;
 
         historyEnabled = true;
         historyFileName = ".jboss-cli-history";
-        historyFileDir = SecurityActions.getSystemProperty("user.home");
+        historyFileDir = WildFlySecurityManager.getPropertyPrivileged("user.home", null);
         historyMaxSize = 500;
+
+        connectionTimeout = 5000;
     }
 
+    private String defaultControllerProtocol;
     private String defaultControllerHost;
     private int defaultControllerPort;
 
@@ -181,10 +189,19 @@ class CliConfigImpl implements CliConfig {
     private String historyFileDir;
     private int historyMaxSize;
 
+    private int connectionTimeout;
+
     private boolean validateOperationRequests = true;
     private boolean resolveParameterValues = false;
 
     private SSLConfig sslConfig;
+
+    private boolean silent;
+
+    @Override
+    public String getDefaultControllerProtocol() {
+        return defaultControllerProtocol;
+    }
 
     @Override
     public String getDefaultControllerHost() {
@@ -217,6 +234,11 @@ class CliConfigImpl implements CliConfig {
     }
 
     @Override
+    public int getConnectionTimeout() {
+        return connectionTimeout;
+    }
+
+    @Override
     public boolean isValidateOperationRequests() {
         return validateOperationRequests;
     }
@@ -229,6 +251,11 @@ class CliConfigImpl implements CliConfig {
     @Override
     public SSLConfig getSslConfig() {
         return sslConfig;
+    }
+
+    @Override
+    public boolean isSilent() {
+        return silent;
     }
 
     static class SslConfig implements SSLConfig {
@@ -310,6 +337,8 @@ class CliConfigImpl implements CliConfig {
             switch (readerNS) {
                 case CLI_1_0:
                 case CLI_1_1:
+                case CLI_1_2:
+                case CLI_1_3:
                     readCLIElement_1_0(reader, readerNS, config);
                     break;
                 default:
@@ -342,6 +371,15 @@ class CliConfigImpl implements CliConfig {
                         config.validateOperationRequests = resolveBoolean(reader.getElementText());
                     } else if(localName.equals(RESOLVE_PARAMETER_VALUES)) {
                         config.resolveParameterValues = resolveBoolean(reader.getElementText());
+                    } else if (CONNECTION_TIMEOUT.equals(localName)) {
+                        final String text = reader.getElementText();
+                        try {
+                            config.connectionTimeout = Integer.parseInt(text);
+                        } catch(NumberFormatException e) {
+                            throw new XMLStreamException("Failed to parse " + JBOSS_CLI + " " + CONNECTION_TIMEOUT + " value '" + text + "'", e);
+                        }
+                    } else if(localName.equals(SILENT)) {
+                        config.silent = resolveBoolean(reader.getElementText());
                     } else {
                         throw new XMLStreamException("Unexpected element: " + localName);
                     }
@@ -361,6 +399,8 @@ class CliConfigImpl implements CliConfig {
                 final String resolved = resolveString(reader.getElementText());
                 if (HOST.equals(localName)) {
                     config.defaultControllerHost = resolved;
+                } else if (PROTOCOL.equals(localName)) {
+                    config.defaultControllerProtocol = resolved;
                 } else if (PORT.equals(localName)) {
                     try {
                         config.defaultControllerPort = Integer.parseInt(resolved);

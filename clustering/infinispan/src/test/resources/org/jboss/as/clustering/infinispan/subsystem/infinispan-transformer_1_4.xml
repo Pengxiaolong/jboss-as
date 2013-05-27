@@ -36,9 +36,13 @@
                 <write-behind flush-lock-timeout="2" modification-queue-size="2048" shutdown-timeout="20000" thread-pool-size="1" />
             </file-store>
             <indexing index="LOCAL">
+            <!--
+                 TODO: These are not configurable in 7.1.x and should only be discarded if they have different values from the values assumed in 7.1.x.
+                 Currently it is set up to discard if they are undefined
                 <property name="hibernate.search.default.directory_provider">infinispan</property>
                 <property name="hibernate.search.infinispan.cachemanager_jndiname">java:jboss/infinispan/container/HibernateSearch</property>
                 <property name="hibernate.search.default.worker.backend">jgroups</property>
+                 -->
             </indexing>
         </local-cache>
         <invalidation-cache name="invalid" mode="ASYNC" batching="true" queue-flush-interval="10" queue-size="1000" start="LAZY" async-marshalling="true">
@@ -62,11 +66,11 @@
             <state-transfer enabled="true" timeout="60000" chunk-size="10000" />
             <store class="org.infinispan.loaders.file.FileCacheStore" fetch-state="true" passivation="true" preload="false" purge="true" shared="false" singleton="false">
                 <write-behind flush-lock-timeout="2" modification-queue-size="2048" shutdown-timeout="20000" thread-pool-size="1" />
-                <property name="location">${java.io.tmpdir}</property>
+                <property name="location">location</property>
             </store>
             <indexing index="NONE" />
         </replicated-cache>
-        <distributed-cache name="dist" mode="SYNC" batching="true" l1-lifespan="1200000" owners="4" remote-timeout="35000" start="EAGER" virtual-nodes="2"  async-marshalling="true">
+        <distributed-cache name="dist" mode="SYNC" batching="true" l1-lifespan="1200000" owners="4" remote-timeout="35000" start="EAGER" segments="12"  async-marshalling="true">
             <locking acquire-timeout="30000" concurrency-level="2000" isolation="READ_COMMITTED" striping="true"/>
             <transaction mode="FULL_XA" stop-timeout="60000"  locking="OPTIMISTIC"/>
             <eviction max-entries="20000" strategy="UNORDERED"/>

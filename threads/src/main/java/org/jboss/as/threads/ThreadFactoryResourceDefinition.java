@@ -23,13 +23,16 @@
 package org.jboss.as.threads;
 
 import org.jboss.as.controller.PathElement;
-import org.jboss.as.controller.ResourceDefinition;
+import org.jboss.as.controller.ReadResourceNameOperationStepHandler;
+import org.jboss.as.controller.ServiceRemoveStepHandler;
 import org.jboss.as.controller.SimpleResourceDefinition;
 import org.jboss.as.controller.descriptions.StandardResourceDescriptionResolver;
 import org.jboss.as.controller.registry.ManagementResourceRegistration;
+import org.jboss.as.controller.transform.description.RejectAttributeChecker;
+import org.jboss.as.controller.transform.description.ResourceTransformationDescriptionBuilder;
 
 /**
- * {@link ResourceDefinition} for a thread factory resource.
+ * {@link org.jboss.as.controller.ResourceDefinition} for a thread factory resource.
  *
  * @author Brian Stansberry (c) 2011 Red Hat Inc.
  */
@@ -42,12 +45,24 @@ public class ThreadFactoryResourceDefinition extends SimpleResourceDefinition {
     public ThreadFactoryResourceDefinition(String type) {
         super(PathElement.pathElement(type),
                 new StandardResourceDescriptionResolver(CommonAttributes.THREAD_FACTORY, ThreadsExtension.RESOURCE_NAME,
-                ThreadsExtension.class.getClassLoader(), true, false), ThreadFactoryAdd.INSTANCE, ThreadFactoryRemove.INSTANCE);
+                ThreadsExtension.class.getClassLoader(), true, false),
+                ThreadFactoryAdd.INSTANCE,
+                new ServiceRemoveStepHandler(ThreadsServices.FACTORY, ThreadFactoryAdd.INSTANCE));
     }
 
     @Override
     public void registerAttributes(ManagementResourceRegistration resourceRegistration) {
-        resourceRegistration.registerReadOnlyAttribute(PoolAttributeDefinitions.NAME, null);
+        resourceRegistration.registerReadOnlyAttribute(PoolAttributeDefinitions.NAME, ReadResourceNameOperationStepHandler.INSTANCE);
         ThreadFactoryWriteAttributeHandler.INSTANCE.registerAttributes(resourceRegistration);
+    }
+
+    public static void registerTransformers1_0(ResourceTransformationDescriptionBuilder parent) {
+        registerTransformers1_0(parent, CommonAttributes.THREAD_FACTORY);
+    }
+
+    public static void registerTransformers1_0(ResourceTransformationDescriptionBuilder parent, String type) {
+        parent.addChildResource(PathElement.pathElement(type))
+        .getAttributeBuilder()
+            .addRejectCheck(RejectAttributeChecker.SIMPLE_EXPRESSIONS, PoolAttributeDefinitions.GROUP_NAME, PoolAttributeDefinitions.THREAD_NAME_PATTERN);
     }
 }

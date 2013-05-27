@@ -26,24 +26,24 @@
     <modelVersion>4.0.0</modelVersion>
 
     <parent>
-        <groupId>org.jboss.as</groupId>
-        <artifactId>jboss-as-arquillian</artifactId>
-        <version>7.2.0.Alpha1-SNAPSHOT</version>
+        <groupId>org.wildfly</groupId>
+        <artifactId>wildfly-arquillian</artifactId>
+        <version>8.0.0.Alpha2-SNAPSHOT</version>
     </parent>
-    <artifactId>jboss-as-arquillian-container-domain-managed</artifactId>
+    <artifactId>wildfly-arquillian-container-domain-managed</artifactId>
 
-    <name>JBoss Application Server: Arquillian Managed Domain Container</name>
+    <name>WildFly: Arquillian Managed Domain Container</name>
 
     <packaging>jar</packaging>
 
     <properties>
-        <jboss.home>${project.basedir}/../../build/target/jboss-as-${jboss.as.release.version}</jboss.home>
+        <jboss.home>${project.basedir}/../../${wildfly.build.output.dir}</jboss.home>
     </properties>
 
     <dependencies>
         <dependency>
-            <groupId>org.jboss.as</groupId>
-            <artifactId>jboss-as-arquillian-common-domain</artifactId>
+            <groupId>org.wildfly</groupId>
+            <artifactId>wildfly-arquillian-common-domain</artifactId>
         </dependency>
         <dependency>
             <groupId>org.jboss.logging</groupId>
@@ -70,12 +70,12 @@
         </dependency>
         <dependency>
             <groupId>org.jboss.spec.javax.ejb</groupId>
-            <artifactId>jboss-ejb-api_3.1_spec</artifactId>
+            <artifactId>jboss-ejb-api_3.2_spec</artifactId>
             <scope>test</scope>
         </dependency>
         <dependency>
             <groupId>org.jboss.spec.javax.servlet</groupId>
-            <artifactId>jboss-servlet-api_3.0_spec</artifactId>
+            <artifactId>jboss-servlet-api_3.1_spec</artifactId>
             <scope>test</scope>
         </dependency>
     </dependencies>

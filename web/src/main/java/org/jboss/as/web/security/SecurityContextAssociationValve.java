@@ -23,7 +23,9 @@
 package org.jboss.as.web.security;
 
 import java.io.IOException;
+import java.security.AccessController;
 import java.security.Principal;
+import java.security.PrivilegedAction;
 import java.util.Map;
 
 import javax.security.jacc.PolicyContext;
@@ -39,7 +41,7 @@ import org.apache.catalina.connector.Response;
 import org.apache.catalina.valves.ValveBase;
 import org.jboss.as.server.deployment.DeploymentUnit;
 import org.jboss.as.web.WebLogger;
-import org.jboss.as.web.deployment.WarMetaData;
+import org.jboss.as.web.common.WarMetaData;
 import org.jboss.metadata.javaee.jboss.RunAsIdentityMetaData;
 import org.jboss.metadata.web.jboss.JBossWebMetaData;
 import org.jboss.security.RunAsIdentity;
@@ -47,6 +49,7 @@ import org.jboss.security.SecurityConstants;
 import org.jboss.security.SecurityContext;
 import org.jboss.security.SecurityRolesAssociation;
 import org.jboss.security.SecurityUtil;
+import org.jboss.security.SimplePrincipal;
 
 /**
  * A {@code Valve} that creates a {@code SecurityContext} if one doesn't exist and sets the security information based on the
@@ -105,6 +108,7 @@ public class SecurityContextAssociationValve extends ValveBase {
             SecurityActions.setSecurityContextOnAssociation(sc);
         }
 
+        String previousContextID = null;
         try {
             Wrapper servlet = null;
             try {
@@ -150,7 +154,7 @@ public class SecurityContextAssociationValve extends ValveBase {
                 if (principal != null) {
                     WebLogger.WEB_SECURITY_LOGGER.tracef("Restoring principal info from cache");
                     if (createdSecurityContext) {
-                        sc.getUtil().createSubjectInfo(principal.getUserPrincipal(), principal.getCredentials(),
+                        sc.getUtil().createSubjectInfo(new SimplePrincipal(principal.getName()), principal.getCredentials(),
                                 principal.getSubject());
                     }
                 }
@@ -159,7 +163,7 @@ public class SecurityContextAssociationValve extends ValveBase {
                 WebLogger.WEB_SECURITY_LOGGER.debug("Failed to determine servlet", e);
             }
             // set JACC contextID
-            PolicyContext.setContextID(contextId);
+            previousContextID = setContextID(contextId);
 
             // Perform the request
             getNext().invoke(request, response);
@@ -170,7 +174,7 @@ public class SecurityContextAssociationValve extends ValveBase {
             WebLogger.WEB_SECURITY_LOGGER.tracef("End invoke, caller=" + caller);
             SecurityActions.clearSecurityContext();
             SecurityRolesAssociation.setSecurityRoles(null);
-            PolicyContext.setContextID(null);
+            setContextID(previousContextID);
             activeRequest.set(null);
         }
     }
@@ -179,4 +183,24 @@ public class SecurityContextAssociationValve extends ValveBase {
         return activeRequest.get();
     }
 
+    private static class SetContextIDAction implements PrivilegedAction<String> {
+
+        private String contextID;
+
+        SetContextIDAction(String contextID) {
+            this.contextID = contextID;
+        }
+
+        @Override
+        public String run() {
+            String currentContextID = PolicyContext.getContextID();
+            PolicyContext.setContextID(this.contextID);
+            return currentContextID;
+        }
+    }
+
+    private String setContextID(String contextID) {
+        PrivilegedAction<String> action = new SetContextIDAction(contextId);
+        return AccessController.doPrivileged(action);
+    }
 }

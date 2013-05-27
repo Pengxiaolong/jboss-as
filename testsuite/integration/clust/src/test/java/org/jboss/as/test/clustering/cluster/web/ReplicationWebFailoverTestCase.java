@@ -23,9 +23,13 @@ package org.jboss.as.test.clustering.cluster.web;
 
 import org.jboss.arquillian.container.test.api.Deployment;
 import org.jboss.arquillian.container.test.api.TargetsContainer;
+import org.jboss.as.test.clustering.ViewChangeListener;
+import org.jboss.as.test.clustering.ViewChangeListenerBean;
+import org.jboss.as.test.clustering.ViewChangeListenerServlet;
 import org.jboss.as.test.clustering.single.web.SimpleServlet;
 import org.jboss.shrinkwrap.api.Archive;
 import org.jboss.shrinkwrap.api.ShrinkWrap;
+import org.jboss.shrinkwrap.api.asset.StringAsset;
 import org.jboss.shrinkwrap.api.spec.WebArchive;
 
 import static org.jboss.as.test.clustering.ClusteringTestConstants.*;
@@ -35,21 +39,23 @@ public class ReplicationWebFailoverTestCase extends ClusteredWebFailoverAbstract
     @Deployment(name = DEPLOYMENT_1, managed = false, testable = false)
     @TargetsContainer(CONTAINER_1)
     public static Archive<?> deployment0() {
-        WebArchive war = ShrinkWrap.create(WebArchive.class, "distributable.war");
-        war.addClass(SimpleServlet.class);
-        // Take web.xml from the managed test.
-        war.setWebXML(ClusteredWebSimpleTestCase.class.getPackage(), "web.xml");
-        System.out.println(war.toString(true));
-        return war;
+        return getDeployment();
     }
 
     @Deployment(name = DEPLOYMENT_2, managed = false, testable = false)
     @TargetsContainer(CONTAINER_2)
     public static Archive<?> deployment1() {
+        return getDeployment();
+    }
+
+    private static Archive<?> getDeployment() {
         WebArchive war = ShrinkWrap.create(WebArchive.class, "distributable.war");
         war.addClass(SimpleServlet.class);
+        // Take web.xml from the managed test.
         war.setWebXML(ClusteredWebSimpleTestCase.class.getPackage(), "web.xml");
-        System.out.println(war.toString(true));
+        war.addClasses(ViewChangeListenerServlet.class, ViewChangeListener.class, ViewChangeListenerBean.class);
+        war.setManifest(new StringAsset("Manifest-Version: 1.0\nDependencies: org.jboss.msc, org.jboss.as.clustering.common, org.infinispan\n"));
+        log.info(war.toString(true));
         return war;
     }
 

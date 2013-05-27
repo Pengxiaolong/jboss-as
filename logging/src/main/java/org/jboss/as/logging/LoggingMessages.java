@@ -28,10 +28,10 @@ import java.util.EnumSet;
 import java.util.logging.Handler;
 
 import org.jboss.as.server.deployment.DeploymentUnitProcessingException;
+import org.jboss.logging.Messages;
 import org.jboss.logging.annotations.Cause;
 import org.jboss.logging.annotations.Message;
 import org.jboss.logging.annotations.MessageBundle;
-import org.jboss.logging.Messages;
 
 /**
  * This module is using message IDs in the range 11500-11599.
@@ -400,15 +400,17 @@ public interface LoggingMessages {
      * @return the message
      */
     @Message(id = 11565, value = "Failed to write configuration file %s")
-    String failedToWriteConfigurationFile(File fileName);
+    RuntimeException failedToWriteConfigurationFile(@Cause Throwable e, File fileName);
 
     /**
      * Creates an exception indicating a failure was detected while performing a rollback.
      *
-     * @return an {@link IllegalStateException} for the error
+     * @param cause the cause of the failure
+     *
+     * @return an {@link RuntimeException} for the error
      */
     @Message(id = 11566, value = "A failure was detecting while performing a rollback.")
-    String rollbackFailure();
+    RuntimeException rollbackFailure(@Cause Throwable cause);
 
     /**
      * Creates an exception indicating the variable, represented by the {@code name} parameter, is {@code null}.
@@ -677,4 +679,15 @@ public interface LoggingMessages {
      */
     @Message(id = 11591, value = "Extra data after filter expression")
     IllegalArgumentException extraData();
+
+    /**
+     * Logs a warning message indicating the {@link org.jboss.logmanager.LogManager} is required and the logging
+     * subsystem was not initialized.
+     *
+     * @return an {@link IllegalStateException} for the error
+     */
+    @Message(id = 11592, value = "The logging subsystem requires the log manager to be org.jboss.logmanager.LogManager. " +
+            "The subsystem has not be initialized and cannot be used. To use JBoss Log Manager you must add the system " +
+            "property \"java.util.logging.manager\" and set it to \"org.jboss.logmanager.LogManager\"")
+    IllegalStateException extensionNotInitialized();
 }

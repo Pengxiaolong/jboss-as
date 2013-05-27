@@ -23,8 +23,6 @@ package org.jboss.as.web.session;
 
 import static org.jboss.as.web.WebMessages.MESSAGES;
 
-import java.security.AccessController;
-import java.security.PrivilegedAction;
 import java.util.AbstractMap;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -77,6 +75,7 @@ import org.jboss.metadata.web.jboss.ReplicationConfig;
 import org.jboss.metadata.web.jboss.ReplicationGranularity;
 import org.jboss.metadata.web.jboss.ReplicationTrigger;
 import org.jboss.metadata.web.jboss.SnapshotMode;
+import org.wildfly.security.manager.WildFlySecurityManager;
 
 /**
  * @author Paul Ferraro
@@ -85,6 +84,7 @@ public class DistributableSessionManager<O extends OutgoingDistributableSessionD
     private static final String info = "DistributableSessionManager/1.0";
 
     private static final int TOTAL_PERMITS = Integer.MAX_VALUE;
+    private Logger log;
 
     private final DistributedCacheManager<O> distributedCacheManager;
 
@@ -117,9 +117,12 @@ public class DistributableSessionManager<O extends OutgoingDistributableSessionD
      */
     private final long passivationMaxIdleTime;
 
+    /** Whether the underlying cache supports persistence */
+    private final boolean persistence;
+
     private volatile int maxUnreplicatedInterval;
 
-    /** Id/timestamp of sessions in distributedcache that we haven't loaded locally */
+    /** Id/timestamp of sessions in distributed cache that we haven't loaded locally */
     private final Map<String, OwnedSessionUpdate> unloadedSessions = new ConcurrentHashMap<String, OwnedSessionUpdate>();
     /** Sessions that have been created but not yet loaded. Used to ensure concurrent threads trying to load the same session */
     private final ConcurrentMap<String, ClusteredSession<O>> embryonicSessions = new ConcurrentHashMap<String, ClusteredSession<O>>();
@@ -148,6 +151,8 @@ public class DistributableSessionManager<O extends OutgoingDistributableSessionD
         this.notificationPolicy = this.createClusteredSessionNotificationPolicy();
         this.resolver = resolver;
         this.distributedCacheManager = factory.getDistributedCacheManager(this);
+
+        this.persistence = distributedCacheManager.isPersistenceEnabled();
     }
 
     @Override
@@ -352,12 +357,7 @@ public class DistributableSessionManager<O extends OutgoingDistributableSessionD
     protected ClusteredSessionNotificationPolicy createClusteredSessionNotificationPolicy() {
         String policyClass = this.replicationConfig.getSessionNotificationPolicy();
         if (policyClass == null || policyClass.isEmpty()) {
-            policyClass = AccessController.doPrivileged(new PrivilegedAction<String>() {
-                @Override
-                public String run() {
-                    return System.getProperty("jboss.web.clustered.session.notification.policy", IgnoreUndeployLegacyClusteredSessionNotificationPolicy.class.getName());
-                }
-            });
+            policyClass = WildFlySecurityManager.getPropertyPrivileged("jboss.web.clustered.session.notification.policy", IgnoreUndeployLegacyClusteredSessionNotificationPolicy.class.getName());
         }
 
         try {
@@ -445,6 +445,8 @@ public class DistributableSessionManager<O extends OutgoingDistributableSessionD
      */
     private void clearSessions() {
         boolean passivation = isPassivationEnabled();
+        boolean persistence = isPersistenceEnabled();
+
         // First, the sessions we have actively loaded
         for (Session session: this.sessions.values()) {
             ClusteredSession<O> ses = cast(session);
@@ -456,7 +458,7 @@ public class DistributableSessionManager<O extends OutgoingDistributableSessionD
                 // they'll be available to the manager for activation after a restart.
                 if (passivation && ses.isValid()) {
                     processSessionPassivation(ses.getRealId());
-                } else {
+                } else if (!persistence) {
                     boolean notify = true;
                     boolean localCall = true;
                     boolean localOnly = true;
@@ -1034,6 +1036,10 @@ public class DistributableSessionManager<O extends OutgoingDistributableSessionD
     @Override
     public boolean isPassivationEnabled() {
         return this.passivate;
+    }
+
+    public boolean isPersistenceEnabled() {
+        return this.persistence;
     }
 
     @Override

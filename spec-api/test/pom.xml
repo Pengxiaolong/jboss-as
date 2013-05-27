@@ -26,13 +26,13 @@
   <modelVersion>4.0.0</modelVersion>
 
   <parent>
-    <groupId>org.jboss.as</groupId>
-    <artifactId>jboss-as-spec-api</artifactId>
-    <version>7.2.0.Alpha1-SNAPSHOT</version>
+    <groupId>org.wildfly</groupId>
+    <artifactId>wildfly-spec-api</artifactId>
+    <version>8.0.0.Alpha2-SNAPSHOT</version>
   </parent>
 
-  <artifactId>jboss-as-spec-api-test</artifactId>
-  <name>JBoss Application Server: Validation Tests for Exported Java EE Specification APIs</name>
+  <artifactId>wildfly-spec-api-test</artifactId>
+  <name>WildFly: Validation Tests for Exported Java EE Specification APIs</name>
   <description>Validation Tests for Java EE Specification APIs exported by the Application Server</description>
 
 </project>

@@ -22,8 +22,6 @@
 
 package org.jboss.as.arquillian.service;
 
-import java.security.AccessController;
-import java.security.PrivilegedAction;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.Map;
@@ -52,8 +50,9 @@ import org.jboss.msc.service.StartContext;
 import org.jboss.msc.service.StartException;
 import org.jboss.msc.service.StopContext;
 import org.jboss.msc.value.InjectedValue;
-import org.jboss.osgi.resolver.XBundle;
+import org.jboss.osgi.resolver.XBundleRevision;
 import org.osgi.framework.BundleContext;
+import org.wildfly.security.manager.WildFlySecurityManager;
 
 import static org.jboss.as.server.deployment.Services.JBOSS_DEPLOYMENT;
 
@@ -220,9 +219,9 @@ public class ArquillianService implements Service<ArquillianService> {
         private ContextManager initializeContextManager(final ArquillianConfig config, final Map<String, Object> properties) {
             final ContextManagerBuilder builder = new ContextManagerBuilder();
             final DeploymentUnit depUnit = config.getDeploymentUnit();
-            final XBundle bundle = depUnit.getAttachment(OSGiConstants.BUNDLE_KEY);
+            final XBundleRevision brev = depUnit.getAttachment(OSGiConstants.BUNDLE_REVISION_KEY);
             final Module module = depUnit.getAttachment(Attachments.MODULE);
-            if (bundle == null && module != null) {
+            if (brev == null && module != null) {
                 builder.add(new TCCLSetupAction(module.getClassLoader()));
             }
             builder.addAll(depUnit);
@@ -276,44 +275,14 @@ public class ArquillianService implements Service<ArquillianService> {
 
         @Override
         public void setup(Map<String, Object> properties) {
-            oldClassLoader.set(getTccl());
-            setTccl(classLoader);
+            oldClassLoader.set(WildFlySecurityManager.setCurrentContextClassLoaderPrivileged(classLoader));
         }
 
         @Override
         public void teardown(Map<String, Object> properties) {
             ClassLoader old = oldClassLoader.get();
             oldClassLoader.remove();
-            setTccl(old);
+            WildFlySecurityManager.setCurrentContextClassLoaderPrivileged(old);
         }
-    }
-
-    /**
-     * {@link PrivilegedAction} implementation to get at the TCCL
-     *
-     * @author <a href="mailto:alr@jboss.org">Andrew Lee Rubinger</a>
-     */
-    private enum GetTcclAction implements PrivilegedAction<ClassLoader> {
-        INSTANCE;
-
-        @Override
-        public ClassLoader run() {
-            return Thread.currentThread().getContextClassLoader();
-        }
-    }
-
-    private static ClassLoader getTccl() {
-        return AccessController.doPrivileged(GetTcclAction.INSTANCE);
-    }
-
-    private static void setTccl(final ClassLoader cl) {
-        assert cl != null : "ClassLoader must be specified";
-        AccessController.doPrivileged(new PrivilegedAction<Void>() {
-            @Override
-            public Void run() {
-                Thread.currentThread().setContextClassLoader(cl);
-                return null;
-            }
-        });
     }
 }

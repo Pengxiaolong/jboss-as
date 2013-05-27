@@ -29,11 +29,12 @@ import javax.ejb.EJBAccessException;
 import javax.naming.InitialContext;
 import javax.security.auth.login.LoginContext;
 
-import junit.framework.Assert;
+import org.junit.Assert;
 import org.jboss.arquillian.container.test.api.Deployment;
 import org.jboss.arquillian.junit.Arquillian;
 import org.jboss.arquillian.test.api.ArquillianResource;
 import org.jboss.as.arquillian.api.ServerSetup;
+import org.jboss.as.test.categories.CommonCriteria;
 import org.jboss.as.test.integration.common.HttpRequest;
 import org.jboss.as.test.integration.ejb.security.EjbSecurityDomainSetup;
 import org.jboss.as.test.integration.ejb.security.Entry;
@@ -46,6 +47,7 @@ import org.jboss.shrinkwrap.api.ShrinkWrap;
 import org.jboss.shrinkwrap.api.asset.StringAsset;
 import org.jboss.shrinkwrap.api.spec.WebArchive;
 import org.jboss.util.Base64;
+import org.junit.experimental.categories.Category;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 
@@ -62,6 +64,7 @@ import static org.junit.Assert.fail;
  */
 @RunWith(Arquillian.class)
 @ServerSetup({EjbSecurityDomainSetup.class})
+@Category(CommonCriteria.class)
 public class RunAsTestCase {
 
     private static final Logger log = Logger.getLogger(RunAsTestCase.class.getName());
@@ -89,11 +92,13 @@ public class RunAsTestCase {
                 .addPackage(HttpRequest.class.getPackage()).addClass(WhoAmI.class).addClass(Util.class).addClass(Entry.class)
                 .addClasses(RunAsTestCase.class, Base64.class)
                 .addClasses(AbstractSecurityDomainSetup.class, EjbSecurityDomainSetup.class)
-                .addAsResource("ejb3/security/users.properties", "users.properties")
-                .addAsResource("ejb3/security/roles.properties", "roles.properties")
-                .addAsWebInfResource("ejb3/security/web.xml", "web.xml")
-                .addAsWebInfResource("ejb3/security/jboss-web.xml", "jboss-web.xml")
+                .addAsResource(RunAsTestCase.class.getPackage(), "users.properties", "users.properties")
+                .addAsResource(RunAsTestCase.class.getPackage(), "roles.properties", "roles.properties")
+                .addAsWebInfResource(RunAsTestCase.class.getPackage(), "web.xml", "web.xml")
+                .addAsWebInfResource(RunAsTestCase.class.getPackage(), "jboss-web.xml", "jboss-web.xml")
+                .addAsWebInfResource(RunAsTestCase.class.getPackage(), "jboss-ejb3.xml", "jboss-ejb3.xml")
                 .addAsManifestResource(new StringAsset("Manifest-Version: 1.0\nDependencies: org.jboss.as.controller-client,org.jboss.dmr\n"), "MANIFEST.MF");
+        war.addPackage(CommonCriteria.class.getPackage());
         log.info(war.toString(true));
         return war;
     }

@@ -22,8 +22,8 @@
 
 package org.jboss.as.jpa.processor;
 
-import static org.jboss.as.jpa.JpaLogger.ROOT_LOGGER;
-import static org.jboss.as.jpa.JpaMessages.MESSAGES;
+import static org.jboss.as.jpa.messages.JpaLogger.ROOT_LOGGER;
+import static org.jboss.as.jpa.messages.JpaMessages.MESSAGES;
 
 import java.io.IOException;
 import java.net.JarURLConnection;
@@ -37,7 +37,6 @@ import java.util.jar.JarFile;
 import org.jboss.as.jpa.config.Configuration;
 import org.jboss.as.jpa.config.PersistenceUnitMetadataHolder;
 import org.jboss.as.jpa.config.PersistenceUnitsInApplication;
-import org.jboss.as.jpa.spi.PersistenceUnitMetadata;
 import org.jboss.as.server.deployment.Attachments;
 import org.jboss.as.server.deployment.DeploymentPhaseContext;
 import org.jboss.as.server.deployment.DeploymentUnit;
@@ -53,6 +52,7 @@ import org.jboss.modules.ModuleLoadException;
 import org.jboss.modules.ModuleLoader;
 import org.jboss.modules.ResourceLoaderSpec;
 import org.jboss.modules.ResourceLoaders;
+import org.jipijapa.plugin.spi.PersistenceUnitMetadata;
 
 /**
  * Deployment processor which adds a module dependencies for modules needed for JPA deployments.
@@ -62,7 +62,6 @@ import org.jboss.modules.ResourceLoaders;
 public class JPADependencyProcessor implements DeploymentUnitProcessor {
 
     private static final ModuleIdentifier JAVAX_PERSISTENCE_API_ID = ModuleIdentifier.create("javax.persistence.api");
-    private static final ModuleIdentifier JAVAEE_API_ID = ModuleIdentifier.create("javaee.api");
     private static final ModuleIdentifier JBOSS_AS_JPA_ID = ModuleIdentifier.create("org.jboss.as.jpa");
     private static final ModuleIdentifier JBOSS_AS_JPA_SPI_ID = ModuleIdentifier.create("org.jboss.as.jpa.spi");
     private static final ModuleIdentifier JAVASSIST_ID = ModuleIdentifier.create("org.javassist");
@@ -88,7 +87,7 @@ public class JPADependencyProcessor implements DeploymentUnitProcessor {
         if (!JPADeploymentMarker.isJPADeployment(deploymentUnit)) {
             return; // Skip if there are no persistence use in the deployment
         }
-        addDependency(moduleSpecification, moduleLoader, deploymentUnit, JAVAEE_API_ID, JBOSS_AS_JPA_ID, JBOSS_AS_JPA_SPI_ID, JAVASSIST_ID);
+        addDependency(moduleSpecification, moduleLoader, deploymentUnit, JBOSS_AS_JPA_ID, JBOSS_AS_JPA_SPI_ID, JAVASSIST_ID);
         addPersistenceProviderModuleDependencies(phaseContext, moduleSpecification, moduleLoader);
     }
 
@@ -133,9 +132,9 @@ public class JPADependencyProcessor implements DeploymentUnitProcessor {
 
         // add dependencies for the default persistence provider module
         if (defaultProviderCount > 0) {
-            moduleDependencies.add(Configuration.PROVIDER_MODULE_DEFAULT);
+            moduleDependencies.add(Configuration.getDefaultProviderModuleName());
             ROOT_LOGGER.debugf("added (default provider) %s dependency to %s (since %d PU(s) didn't specify %s",
-                Configuration.PROVIDER_MODULE_DEFAULT, deploymentUnit.getName(),defaultProviderCount, Configuration.PROVIDER_MODULE + ")");
+                Configuration.getDefaultProviderModuleName(), deploymentUnit.getName(),defaultProviderCount, Configuration.PROVIDER_MODULE + ")");
             // only inject default envers for default Hibernate module
             addDependency(moduleSpecification, moduleLoader, deploymentUnit, HIBERNATE_ENVERS_ID);
         }

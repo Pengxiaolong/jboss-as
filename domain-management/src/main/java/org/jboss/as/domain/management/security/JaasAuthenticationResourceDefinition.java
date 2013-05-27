@@ -24,12 +24,11 @@ package org.jboss.as.domain.management.security;
 
 import org.jboss.as.controller.AttributeDefinition;
 import org.jboss.as.controller.PathElement;
-import org.jboss.as.controller.ResourceDefinition;
 import org.jboss.as.controller.SimpleAttributeDefinition;
 import org.jboss.as.controller.SimpleAttributeDefinitionBuilder;
 import org.jboss.as.controller.SimpleResourceDefinition;
 import org.jboss.as.controller.descriptions.ModelDescriptionConstants;
-import org.jboss.as.controller.descriptions.common.CommonDescriptions;
+import org.jboss.as.controller.descriptions.common.ControllerResolver;
 import org.jboss.as.controller.operations.validation.StringLengthValidator;
 import org.jboss.as.controller.registry.AttributeAccess;
 import org.jboss.as.controller.registry.ManagementResourceRegistration;
@@ -37,7 +36,7 @@ import org.jboss.as.controller.registry.OperationEntry;
 import org.jboss.dmr.ModelType;
 
 /**
- * {@link ResourceDefinition} for a management security realm's jaas-based authentication resource.
+ * {@link org.jboss.as.controller.ResourceDefinition} for a management security realm's jaas-based authentication resource.
  *
  * @author Brian Stansberry (c) 2012 Red Hat Inc.
  * @author <a href="mailto:darran.lofthouse@jboss.com">Darran Lofthouse</a>
@@ -52,7 +51,7 @@ public class JaasAuthenticationResourceDefinition extends SimpleResourceDefiniti
 
     public JaasAuthenticationResourceDefinition() {
         super(PathElement.pathElement(ModelDescriptionConstants.AUTHENTICATION, ModelDescriptionConstants.JAAS),
-                CommonDescriptions.getResourceDescriptionResolver("core.management.security-realm.authentication.jaas"),
+                ControllerResolver.getResolver("core.management.security-realm.authentication.jaas"),
                 new SecurityRealmChildAddHandler(true, ATTRIBUTE_DEFINITIONS), new SecurityRealmChildRemoveHandler(true),
                 OperationEntry.Flag.RESTART_RESOURCE_SERVICES, OperationEntry.Flag.RESTART_RESOURCE_SERVICES);
     }

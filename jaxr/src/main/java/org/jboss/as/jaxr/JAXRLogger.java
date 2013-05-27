@@ -24,14 +24,7 @@
 
 package org.jboss.as.jaxr;
 
-import static org.jboss.logging.Logger.Level.ERROR;
-import static org.jboss.logging.Logger.Level.INFO;
-import static org.jboss.logging.Logger.Level.DEBUG;
-
 import org.jboss.logging.BasicLogger;
-import org.jboss.logging.annotations.LogMessage;
-import org.jboss.logging.Logger;
-import org.jboss.logging.annotations.Message;
 import org.jboss.logging.annotations.MessageLogger;
 
 /**
@@ -46,84 +39,80 @@ import org.jboss.logging.annotations.MessageLogger;
 @MessageLogger(projectCode = "JBAS")
 public interface JAXRLogger extends BasicLogger {
 
-    /**
-     * Default root level logger with the package name for he category.
-     */
-    JAXRLogger ROOT_LOGGER = Logger.getMessageLogger(JAXRLogger.class, JAXRLogger.class.getPackage().getName());
-
-    JAXRLogger JAXR_LOGGER = Logger.getMessageLogger(JAXRLogger.class, "org.jboss.jaxr");
-
-    /**
-     * Logs an info message indicating that the jaxr implementation is bound into JNDI.
-     *
-     * @param jndiName    the JNDI name of the JAXR ConnectionFactory.
-     */
-    @LogMessage(level = INFO)
-    @Message(id = 14000, value = "Started JAXR subsystem, binding JAXR connection factory into JNDI as: %s")
-    void bindingJAXRConnectionFactory(Object jndiName);
-
-    /**
-     * Logs an error message indicating that the jaxr implementation cannot be bound into JNDI.
-     *
-     * @param jndi-name    the JNDI name of the JAXR ConnectionFactory.
-     */
-    @LogMessage(level = ERROR)
-    @Message(id = 14001, value = "Cannot bind JAXR ConnectionFactory")
-    void bindingJAXRConnectionFactoryFailed();
-
-    /**
-     * Logs an info message indicating that the jaxr implementation is unbound from JNDI.
-     *
-     * @param jndiName    the JNDI name of the JAXR ConnectionFactory.
-     */
-    @LogMessage(level = INFO)
-    @Message(id = 14002, value = "UnBinding JAXR ConnectionFactory: %s")
-    void unBindingJAXRConnectionFactory(Object jndiName);
-
-    /**
-     * Logs an error message indicating that the jaxr implementation cannot be unbound from JNDI.
-     *
-     * @param jndi-name    the JNDI name of the JAXR ConnectionFactory.
-     */
-    @LogMessage(level = ERROR)
-    @Message(id = 14003, value = "Cannot unbind JAXR ConnectionFactory")
-    void unBindingJAXRConnectionFactoryFailed();
-
-    /**
-     * Obtained JAXR factory class name using a System Property.
-     *
-     * @param key    the name of the JAXR ConnectionFactory implementation property.
-     * @param value  the value of the JAXR ConnectionFactory implementation property.
-     */
-    @LogMessage(level = DEBUG)
-    @Message(id = 14004, value = "Obtained the JAXR factory name from System Property %s, using jaxr implementation %s")
-    void factoryNameFromSystemProperty(String key, String value);
-
-    /**
-     * Obtained JAXR factory class name using a JBoss Configuration.
-     *
-     * @param key    the name of the JAXR ConnectionFactory implementation property.
-     * @param value  the value of the JAXR ConnectionFactory implementation property.
-     */
-    @LogMessage(level = DEBUG)
-    @Message(id = 14005, value = "Obtained the JAXR factory name from JBoss configuration %s, using jaxr implementation %s")
-    void factoryNameFromJBossConfig(String key, String value);
-
-    /**
-     * Obtained JAXR factory class name using the ServiceLoader API.
-     *
-     * @param factoryClassName    the JAXR ConnectionFactory implementation class.
-     */
-    @LogMessage(level = DEBUG)
-    @Message(id = 14006, value = "Obtained the JAXR factory name from the ServiceLoader API reading file META-INF/services/javax.xml.registry.ConnectionFactory, using jaxr implementation %s")
-    void factoryNameFromServiceLoader(String factoryClassName);
-
-    /**
-     * Obtained JAXR factory class name using the Default Scout implementation.
-     *
-     * @param factoryClassName    the JAXR ConnectionFactory implementation class.
-     */
-    @LogMessage(level = DEBUG)
-    @Message(id = 14007, value = "Using default JAXR factory implementation %s")
-    void factoryNameFromDefault(String factoryClassName);
+//    /**
+//     * Default root level logger with the package name for he category.
+//     */
+//    JAXRLogger ROOT_LOGGER = Logger.getMessageLogger(JAXRLogger.class, JAXRLogger.class.getPackage().getName());
+//
+//    JAXRLogger JAXR_LOGGER = Logger.getMessageLogger(JAXRLogger.class, "org.jboss.jaxr");
+//
+//    /**
+//     * Logs an info message indicating that the jaxr implementation is bound into JNDI.
+//     *
+//     * @param jndiName    the JNDI name of the JAXR ConnectionFactory.
+//     */
+//    @LogMessage(level = INFO)
+//    @Message(id = 14000, value = "Started JAXR subsystem, binding JAXR connection factory into JNDI as: %s")
+//    void bindingJAXRConnectionFactory(Object jndiName);
+//
+//    /**
+//     * Logs an error message indicating that the jaxr implementation cannot be bound into JNDI.
+//     */
+//    @LogMessage(level = ERROR)
+//    @Message(id = 14001, value = "Cannot bind JAXR ConnectionFactory")
+//    void bindingJAXRConnectionFactoryFailed();
+//
+//    /**
+//     * Logs an info message indicating that the jaxr implementation is unbound from JNDI.
+//     *
+//     * @param jndiName    the JNDI name of the JAXR ConnectionFactory.
+//     */
+//    @LogMessage(level = INFO)
+//    @Message(id = 14002, value = "UnBinding JAXR ConnectionFactory: %s")
+//    void unBindingJAXRConnectionFactory(Object jndiName);
+//
+//    /**
+//     * Logs an error message indicating that the jaxr implementation cannot be unbound from JNDI.
+//     */
+//    @LogMessage(level = ERROR)
+//    @Message(id = 14003, value = "Cannot unbind JAXR ConnectionFactory")
+//    void unBindingJAXRConnectionFactoryFailed();
+//
+//    /**
+//     * Obtained JAXR factory class name using a System Property.
+//     *
+//     * @param key    the name of the JAXR ConnectionFactory implementation property.
+//     * @param value  the value of the JAXR ConnectionFactory implementation property.
+//     */
+//    @LogMessage(level = DEBUG)
+//    @Message(id = 14004, value = "Obtained the JAXR factory name from System Property %s, using jaxr implementation %s")
+//    void factoryNameFromSystemProperty(String key, String value);
+//
+//    /**
+//     * Obtained JAXR factory class name using a JBoss Configuration.
+//     *
+//     * @param key    the name of the JAXR ConnectionFactory implementation property.
+//     * @param value  the value of the JAXR ConnectionFactory implementation property.
+//     */
+//    @LogMessage(level = DEBUG)
+//    @Message(id = 14005, value = "Obtained the JAXR factory name from JBoss configuration %s, using jaxr implementation %s")
+//    void factoryNameFromJBossConfig(String key, String value);
+//
+//    /**
+//     * Obtained JAXR factory class name using the ServiceLoader API.
+//     *
+//     * @param factoryClassName    the JAXR ConnectionFactory implementation class.
+//     */
+//    @LogMessage(level = DEBUG)
+//    @Message(id = 14006, value = "Obtained the JAXR factory name from the ServiceLoader API reading file META-INF/services/javax.xml.registry.ConnectionFactory, using jaxr implementation %s")
+//    void factoryNameFromServiceLoader(String factoryClassName);
+//
+//    /**
+//     * Obtained JAXR factory class name using the Default Scout implementation.
+//     *
+//     * @param factoryClassName    the JAXR ConnectionFactory implementation class.
+//     */
+//    @LogMessage(level = DEBUG)
+//    @Message(id = 14007, value = "Using default JAXR factory implementation %s")
+//    void factoryNameFromDefault(String factoryClassName);
 }

@@ -31,15 +31,16 @@ import javax.xml.stream.Location;
 import javax.xml.stream.XMLStreamException;
 
 import org.jboss.as.controller.OperationFailedException;
+import org.jboss.as.controller.PathAddress;
 import org.jboss.as.controller.RunningMode;
 import org.jboss.as.controller.client.helpers.domain.ServerStatus;
 import org.jboss.as.protocol.mgmt.RequestProcessingException;
 import org.jboss.as.server.ServerState;
 import org.jboss.dmr.ModelNode;
+import org.jboss.logging.Messages;
 import org.jboss.logging.annotations.Cause;
 import org.jboss.logging.annotations.Message;
 import org.jboss.logging.annotations.MessageBundle;
-import org.jboss.logging.Messages;
 import org.jboss.logging.annotations.Param;
 
 /**
@@ -62,12 +63,13 @@ public interface HostControllerMessages {
     /**
      * A message indicating an argument was expected for the option.
      *
-     * @param option the option that expects the argument.
      *
+     * @param option the option that expects the argument.
+     * @param usageNote the output of method {@link #usageNote(String)}
      * @return the message.
      */
-    @Message(id = 10940, value = "Argument expected for option %s")
-    String argumentExpected(String option);
+    @Message(id = 10940, value = "Argument expected for option %s. %s")
+    String argumentExpected(String option, String usageNote);
 
     /**
      * Creates an exception indicating an attempt was made to set the {@code attributeToSet} when the {@code
@@ -272,12 +274,14 @@ public interface HostControllerMessages {
     /**
      * A message indicating the option is invalid.
      *
+     *
      * @param option the invalid option.
+     * @param usageNote the output of method {@link #usageNote(String)}
      *
      * @return the message.
      */
-    @Message(id = 10961, value = "Invalid option '%s'")
-    String invalidOption(String option);
+    @Message(id = 10961, value = "Invalid option '%s'. %s")
+    String invalidOption(String option, String usageNote);
 
     /**
      * Creates an exception indicating an invalid root id.
@@ -292,14 +296,15 @@ public interface HostControllerMessages {
     /**
      * A message indicating the value is invalid.
      *
+     *
      * @param name  the name of the option.
      * @param type  the type for the value.
      * @param value the value.
-     *
+     * @param usageNote the output of method {@link #usageNote(String)}
      * @return the message.
      */
-    @Message(id = 10963, value = "Value for %s is not an %s -- %s")
-    String invalidValue(String name, String type, Object value);
+    @Message(id = 10963, value = "Value for %s is not an %s -- %s. %s")
+    String invalidValue(String name, String type, Object value, String usageNote);
 
     /**
      * Creates an exception indicating invocations of the operation, represented by the {@code name} parameter, after
@@ -324,12 +329,13 @@ public interface HostControllerMessages {
     /**
      * A message indicating the provided for the option is malformed.
      *
-     * @param option the option.
      *
+     * @param option the option.
+     * @param usageNote the output of method {@link #usageNote(String)}
      * @return the message.
      */
-    @Message(id = 10965, value = "Malformed URL provided for option %s")
-    String malformedUrl(String option);
+    @Message(id = 10965, value = "Malformed URL provided for option %s. %s")
+    String malformedUrl(String option, String usageNote);
 
     /**
      * Creates an exception indicating the need to call the method, represented by the {@code methodName} parameter,
@@ -464,12 +470,13 @@ public interface HostControllerMessages {
     /**
      * A message indicating the inability to load properties from the URL.
      *
-     * @param url the URL.
      *
+     * @param url the URL.
+     * @param usageNote the output of method {@link #usageNote(String)}
      * @return the message.
      */
-    @Message(id = 10979, value = "Unable to load properties from URL %s")
-    String unableToLoadProperties(URL url);
+    @Message(id = 10979, value = "Unable to load properties from URL %s. %s")
+    String unableToLoadProperties(URL url, String usageNote);
 
     /**
      * Creates an exception indicating the socket binding group for the server is undefined.
@@ -515,13 +522,14 @@ public interface HostControllerMessages {
     /**
      * A message indicating the value is not a known host.
      *
+     *
      * @param name  the name of the option.
      * @param value the value.
-     *
+     * @param usageNote  the output of method {@link #usageNote(String)}
      * @return the message.
      */
-    @Message(id = 10984, value = "Value for %s is not a known host -- %s")
-    String unknownHostValue(String name, Object value);
+    @Message(id = 10984, value = "Value for %s is not a known host -- %s. %s")
+    String unknownHostValue(String name, Object value, String usageNote);
 
     /**
      * Creates an exception indicating the type is unrecognized.
@@ -641,4 +649,90 @@ public interface HostControllerMessages {
 
     @Message(id = 16513, value="Failed to add extensions used by the domain. Failure description: %s")
     IllegalStateException failedToAddExtensions(ModelNode failureDescription);
+
+    /**
+     * Messaging indicating a command line argument that was supposed to be parseable into a key
+     * and value included no value
+     * @param argument the argument provided by the user
+     * @param usageNote the output of method {@link #usageNote(String)}
+     * @return the message
+     */
+    @Message(id = 16514, value="Argument %s has no value. %s")
+    String argumentHasNoValue(String argument, String usageNote);
+
+    /**
+     * Creates a simple instruction for how to get usage help. Intended to be appended
+     * to command line argument parsing error messages.
+     *
+     * @param command the command (e.g. 'domain' or 'domain.sh') used to launch the process
+     * @return the usage note
+     */
+    @Message(id = Message.NONE, value="Use %s --help for information on valid command line arguments and their syntax.")
+    String usageNote(String command);
+
+    @Message(id=16515, value="Cannot access S3 file: %s")
+    IllegalStateException cannotAccessS3File(String message);
+
+    @Message(id=16516, value="Failed to obtain domain controller data from S3 file")
+    IllegalStateException failedMarshallingDomainControllerData();
+
+    @Message(id=16517, value="Cannot write domain controller data to S3 file: %s")
+    IOException cannotWriteToS3File(String message);
+
+    @Message(id=16518, value="Cannot access S3 bucket '%s': %s")
+    IllegalStateException cannotAccessS3Bucket(String location, String message);
+
+    @Message(id=16519, value="Tried all domain controller discovery option(s) but unable to connect")
+    IllegalStateException discoveryOptionsFailureUnableToConnect(@Cause Throwable cause);
+
+    @Message(id=16520, value="pre_signed_put_url and pre_signed_delete_url must have the same path")
+    IllegalStateException preSignedUrlsMustHaveSamePath();
+
+    @Message(id=16521, value="pre_signed_put_url and pre_signed_delete_url must both be set or both unset")
+    IllegalStateException preSignedUrlsMustBeSetOrUnset();
+
+    @Message(id=16522, value="pre-signed url %s must point to a file within a bucket")
+    IllegalStateException preSignedUrlMustPointToFile(String preSignedUrl);
+
+    @Message(id=16523, value="pre-signed url %s is not a valid url")
+    IllegalStateException invalidPreSignedUrl(String preSignedUrl);
+
+    @Message(id=16524, value="pre-signed url %s may only have a subdirectory under a bucket")
+    IllegalStateException invalidPreSignedUrlLength(String preSignedUrl);
+
+    @Message(id=16525, value="Creating location-constrained bucket with unsupported calling-format")
+    IllegalArgumentException creatingBucketWithUnsupportedCallingFormat();
+
+    @Message(id=16526, value="Invalid location: %s")
+    IllegalArgumentException invalidS3Location(String location);
+
+    @Message(id=16527, value="Invalid bucket name: %s")
+    IllegalArgumentException invalidS3Bucket(String bucket);
+
+    @Message(id=16528, value="bucket '%s' could not be accessed (rsp=%d (%s)). Maybe the bucket is owned by somebody else or the authentication failed")
+    IOException bucketAuthenticationFailure(String bucket, int httpCode, String responseMessage);
+
+    @Message(id=16529, value="Unexpected response: %s")
+    IOException unexpectedResponse(String message);
+
+    @Message(id=16530, value="HTTP redirect support required")
+    RuntimeException httpRedirectSupportRequired();
+
+    @Message(id=16531, value = "Unexpected error parsing bucket listing(s)")
+    RuntimeException errorParsingBucketListings(@Cause Throwable cause);
+
+    @Message(id=16532, value = "Couldn't initialize a SAX driver for the XMLReader")
+    RuntimeException cannotInitializeSaxDriver();
+
+    @Message(id=16533, value="Cannot instantiate discovery option class '%s': %s")
+    IllegalStateException cannotInstantiateDiscoveryOptionClass(String className, String message);
+
+    @Message(id=16538, value="Invalid value for %s. Must only contain all of the existing discovery options")
+    OperationFailedException invalidDiscoveryOptionsOrdering(String name);
+
+    @Message(id=16539, value="Can't execute transactional operation '%s' from slave controller")
+    IllegalStateException cannotExecuteTransactionalOperationFromSlave(String operationName);
+
+    @Message(id=16540, value="There is no resource called %s")
+    OperationFailedException noResourceFor(PathAddress address);
 }

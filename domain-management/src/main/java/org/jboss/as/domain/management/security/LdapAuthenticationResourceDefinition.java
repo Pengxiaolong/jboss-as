@@ -30,12 +30,11 @@ import org.jboss.as.controller.OperationFailedException;
 import org.jboss.as.controller.OperationStepHandler;
 import org.jboss.as.controller.PathAddress;
 import org.jboss.as.controller.PathElement;
-import org.jboss.as.controller.ResourceDefinition;
 import org.jboss.as.controller.SimpleAttributeDefinition;
 import org.jboss.as.controller.SimpleAttributeDefinitionBuilder;
 import org.jboss.as.controller.SimpleResourceDefinition;
 import org.jboss.as.controller.descriptions.ModelDescriptionConstants;
-import org.jboss.as.controller.descriptions.common.CommonDescriptions;
+import org.jboss.as.controller.descriptions.common.ControllerResolver;
 import org.jboss.as.controller.operations.validation.StringLengthValidator;
 import org.jboss.as.controller.registry.AttributeAccess;
 import org.jboss.as.controller.registry.ManagementResourceRegistration;
@@ -45,7 +44,7 @@ import org.jboss.dmr.ModelNode;
 import org.jboss.dmr.ModelType;
 
 /**
- * {@link ResourceDefinition} for a management security realm's LDAP-based authentication resource.
+ * {@link org.jboss.as.controller.ResourceDefinition} for a management security realm's LDAP-based authentication resource.
  *
  * @author Brian Stansberry (c) 2011 Red Hat Inc.
  */
@@ -55,20 +54,36 @@ public class LdapAuthenticationResourceDefinition extends SimpleResourceDefiniti
             .setValidator(new StringLengthValidator(1, Integer.MAX_VALUE, false, false)).setFlags(AttributeAccess.Flag.RESTART_RESOURCE_SERVICES).build();
 
     public static final SimpleAttributeDefinition BASE_DN = new SimpleAttributeDefinitionBuilder(ModelDescriptionConstants.BASE_DN, ModelType.STRING, false)
-            .setValidator(new StringLengthValidator(1, Integer.MAX_VALUE, false, false)).setFlags(AttributeAccess.Flag.RESTART_RESOURCE_SERVICES).build();
+            .setValidator(new StringLengthValidator(1, Integer.MAX_VALUE, false, false))
+            .setAllowExpression(true)
+            .setFlags(AttributeAccess.Flag.RESTART_RESOURCE_SERVICES)
+            .build();
 
     public static final SimpleAttributeDefinition RECURSIVE = new SimpleAttributeDefinitionBuilder(ModelDescriptionConstants.RECURSIVE, ModelType.BOOLEAN, true)
-            .setDefaultValue(new ModelNode(false)).setFlags(AttributeAccess.Flag.RESTART_RESOURCE_SERVICES).build();
+            .setDefaultValue(new ModelNode(false))
+            .setAllowExpression(true)
+            .setFlags(AttributeAccess.Flag.RESTART_RESOURCE_SERVICES)
+            .build();
 
     public static final SimpleAttributeDefinition USER_DN = new SimpleAttributeDefinitionBuilder(ModelDescriptionConstants.USER_DN, ModelType.STRING, true)
-            .setValidator(new StringLengthValidator(1, Integer.MAX_VALUE, true, false)).setDefaultValue(new ModelNode(UserLdapCallbackHandler.DEFAULT_USER_DN))
-            .setFlags(AttributeAccess.Flag.RESTART_RESOURCE_SERVICES).build();
+            .setValidator(new StringLengthValidator(1, Integer.MAX_VALUE, true, false))
+            .setDefaultValue(new ModelNode(UserLdapCallbackHandler.DEFAULT_USER_DN))
+            .setAllowExpression(true)
+            .setFlags(AttributeAccess.Flag.RESTART_RESOURCE_SERVICES)
+            .build();
+
+    public static final SimpleAttributeDefinition ALLOW_EMPTY_PASSWORDS = new SimpleAttributeDefinitionBuilder(ModelDescriptionConstants.ALLOW_EMPTY_PASSWORDS, ModelType.BOOLEAN, true)
+            .setDefaultValue(new ModelNode(false))
+            .setAllowExpression(true)
+            .setFlags(AttributeAccess.Flag.RESTART_RESOURCE_SERVICES)
+            .build();
 
     public static final SimpleAttributeDefinition USERNAME_FILTER = new SimpleAttributeDefinitionBuilder(ModelDescriptionConstants.USERNAME_ATTRIBUTE, ModelType.STRING, false)
             .setXmlName("attribute")
             .setAlternatives(ModelDescriptionConstants.ADVANCED_FILTER)
-            .setValidator(new StringLengthValidator(1, Integer.MAX_VALUE, true, false))
+            .setValidator(new StringLengthValidator(1, Integer.MAX_VALUE, true, true))
             .setValidateNull(false)
+            .setAllowExpression(true)
             .setFlags(AttributeAccess.Flag.RESTART_RESOURCE_SERVICES).build();
 
     public static final SimpleAttributeDefinition ADVANCED_FILTER = new SimpleAttributeDefinitionBuilder(ModelDescriptionConstants.ADVANCED_FILTER, ModelType.STRING, false)
@@ -76,15 +91,17 @@ public class LdapAuthenticationResourceDefinition extends SimpleResourceDefiniti
             .setAlternatives(ModelDescriptionConstants.USERNAME_ATTRIBUTE)
             .setValidator(new StringLengthValidator(1, Integer.MAX_VALUE, true, false))
             .setValidateNull(false)
-            .setFlags(AttributeAccess.Flag.RESTART_RESOURCE_SERVICES).build();
+            .setAllowExpression(true)
+            .setFlags(AttributeAccess.Flag.RESTART_RESOURCE_SERVICES)
+            .build();
 
     public static final AttributeDefinition[] ATTRIBUTE_DEFINITIONS = {
-        CONNECTION, BASE_DN, RECURSIVE, USER_DN, USERNAME_FILTER, ADVANCED_FILTER
+        CONNECTION, BASE_DN, RECURSIVE, USER_DN, ALLOW_EMPTY_PASSWORDS, USERNAME_FILTER, ADVANCED_FILTER
     };
 
     public LdapAuthenticationResourceDefinition() {
         super(PathElement.pathElement(ModelDescriptionConstants.AUTHENTICATION, ModelDescriptionConstants.LDAP),
-                CommonDescriptions.getResourceDescriptionResolver("core.management.security-realm.authentication.ldap"),
+                ControllerResolver.getResolver("core.management.security-realm.authentication.ldap"),
                 new LdapAuthenticationAddHandler(), new SecurityRealmChildRemoveHandler(true),
                 OperationEntry.Flag.RESTART_RESOURCE_SERVICES, OperationEntry.Flag.RESTART_RESOURCE_SERVICES);
     }
@@ -111,7 +128,7 @@ public class LdapAuthenticationResourceDefinition extends SimpleResourceDefiniti
                     final ModelNode model = resource.getModel();
                     validateAttributeCombination(model);
 
-                    context.completeStep();
+                    context.stepCompleted();
                 }
             }, OperationContext.Stage.MODEL);
             super.execute(context, operation);

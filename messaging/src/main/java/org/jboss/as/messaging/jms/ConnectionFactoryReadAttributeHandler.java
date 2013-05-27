@@ -24,7 +24,8 @@ package org.jboss.as.messaging.jms;
 
 import static org.jboss.as.messaging.CommonAttributes.HA;
 import static org.jboss.as.messaging.CommonAttributes.NAME;
-import static org.jboss.as.messaging.ManagementUtil.rollbackOperationWithNoHandler;
+import static org.jboss.as.messaging.HornetQActivationService.ignoreOperationIfServerNotActive;
+import static org.jboss.as.messaging.ManagementUtil.rollbackOperationWithResourceNotFound;
 import static org.jboss.as.messaging.MessagingMessages.MESSAGES;
 
 import org.hornetq.api.core.management.ResourceNames;
@@ -65,6 +66,10 @@ public class ConnectionFactoryReadAttributeHandler extends AbstractRuntimeOnlyHa
     @Override
     public void executeRuntimeStep(OperationContext context, ModelNode operation) throws OperationFailedException {
 
+        if (ignoreOperationIfServerNotActive(context, operation)) {
+            return;
+        }
+
         validator.validate(operation);
         final String attributeName = operation.require(ModelDescriptionConstants.NAME).asString();
 
@@ -76,7 +81,7 @@ public class ConnectionFactoryReadAttributeHandler extends AbstractRuntimeOnlyHa
         ConnectionFactoryControl control = ConnectionFactoryControl.class.cast(hqServer.getManagementService().getResource(ResourceNames.JMS_CONNECTION_FACTORY + factoryName));
 
         if (control == null) {
-            rollbackOperationWithNoHandler(context, operation);
+            rollbackOperationWithResourceNotFound(context, operation);
             return;
         }
 
@@ -90,6 +95,6 @@ public class ConnectionFactoryReadAttributeHandler extends AbstractRuntimeOnlyHa
             // Bug
             throw MESSAGES.unsupportedAttribute(attributeName);
         }
-        context.completeStep();
+        context.stepCompleted();
     }
 }

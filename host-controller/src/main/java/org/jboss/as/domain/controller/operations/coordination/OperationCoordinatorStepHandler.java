@@ -48,6 +48,7 @@ import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
+import org.jboss.as.controller.ControllerMessages;
 import org.jboss.as.controller.OperationContext;
 import org.jboss.as.controller.OperationFailedException;
 import org.jboss.as.controller.OperationStepHandler;
@@ -57,6 +58,7 @@ import org.jboss.as.controller.registry.ImmutableManagementResourceRegistration;
 import org.jboss.as.domain.controller.LocalHostControllerInfo;
 import org.jboss.as.domain.controller.operations.deployment.DeploymentFullReplaceHandler;
 import org.jboss.as.domain.controller.operations.deployment.DeploymentUploadUtil;
+import org.jboss.as.host.controller.mgmt.DomainControllerRuntimeIgnoreTransformationRegistry;
 import org.jboss.as.repository.ContentRepository;
 import org.jboss.dmr.ModelNode;
 
@@ -72,18 +74,21 @@ public class OperationCoordinatorStepHandler {
     private final Map<String, ProxyController> hostProxies;
     private final Map<String, ProxyController> serverProxies;
     private final OperationSlaveStepHandler localSlaveHandler;
+    private final DomainControllerRuntimeIgnoreTransformationRegistry runtimeIgnoreTransformationRegistry;
     private volatile ExecutorService executorService;
 
     OperationCoordinatorStepHandler(final LocalHostControllerInfo localHostControllerInfo,
                                     ContentRepository contentRepository,
                                     final Map<String, ProxyController> hostProxies,
                                     final Map<String, ProxyController> serverProxies,
-                                    final OperationSlaveStepHandler localSlaveHandler) {
+                                    final OperationSlaveStepHandler localSlaveHandler,
+                                    final DomainControllerRuntimeIgnoreTransformationRegistry runtimeIgnoreTransformationRegistry) {
         this.localHostControllerInfo = localHostControllerInfo;
         this.contentRepository = contentRepository;
         this.hostProxies = hostProxies;
         this.serverProxies = serverProxies;
         this.localSlaveHandler = localSlaveHandler;
+        this.runtimeIgnoreTransformationRegistry = runtimeIgnoreTransformationRegistry;
     }
 
     void execute(OperationContext context, ModelNode operation) throws OperationFailedException {
@@ -134,7 +139,7 @@ public class OperationCoordinatorStepHandler {
         // not a problem
         context.getFailureDescription().set(MESSAGES.masterDomainControllerOnlyOperation(operation.get(OP).asString(),
                 PathAddress.pathAddress(operation.get(OP_ADDR))));
-        context.completeStep();
+        context.stepCompleted();
     }
 
     /**
@@ -148,6 +153,7 @@ public class OperationCoordinatorStepHandler {
             HOST_CONTROLLER_LOGGER.trace("Executing direct");
         }
         final String operationName =  operation.require(OP).asString();
+
         OperationStepHandler stepHandler = null;
         final ImmutableManagementResourceRegistration registration = context.getResourceRegistration();
         if (registration != null) {
@@ -156,9 +162,14 @@ public class OperationCoordinatorStepHandler {
         if(stepHandler != null) {
             context.addStep(stepHandler, OperationContext.Stage.MODEL);
         } else {
-            context.getFailureDescription().set(MESSAGES.noHandlerForOperation(operationName, PathAddress.pathAddress(operation.get(OP_ADDR))));
+            PathAddress pathAddress = PathAddress.pathAddress(operation.require(OP_ADDR));
+            if (registration == null) {
+                context.getFailureDescription().set(ControllerMessages.MESSAGES.noSuchResourceType(pathAddress));
+            } else {
+                context.getFailureDescription().set(ControllerMessages.MESSAGES.noHandlerForOperation(operationName, pathAddress));
+            }
         }
-        context.completeStep();
+        context.stepCompleted();
     }
 
     private void executeTwoPhaseOperation(OperationContext context, ModelNode operation, OperationRouting routing) throws OperationFailedException {
@@ -215,14 +226,14 @@ public class OperationCoordinatorStepHandler {
                     }
                 }
 
-                context.addStep(slaveOp.clone(), new DomainSlaveHandler(remoteProxies, overallContext), OperationContext.Stage.DOMAIN);
+                context.addStep(slaveOp.clone(), new DomainSlaveHandler(remoteProxies, overallContext, runtimeIgnoreTransformationRegistry), OperationContext.Stage.DOMAIN);
             }
         }
 
         // Finally, the step to formulate and execute the 2nd phase rollout plan
         context.addStep(new DomainRolloutStepHandler(hostProxies, serverProxies, overallContext, rolloutPlan, getExecutorService()), OperationContext.Stage.DOMAIN);
 
-        context.completeStep();
+        context.stepCompleted();
     }
 
     private void storeDeploymentContent(ModelNode opNode, OperationContext context) throws OperationFailedException {

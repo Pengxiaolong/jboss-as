@@ -22,46 +22,40 @@
 package org.jboss.as.model.test;
 
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.DESCRIPTION;
-import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.FAILURE_DESCRIPTION;
-import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.OP;
-import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.OPERATION_NAME;
-import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.OP_ADDR;
-import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.OUTCOME;
-import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.READ_TRANSFORMED_RESOURCE_OPERATION;
-import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.REPLY_PROPERTIES;
-import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.REQUEST_PROPERTIES;
-import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.SUCCESS;
 
 import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.CountDownLatch;
-
-import junit.framework.Assert;
+import java.util.concurrent.atomic.AtomicReference;
 
 import org.jboss.as.controller.AbstractControllerService;
 import org.jboss.as.controller.CompositeOperationHandler;
 import org.jboss.as.controller.ControlledProcessState;
 import org.jboss.as.controller.ExpressionResolver;
+import org.jboss.as.controller.ModelController.OperationTransactionControl;
 import org.jboss.as.controller.OperationContext;
 import org.jboss.as.controller.OperationFailedException;
 import org.jboss.as.controller.OperationStepHandler;
+import org.jboss.as.controller.PathAddress;
 import org.jboss.as.controller.PathElement;
 import org.jboss.as.controller.ProcessType;
 import org.jboss.as.controller.ResourceDefinition;
+import org.jboss.as.controller.RunningMode;
 import org.jboss.as.controller.RunningModeControl;
+import org.jboss.as.controller.client.OperationAttachments;
+import org.jboss.as.controller.client.OperationMessageHandler;
 import org.jboss.as.controller.descriptions.DescriptionProvider;
 import org.jboss.as.controller.operations.global.GlobalOperationHandlers;
 import org.jboss.as.controller.operations.validation.OperationValidator;
 import org.jboss.as.controller.persistence.ConfigurationPersistenceException;
 import org.jboss.as.controller.registry.ImmutableManagementResourceRegistration;
 import org.jboss.as.controller.registry.ManagementResourceRegistration;
-import org.jboss.as.controller.registry.OperationEntry.EntryType;
 import org.jboss.as.controller.registry.Resource;
-import org.jboss.as.controller.transform.ReadTransformedResourceOperation;
 import org.jboss.as.controller.transform.TransformerRegistry;
 import org.jboss.dmr.ModelNode;
 import org.jboss.msc.service.StartContext;
 import org.jboss.msc.service.StartException;
+import org.junit.Assert;
 
 /**
  * Internal class used by test framework.
@@ -73,29 +67,33 @@ public abstract class ModelTestModelControllerService extends AbstractController
 
     private final CountDownLatch latch = new CountDownLatch(1);
     private final StringConfigurationPersister persister;
-    protected final TransformerRegistry transformerRegistry;
-    private final OperationValidation validateOps;
+    private final TransformerRegistry transformerRegistry;
+    private final ModelTestOperationValidatorFilter validateOpsFilter;
+    private final RunningModeControl runningModeControl;
     private volatile ManagementResourceRegistration rootRegistration;
-    private volatile Exception error;
+    private volatile Throwable error;
     private volatile boolean bootSuccess;
 
     protected ModelTestModelControllerService(final ProcessType processType, final RunningModeControl runningModeControl, final TransformerRegistry transformerRegistry,
-                           final StringConfigurationPersister persister, OperationValidation validateOps, final DescriptionProvider rootDescriptionProvider, ControlledProcessState processState) {
+                           final StringConfigurationPersister persister, final ModelTestOperationValidatorFilter validateOpsFilter, final DescriptionProvider rootDescriptionProvider, ControlledProcessState processState) {
+        // Fails in core-model-test transformation testing if ExpressionResolver.TEST_RESOLVER is used because not present in 7.1.x
         super(processType, runningModeControl, persister,
                 processState == null ? new ControlledProcessState(true) : processState, rootDescriptionProvider, null, ExpressionResolver.DEFAULT);
         this.persister = persister;
         this.transformerRegistry = transformerRegistry;
-        this.validateOps = validateOps;
+        this.validateOpsFilter = validateOpsFilter;
+        this.runningModeControl = runningModeControl;
     }
 
     protected ModelTestModelControllerService(final ProcessType processType, final RunningModeControl runningModeControl, final TransformerRegistry transformerRegistry,
-            final StringConfigurationPersister persister, final OperationValidation validateOps, final DelegatingResourceDefinition rootResourceDefinition, ControlledProcessState processState) {
+            final StringConfigurationPersister persister, final ModelTestOperationValidatorFilter validateOpsFilter, final DelegatingResourceDefinition rootResourceDefinition, ControlledProcessState processState) {
         super(processType, runningModeControl, persister,
                 processState == null ? new ControlledProcessState(true) : processState, rootResourceDefinition, null,
-                ExpressionResolver.DEFAULT);
+                ExpressionResolver.TEST_RESOLVER);
         this.persister = persister;
         this.transformerRegistry = transformerRegistry;
-        this.validateOps = validateOps;
+        this.validateOpsFilter = validateOpsFilter;
+        this.runningModeControl = runningModeControl;
     }
 
     public boolean isSuccessfulBoot() {
@@ -106,6 +104,14 @@ public abstract class ModelTestModelControllerService extends AbstractController
         return error;
     }
 
+    RunningMode getRunningMode() {
+        return runningModeControl.getRunningMode();
+    }
+
+    ProcessType getProcessType() {
+        return processType;
+    }
+
     @Override
     protected void initModel(Resource rootResource, ManagementResourceRegistration rootRegistration) {
         this.rootRegistration = rootRegistration;
@@ -114,28 +120,28 @@ public abstract class ModelTestModelControllerService extends AbstractController
     }
 
     protected void initCoreModel(Resource rootResource, ManagementResourceRegistration rootRegistration) {
-        if (transformerRegistry != null) {
-            rootRegistration.registerOperationHandler(READ_TRANSFORMED_RESOURCE_OPERATION, new ReadTransformedResourceOperation(transformerRegistry), ReadTransformedResourceOperation.DESCRIPTION, true);
-        }
         GlobalOperationHandlers.registerGlobalOperations(rootRegistration, ProcessType.STANDALONE_SERVER);
 
-        rootRegistration.registerOperationHandler(CompositeOperationHandler.NAME, CompositeOperationHandler.INSTANCE, CompositeOperationHandler.INSTANCE, false, EntryType.PRIVATE);
-
-        //Handler to be able to get hold of the root resource
-        rootRegistration.registerOperationHandler(ModelTestModelControllerService.RootResourceGrabber.NAME, ModelTestModelControllerService.RootResourceGrabber.INSTANCE, ModelTestModelControllerService.RootResourceGrabber.INSTANCE, false);
+        rootRegistration.registerOperationHandler(CompositeOperationHandler.DEFINITION, CompositeOperationHandler.INSTANCE);
     }
 
     protected void initExtraModel(Resource rootResource, ManagementResourceRegistration rootRegistration) {
+    }
+
+    TransformerRegistry getTransformersRegistry() {
+        return transformerRegistry;
     }
 
     @Override
     protected boolean boot(List<ModelNode> bootOperations, boolean rollbackOnRuntimeFailure) throws ConfigurationPersistenceException {
         try {
             preBoot(bootOperations, rollbackOnRuntimeFailure);
-            if (validateOps == OperationValidation.EXIT_ON_VALIDATION_ERROR) {
-                new OperationValidator(rootRegistration).validateOperations(bootOperations);
-            } else if (validateOps == OperationValidation.LOG_VALIDATION_ERRORS){
-                new OperationValidator(rootRegistration, true, true, false).validateOperations(bootOperations);
+            OperationValidator validator = new OperationValidator(rootRegistration);
+            for (ModelNode op : bootOperations) {
+                ModelNode toValidate = validateOpsFilter.adjustForValidation(op);
+                if (toValidate != null) {
+                    validator.validateOperation(toValidate);
+                }
             }
             bootSuccess = super.boot(persister.getBootOperations(), rollbackOnRuntimeFailure);
             return bootSuccess;
@@ -157,7 +163,14 @@ public abstract class ModelTestModelControllerService extends AbstractController
 
     @Override
     protected void bootThreadDone() {
-        super.bootThreadDone();
+        try {
+            super.bootThreadDone();
+        } finally {
+            countdownDoneLatch();
+        }
+    }
+
+    protected void countdownDoneLatch() {
         latch.countDown();
     }
 
@@ -167,19 +180,22 @@ public abstract class ModelTestModelControllerService extends AbstractController
             super.start(context);
         } catch (StartException e) {
             error = e;
+            e.printStackTrace();
             latch.countDown();
             throw e;
-        } catch (Exception e) {
-            error = e;
+        } catch (Throwable t) {
+            error = t;
             latch.countDown();
-            throw new StartException(e);
+            throw new StartException(t);
         }
     }
 
     public void waitForSetup() throws Exception {
         latch.await();
         if (error != null) {
-            throw error;
+            if (error instanceof Exception)
+                throw (Exception) error;
+            throw new RuntimeException(error);
         }
     }
 
@@ -188,43 +204,34 @@ public abstract class ModelTestModelControllerService extends AbstractController
     }
 
     /**
-     * Grabs the current root resource
+     * Grabs the current root resource. This cannot be called after the kernelServices
+     * have been shut down
      *
      * @param kernelServices the kernel services used to access the controller
      */
-    public static Resource grabRootResource(ModelTestKernelServices kernelServices) {
-        ModelNode op = new ModelNode();
-        op.get(OP).set(RootResourceGrabber.NAME);
-        op.get(OP_ADDR).setEmptyList();
-        ModelNode result = kernelServices.executeOperation(op);
-        Assert.assertEquals(result.get(FAILURE_DESCRIPTION).asString(), SUCCESS, result.get(OUTCOME).asString());
-
-        Resource rootResource = RootResourceGrabber.INSTANCE.resource;
+    public static Resource grabRootResource(ModelTestKernelServices<?> kernelServices) {
+        final AtomicReference<Resource> resourceRef = new AtomicReference<Resource>();
+        ((ModelTestKernelServicesImpl<?>)kernelServices).internalExecute(new ModelNode(), new OperationStepHandler() {
+            @Override
+            public void execute(OperationContext context, ModelNode operation) throws OperationFailedException {
+                resourceRef.set(context.readResourceFromRoot(PathAddress.EMPTY_ADDRESS, true));
+                context.getResult().setEmptyObject();
+                context.stepCompleted();
+            }
+        });
+        Resource rootResource = resourceRef.get();
         Assert.assertNotNull(rootResource);
         return rootResource;
     }
 
-    static class RootResourceGrabber implements OperationStepHandler, DescriptionProvider {
-        static String NAME = "grab-root-resource";
-        static RootResourceGrabber INSTANCE = new RootResourceGrabber();
-        volatile Resource resource;
+    @Override
+    protected ModelNode internalExecute(ModelNode operation, OperationMessageHandler handler,
+            OperationTransactionControl control, OperationAttachments attachments, OperationStepHandler prepareStep) {
+        return super.internalExecute(operation, handler, control, attachments, prepareStep);
+    }
 
-        @Override
-        public void execute(OperationContext context, ModelNode operation) throws OperationFailedException {
-            resource = context.getRootResource();
-            context.getResult().setEmptyObject();
-            context.completeStep();
-        }
-
-        @Override
-        public ModelNode getModelDescription(Locale locale) {
-            ModelNode node = new ModelNode();
-            node.get(OPERATION_NAME).set(NAME);
-            node.get(DESCRIPTION).set("Grabs the root resource");
-            node.get(REQUEST_PROPERTIES).setEmptyObject();
-            node.get(REPLY_PROPERTIES).setEmptyObject();
-            return node;
-        }
+    public  ModelNode internalExecute(ModelNode operation, OperationStepHandler handler) {
+        return internalExecute(operation, OperationMessageHandler.DISCARD, OperationTransactionControl.COMMIT, null, handler);
     }
 
     public static final DescriptionProvider DESC_PROVIDER = new DescriptionProvider() {

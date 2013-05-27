@@ -1,4 +1,5 @@
 /*
+ * JBoss, Home of Professional Open Source.
  * Copyright 2012, Red Hat, Inc., and individual contributors
  * as indicated by the @author tags. See the copyright.txt file in the
  * distribution for a full listing of individual contributors.
@@ -39,6 +40,7 @@ import org.jboss.msc.service.ServiceRegistryException;
 import org.jboss.msc.service.ServiceTarget;
 import org.jboss.remoting3.Endpoint;
 import org.jboss.remoting3.RemotingOptions;
+import org.wildfly.security.manager.WildFlySecurityManager;
 import org.xnio.OptionMap;
 
 import java.io.Serializable;
@@ -55,11 +57,15 @@ public class DomainServerCommunicationServices  implements ServiceActivator, Ser
 
     private static final long serialVersionUID = 1593964083902839384L;
 
+    // Shared operation ID for connection, this will get updated for start and reload
+    private static volatile int initialOperationID;
+
     private final ModelNode endpointConfig;
     private final InetSocketAddress managementSocket;
     private final String serverName;
     private final String serverProcessName;
     private final byte[] authKey;
+
     private final boolean managementSubsystemEndpoint;
 
     DomainServerCommunicationServices(ModelNode endpointConfig, InetSocketAddress managementSocket, String serverName, String serverProcessName, byte[] authKey, boolean managementSubsystemEndpoint) {
@@ -71,20 +77,25 @@ public class DomainServerCommunicationServices  implements ServiceActivator, Ser
         this.managementSubsystemEndpoint = managementSubsystemEndpoint;
     }
 
+    static void updateOperationID(final int operationID) {
+        initialOperationID = operationID;
+    }
+
     @Override
     public void activate(final ServiceActivatorContext serviceActivatorContext) throws ServiceRegistryException {
         final ServiceTarget serviceTarget = serviceActivatorContext.getServiceTarget();
         final ServiceName endpointName = managementSubsystemEndpoint ? RemotingServices.SUBSYSTEM_ENDPOINT : ManagementRemotingServices.MANAGEMENT_ENDPOINT;
         final EndpointService.EndpointType endpointType = managementSubsystemEndpoint ? EndpointService.EndpointType.SUBSYSTEM : EndpointService.EndpointType.MANAGEMENT;
         try {
+            // TODO see if we can figure out a way to work in the vault resolver instead of having to use ExpressionResolver.DEFAULT
+            @SuppressWarnings("deprecation")
             final OptionMap options = EndpointConfigFactory.create(ExpressionResolver.DEFAULT, endpointConfig, DEFAULTS);
-            ManagementRemotingServices.installRemotingEndpoint(serviceTarget, endpointName,
-                    SecurityActions.getSystemProperty(ServerEnvironment.NODE_NAME), endpointType, options, null, null);
+            ManagementRemotingServices.installRemotingEndpoint(serviceTarget, endpointName, WildFlySecurityManager.getPropertyPrivileged(ServerEnvironment.NODE_NAME, null), endpointType, options, null, null);
 
             // Install the communication services
             final int port = managementSocket.getPort();
             final String host = managementSocket.getAddress().getHostAddress();
-            HostControllerConnectionService service = new HostControllerConnectionService(host, port, serverName, serverProcessName, authKey);
+            HostControllerConnectionService service = new HostControllerConnectionService(host, port, serverName, serverProcessName, authKey, initialOperationID, managementSubsystemEndpoint);
             serviceTarget.addService(HostControllerConnectionService.SERVICE_NAME, service)
                     .addDependency(endpointName, Endpoint.class, service.getEndpointInjector())
                     .addDependency(ControlledProcessStateService.SERVICE_NAME, ControlledProcessStateService.class, service.getProcessStateServiceInjectedValue())
@@ -111,6 +122,17 @@ public class DomainServerCommunicationServices  implements ServiceActivator, Ser
                                           final byte[] authKey, final boolean managementSubsystemEndpoint) {
 
         return new DomainServerCommunicationServices(endpointConfig, managementSocket, serverName, serverProcessName, authKey, managementSubsystemEndpoint);
+    }
+
+    public interface OperationIDUpdater {
+
+        /**
+         * Update the operation ID when connecting to the HC.
+         *
+         * @param operationID the new operation ID
+         */
+        void updateOperationID(int operationID);
+
     }
 
 }

@@ -21,7 +21,6 @@
  */
 package org.jboss.as.osgi.service;
 
-import static org.jboss.as.osgi.OSGiLogger.LOGGER;
 import static org.jboss.as.osgi.parser.SubsystemState.PROP_JBOSS_OSGI_SYSTEM_MODULES;
 import static org.jboss.as.osgi.parser.SubsystemState.PROP_JBOSS_OSGI_SYSTEM_MODULES_EXTRA;
 import static org.jboss.osgi.framework.Constants.JBOSGI_PREFIX;
@@ -37,113 +36,100 @@ import org.jboss.modules.ModuleSpec;
 import org.jboss.modules.filter.PathFilter;
 import org.jboss.modules.filter.PathFilters;
 import org.jboss.msc.service.ServiceBuilder;
-import org.jboss.msc.service.ServiceController;
-import org.jboss.msc.service.ServiceName;
-import org.jboss.msc.service.ServiceTarget;
 import org.jboss.msc.service.StartContext;
-import org.jboss.msc.service.StartException;
-import org.jboss.msc.service.StopContext;
-import org.jboss.msc.service.ServiceController.Mode;
-import org.jboss.osgi.framework.FrameworkModulePlugin;
-import org.jboss.osgi.framework.IntegrationService;
-import org.osgi.framework.Bundle;
+import org.jboss.msc.value.InjectedValue;
+import org.jboss.osgi.framework.Services;
+import org.jboss.osgi.framework.spi.BundleManager;
+import org.jboss.osgi.framework.spi.BundleReferenceClassLoader;
+import org.jboss.osgi.framework.spi.FrameworkModuleProvider;
+import org.jboss.osgi.framework.spi.FrameworkModuleProviderPlugin;
+import org.jboss.osgi.resolver.XBundle;
 
 /**
- * An {@link IntegrationService} that provides the Framework module.
+ * An {@link org.jboss.osgi.framework.spi.IntegrationService} that provides the Framework module.
  *
  * @author Thomas.Diesler@jboss.com
  * @since 11-Sep-2010
  */
-final class FrameworkModuleIntegration implements FrameworkModulePlugin, IntegrationService<FrameworkModulePlugin> {
+final class FrameworkModuleIntegration extends FrameworkModuleProviderPlugin {
 
-    private final Map<String, Object> props;
-    private Module frameworkModule;
+    private final InjectedValue<BundleManager> injectedBundleManager = new InjectedValue<BundleManager>();
+    private final Map<String, String> props;
 
-    FrameworkModuleIntegration(Map<String, Object> props) {
+    FrameworkModuleIntegration(Map<String, String> props) {
         this.props = props;
     }
 
     @Override
-    public ServiceName getServiceName() {
-        return FRAMEWORK_MODULE_PLUGIN;
+    protected void addServiceDependencies(ServiceBuilder<FrameworkModuleProvider> builder) {
+        super.addServiceDependencies(builder);
+        builder.addDependency(Services.BUNDLE_MANAGER, BundleManager.class, injectedBundleManager);
     }
 
     @Override
-    public ServiceController<FrameworkModulePlugin> install(ServiceTarget serviceTarget) {
-        ServiceBuilder<FrameworkModulePlugin> builder = serviceTarget.addService(getServiceName(), this);
-        builder.setInitialMode(Mode.ON_DEMAND);
-        return builder.install();
+    protected FrameworkModuleProvider createServiceValue(StartContext startContext) {
+        return new FrameworkModuleProviderImpl();
     }
 
-    @Override
-    public void start(StartContext context) throws StartException {
-        ServiceController<?> controller = context.getController();
-        LOGGER.tracef("Starting: %s in mode %s", controller.getName(), controller.getMode());
-    }
+    class FrameworkModuleProviderImpl implements FrameworkModuleProvider {
 
-    @Override
-    public void stop(StopContext context) {
-        ServiceController<?> controller = context.getController();
-        LOGGER.tracef("Stopping: %s in mode %s", controller.getName(), controller.getMode());
-        frameworkModule = null;
-    }
+        private Module frameworkModule;
 
-    @Override
-    public FrameworkModulePlugin getValue() throws IllegalStateException {
-        return this;
-    }
-
-    @Override
-    public Module getFrameworkModule(Bundle systemBundle) {
-        if (frameworkModule == null) {
-            frameworkModule = createFrameworkModule(systemBundle);
-        }
-        return frameworkModule;
-    }
-
-    private Module createFrameworkModule(final Bundle systemBundle) {
-        // Setup the extended framework module spec
-        ModuleSpec.Builder specBuilder = ModuleSpec.build(ModuleIdentifier.create(JBOSGI_PREFIX + ".framework"));
-
-        // Add the framework module dependencies
-        String sysmodules = (String) props.get(PROP_JBOSS_OSGI_SYSTEM_MODULES);
-        if (sysmodules == null)
-            sysmodules = "";
-
-        String extramodules = (String) props.get(PROP_JBOSS_OSGI_SYSTEM_MODULES_EXTRA);
-        if (extramodules != null)
-            sysmodules += "," + extramodules;
-
-        // Add a dependency on the default framework modules
-        ModuleLoader bootLoader = Module.getBootModuleLoader();
-        PathFilter acceptAll = PathFilters.acceptAll();
-        for (String modid : sysmodules.split(",")) {
-            modid = modid.trim();
-            if (modid.length() > 0) {
-                ModuleIdentifier identifier = ModuleIdentifier.create(modid);
-                specBuilder.addDependency(DependencySpec.createModuleDependencySpec(acceptAll, acceptAll, bootLoader, identifier, false));
+        @Override
+        public Module getFrameworkModule() {
+            synchronized (this) {
+                if (frameworkModule == null) {
+                    frameworkModule = createFrameworkModule();
+                }
+                return frameworkModule;
             }
         }
 
-        specBuilder.setModuleClassLoaderFactory(new BundleReferenceClassLoader.Factory(systemBundle));
+        private Module createFrameworkModule() {
+            // Setup the extended framework module spec
+            ModuleSpec.Builder specBuilder = ModuleSpec.build(ModuleIdentifier.create(JBOSGI_PREFIX + ".framework"));
 
-        try {
-            final ModuleSpec moduleSpec = specBuilder.create();
-            ModuleLoader moduleLoader = new ModuleLoader() {
+            // Add the framework module dependencies
+            String sysmodules = (String) props.get(PROP_JBOSS_OSGI_SYSTEM_MODULES);
+            if (sysmodules == null)
+                sysmodules = "";
 
-                @Override
-                protected ModuleSpec findModule(ModuleIdentifier identifier) throws ModuleLoadException {
-                    return (moduleSpec.getModuleIdentifier().equals(identifier) ? moduleSpec : null);
+            String extramodules = (String) props.get(PROP_JBOSS_OSGI_SYSTEM_MODULES_EXTRA);
+            if (extramodules != null)
+                sysmodules += "," + extramodules;
+
+            // Add a dependency on the default framework modules
+            ModuleLoader bootLoader = Module.getBootModuleLoader();
+            PathFilter acceptAll = PathFilters.acceptAll();
+            for (String modid : sysmodules.split(",")) {
+                modid = modid.trim();
+                if (modid.length() > 0) {
+                    ModuleIdentifier identifier = ModuleIdentifier.create(modid);
+                    specBuilder.addDependency(DependencySpec.createModuleDependencySpec(acceptAll, acceptAll, bootLoader, identifier, false));
                 }
+            }
 
-                @Override
-                public String toString() {
-                    return "FrameworkModuleLoader";
-                }
-            };
-            return moduleLoader.loadModule(specBuilder.getIdentifier());
-        } catch (ModuleLoadException ex) {
-            throw new IllegalStateException(ex);
+            XBundle systemBundle = injectedBundleManager.getValue().getSystemBundle();
+            specBuilder.setModuleClassLoaderFactory(new BundleReferenceClassLoader.Factory<XBundle>(systemBundle));
+
+            try {
+                final ModuleSpec moduleSpec = specBuilder.create();
+                ModuleLoader moduleLoader = new ModuleLoader() {
+
+                    @Override
+                    protected ModuleSpec findModule(ModuleIdentifier identifier) throws ModuleLoadException {
+                        return (moduleSpec.getModuleIdentifier().equals(identifier) ? moduleSpec : null);
+                    }
+
+                    @Override
+                    public String toString() {
+                        return "FrameworkModuleLoader";
+                    }
+                };
+                return moduleLoader.loadModule(specBuilder.getIdentifier());
+            } catch (ModuleLoadException ex) {
+                throw new IllegalStateException(ex);
+            }
         }
     }
 }

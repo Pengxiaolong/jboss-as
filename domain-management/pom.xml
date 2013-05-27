@@ -27,15 +27,15 @@
     <modelVersion>4.0.0</modelVersion>
 
     <parent>
-        <groupId>org.jboss.as</groupId>
-        <artifactId>jboss-as-parent</artifactId>
-        <version>7.2.0.Alpha1-SNAPSHOT</version>
+        <groupId>org.wildfly</groupId>
+        <artifactId>wildfly-parent</artifactId>
+        <version>8.0.0.Alpha2-SNAPSHOT</version>
     </parent>
 
-    <groupId>org.jboss.as</groupId>
-    <artifactId>jboss-as-domain-management</artifactId>
+    <groupId>org.wildfly</groupId>
+    <artifactId>wildfly-domain-management</artifactId>
 
-    <name>JBoss Application Server: Domain Management</name>
+    <name>WildFly: Domain Management</name>
 
     <build>
         <plugins>
@@ -47,15 +47,6 @@
                         <include>**/*TestCase.java</include>
                     </includes>
                     <enableAssertions>false</enableAssertions>
-                </configuration>
-            </plugin>
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-compiler-plugin</artifactId>
-                <configuration>
-                    <compilerArgument>
-                        -AgeneratedTranslationFilesPath=${project.build.directory}/generated-translation-files
-                    </compilerArgument>
                 </configuration>
             </plugin>
         </plugins>
@@ -87,8 +78,8 @@
         </dependency>
 
         <dependency>
-            <groupId>org.jboss.as</groupId>
-            <artifactId>jboss-as-controller</artifactId>
+            <groupId>org.wildfly</groupId>
+            <artifactId>wildfly-controller</artifactId>
         </dependency>
 
         <dependency>

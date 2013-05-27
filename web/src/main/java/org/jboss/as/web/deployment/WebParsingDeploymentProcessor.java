@@ -40,9 +40,11 @@ import org.jboss.as.server.deployment.module.ResourceRoot;
 import org.jboss.metadata.parser.servlet.WebMetaDataParser;
 import org.jboss.metadata.parser.util.MetaDataElementParser;
 import org.jboss.metadata.parser.util.XMLResourceResolver;
+import org.jboss.as.web.common.WarMetaData;
 import org.jboss.metadata.parser.util.XMLSchemaValidator;
 import org.jboss.metadata.web.spec.WebMetaData;
 import org.jboss.vfs.VirtualFile;
+import org.wildfly.security.manager.WildFlySecurityManager;
 import org.xml.sax.SAXException;
 
 import static org.jboss.as.web.WebMessages.MESSAGES;
@@ -57,7 +59,7 @@ public class WebParsingDeploymentProcessor implements DeploymentUnitProcessor {
     private final boolean schemaValidation;
 
     public WebParsingDeploymentProcessor() {
-        String property = SecurityActions.getSystemProperty(XMLSchemaValidator.PROPERTY_SCHEMA_VALIDATION, "false");
+        String property = WildFlySecurityManager.getPropertyPrivileged(XMLSchemaValidator.PROPERTY_SCHEMA_VALIDATION, "false");
         this.schemaValidation = Boolean.parseBoolean(property);
     }
 
@@ -102,6 +104,8 @@ public class WebParsingDeploymentProcessor implements DeploymentUnitProcessor {
                             validator.validate("http://java.sun.com/xml/ns/javaee/web-app_2_5.xsd", xmlInput);
                         else if (webMetaData.is30())
                             validator.validate("http://java.sun.com/xml/ns/javaee/web-app_3_0.xsd", xmlInput);
+                        else if (webMetaData.is31())
+                            validator.validate("http://xmlns.jcp.org/xml/ns/javaee/web-app_3_1.xsd", xmlInput);
                         else
                             validator.validate("-//Sun Microsystems, Inc.//DTD Web Application 2.2//EN", xmlInput);
                     } catch (SAXException e) {
@@ -113,7 +117,7 @@ public class WebParsingDeploymentProcessor implements DeploymentUnitProcessor {
                 warMetaData.setWebMetaData(webMetaData);
 
             } catch (XMLStreamException e) {
-                throw new DeploymentUnitProcessingException(MESSAGES.failToParseXMLDescriptor(webXml, e.getLocation().getLineNumber(), e.getLocation().getColumnNumber()));
+                throw new DeploymentUnitProcessingException(MESSAGES.failToParseXMLDescriptor(webXml, e.getLocation().getLineNumber(), e.getLocation().getColumnNumber()), e);
             } catch (IOException e) {
                 throw new DeploymentUnitProcessingException(MESSAGES.failToParseXMLDescriptor(webXml), e);
             } finally {

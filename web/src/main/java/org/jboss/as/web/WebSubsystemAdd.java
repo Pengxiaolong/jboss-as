@@ -22,6 +22,9 @@
 
 package org.jboss.as.web;
 
+import java.util.List;
+import javax.management.MBeanServer;
+
 import org.jboss.as.clustering.web.DistributedCacheManagerFactory;
 import org.jboss.as.clustering.web.DistributedCacheManagerFactoryService;
 import org.jboss.as.controller.AbstractBoottimeAddStepHandler;
@@ -38,8 +41,9 @@ import org.jboss.as.server.AbstractDeploymentChainStep;
 import org.jboss.as.server.DeploymentProcessorTarget;
 import org.jboss.as.server.deployment.Phase;
 import org.jboss.as.server.deployment.jbossallxml.JBossAllXmlParserRegisteringProcessor;
-import org.jboss.as.web.deployment.ELExpressionFactoryProcessor;
+import org.jboss.as.web.common.SharedTldsMetaDataBuilder;
 import org.jboss.as.web.deployment.EarContextRootProcessor;
+import org.jboss.as.web.deployment.ELExpressionFactoryProcessor;
 import org.jboss.as.web.deployment.JBossWebParsingDeploymentProcessor;
 import org.jboss.as.web.deployment.ServletContainerInitializerDeploymentProcessor;
 import org.jboss.as.web.deployment.TldParsingDeploymentProcessor;
@@ -52,7 +56,9 @@ import org.jboss.as.web.deployment.WarStructureDeploymentProcessor;
 import org.jboss.as.web.deployment.WebFragmentParsingDeploymentProcessor;
 import org.jboss.as.web.deployment.WebJBossAllParser;
 import org.jboss.as.web.deployment.WebParsingDeploymentProcessor;
+import org.jboss.as.web.deployment.common.JbossCommonWebServer;
 import org.jboss.as.web.deployment.component.WebComponentProcessor;
+import org.jboss.as.web.host.CommonWebServer;
 import org.jboss.dmr.ModelNode;
 import org.jboss.metadata.web.jboss.JBossWebMetaData;
 import org.jboss.msc.service.ServiceBuilder.DependencyType;
@@ -61,9 +67,6 @@ import org.jboss.msc.service.ServiceController.Mode;
 import org.jboss.msc.service.ServiceName;
 import org.jboss.msc.service.ServiceTarget;
 import org.jboss.msc.value.InjectedValue;
-
-import javax.management.MBeanServer;
-import java.util.List;
 
 /**
  * Adds the web subsystem.
@@ -101,6 +104,9 @@ class WebSubsystemAdd extends AbstractBoottimeAddStepHandler {
         final ModelNode instanceIdModel = WebDefinition.INSTANCE_ID.resolveModelAttribute(context, fullModel);
         final String instanceId = instanceIdModel.isDefined() ? instanceIdModel.asString() : null;
 
+        final WebServerService service = new WebServerService(defaultVirtualServer, useNative, instanceId, TEMP_DIR);
+        final JbossCommonWebServer commonWebServer = new JbossCommonWebServer();
+
         context.addStep(new AbstractDeploymentChainStep() {
             @Override
             protected void execute(DeploymentProcessorTarget processorTarget) {
@@ -125,17 +131,20 @@ class WebSubsystemAdd extends AbstractBoottimeAddStepHandler {
                 processorTarget.addDeploymentProcessor(WebExtension.SUBSYSTEM_NAME, Phase.POST_MODULE, Phase.POST_MODULE_EL_EXPRESSION_FACTORY, new ELExpressionFactoryProcessor());
 
                 processorTarget.addDeploymentProcessor(WebExtension.SUBSYSTEM_NAME, Phase.INSTALL, Phase.INSTALL_SERVLET_INIT_DEPLOYMENT, new ServletContainerInitializerDeploymentProcessor());
-                processorTarget.addDeploymentProcessor(WebExtension.SUBSYSTEM_NAME, Phase.INSTALL, Phase.INSTALL_WAR_DEPLOYMENT, new WarDeploymentProcessor(defaultVirtualServer));
+                processorTarget.addDeploymentProcessor(WebExtension.SUBSYSTEM_NAME, Phase.INSTALL, Phase.INSTALL_WAR_DEPLOYMENT, new WarDeploymentProcessor(defaultVirtualServer, service));
             }
         }, OperationContext.Stage.RUNTIME);
 
         final ServiceTarget target = context.getServiceTarget();
-        final WebServerService service = new WebServerService(defaultVirtualServer, useNative, instanceId, TEMP_DIR);
         newControllers.add(target.addService(WebSubsystemServices.JBOSS_WEB, service)
                 .addDependency(PathManagerService.SERVICE_NAME, PathManager.class, service.getPathManagerInjector())
                 .addDependency(DependencyType.OPTIONAL, ServiceName.JBOSS.append("mbean", "server"), MBeanServer.class, service.getMbeanServer())
                 .setInitialMode(Mode.ON_DEMAND)
                 .install());
+        newControllers.add(target.addService(CommonWebServer.SERVICE_NAME, commonWebServer)
+                        .addDependency(WebSubsystemServices.JBOSS_WEB, WebServer.class, commonWebServer.getWebServer())
+                        .setInitialMode(Mode.PASSIVE)
+                        .install());
 
         final DistributedCacheManagerFactory factory = new DistributedCacheManagerFactoryService().getValue();
         if (factory != null) {

@@ -23,28 +23,29 @@
 package org.jboss.as.controller;
 
 import static org.jboss.logging.Logger.Level.ERROR;
+import static org.jboss.logging.Logger.Level.INFO;
 import static org.jboss.logging.Logger.Level.WARN;
 
 import java.io.Closeable;
 import java.net.InetAddress;
-import java.net.NetworkInterface;
+import java.util.List;
 import java.util.Set;
 
 import javax.xml.stream.XMLStreamWriter;
 
 import org.jboss.dmr.ModelNode;
 import org.jboss.logging.BasicLogger;
-import org.jboss.logging.annotations.Cause;
-import org.jboss.logging.annotations.LogMessage;
 import org.jboss.logging.Logger;
 import org.jboss.logging.Logger.Level;
+import org.jboss.logging.annotations.Cause;
+import org.jboss.logging.annotations.LogMessage;
 import org.jboss.logging.annotations.Message;
 import org.jboss.logging.annotations.MessageLogger;
 
 /**
- * This module is using message IDs in the range 14600-14899.
+ * This module is using message IDs in the ranges 14600-14899 and 13400-13499.
  * <p/>
- * This file is using the subset 14600-14629 for logger messages.
+ * This file is using the subsets 14600-14629 and 13400-13449 for logger messages.
  * <p/>
  * See <a href="http://community.jboss.org/docs/DOC-16810">http://community.jboss.org/docs/DOC-16810</a> for the full
  * list of currently reserved JBAS message id blocks.
@@ -77,6 +78,16 @@ public interface ControllerLogger extends BasicLogger {
     ControllerLogger SERVER_MANAGEMENT_LOGGER = Logger.getMessageLogger(ControllerLogger.class, "org.jboss.server.management");
 
     /**
+     * A logger for logging deprecated resources usage
+     */
+    ControllerLogger DEPRECATED_LOGGER = Logger.getMessageLogger(ControllerLogger.class, ControllerLogger.class.getPackage().getName() + ".management-deprecated");
+
+    /**
+     * A logger for logging problems in the transformers
+     */
+    ControllerLogger TRANSFORMER_LOGGER = Logger.getMessageLogger(ControllerLogger.class, ControllerLogger.class.getPackage().getName() + ".transformer");
+
+    /**
      * Logs a warning message indicating the address, represented by the {@code address} parameter, could not be
      * resolved, so cannot match it to any InetAddress.
      *
@@ -84,7 +95,7 @@ public interface ControllerLogger extends BasicLogger {
      */
     @LogMessage(level = WARN)
     @Message(id = 14600, value = "Cannot resolve address %s, so cannot match it to any InetAddress")
-    void cannotResolveAddress(ModelNode address);
+    void cannotResolveAddress(String address);
 
     /**
      * Logs an error message indicating there was an error booting the container.
@@ -209,18 +220,19 @@ public interface ControllerLogger extends BasicLogger {
     @Message(id = 14610, value = "Address %1$s is a wildcard address, which will not match against any specific address. Do not use " +
             "the '%2$s' configuration element to specify that an interface should use a wildcard address; " +
             "use '%3$s', '%4$s', or '%5$s'")
-    void invalidWildcardAddress(ModelNode address, String inetAddress, String anyAddress, String anyIpv4Address, String anyIpv6Address);
+    void invalidWildcardAddress(String address, String inetAddress, String anyAddress, String anyIpv4Address, String anyIpv6Address);
 
     /**
      * Logs an error message indicating no handler for the step operation, represented by the {@code stepOpName}
      * parameter, at {@code address}.
      *
      * @param stepOpName the step operation name.
-     * @param address    the address.
+     * @param address    the address
+     * @deprecated use {@link #noSuchResourceType(PathAddress)} or {@link #noHandlerForOperation(String, PathAddress)}
      */
-    @LogMessage(level = ERROR)
-    @Message(id = 14611, value = "No handler for %s at address %s")
-    void noHandler(String stepOpName, PathAddress address);
+//    @LogMessage(level = ERROR)
+//    @Message(id = 14611, value = "No handler for %s at address %s")
+//    void noHandler(String stepOpName, PathAddress address);
 
     /**
      * Logs an error message indicating operation failed.
@@ -319,9 +331,9 @@ public interface ControllerLogger extends BasicLogger {
      * Logs a warning message indicating graceful shutdown of management request handling of slave HC to master HC
      * communication failed.
      *
-     * @param cause the the cause of the failure
+     * @param cause        the the cause of the failure
      * @param propertyName the name of the system property
-     * @param propValue the value provided
+     * @param propValue    the value provided
      */
     @LogMessage(level = Logger.Level.WARN)
     @Message(id = 14620, value = "Invalid value '%s' for system property '%s' -- value must be convertible into an int")
@@ -331,10 +343,10 @@ public interface ControllerLogger extends BasicLogger {
      * Logs a warning message indicating multiple addresses or nics matched the selection criteria provided for
      * an interface
      *
-     * @param interfaceName the name of the interface configuration
-     * @param addresses the matching addresses
-     * @param nis the matching nics
-     * @param inetAddress the selected address
+     * @param interfaceName    the name of the interface configuration
+     * @param addresses        the matching addresses
+     * @param nis              the matching nics
+     * @param inetAddress      the selected address
      * @param networkInterface the selected nic
      */
     @LogMessage(level = Logger.Level.WARN)
@@ -345,9 +357,9 @@ public interface ControllerLogger extends BasicLogger {
      * Logs a warning message indicating multiple addresses or nics matched the selection criteria provided for
      * an interface
      *
-     * @param toMatch the name of the interface configuration
+     * @param toMatch   the name of the interface configuration
      * @param addresses the matching addresses
-     * @param nis the matching nics
+     * @param nis       the matching nics
      */
     @LogMessage(level = Logger.Level.WARN)
     @Message(id = 14622, value = "Value '%s' for interface selection criteria 'inet-address' is ambiguous, as more than one address or network interface available on the machine matches it. Because of this ambiguity, no address will be selected as a match. Matching addresses: %s.  Matching network interfaces: %s.")
@@ -388,4 +400,56 @@ public interface ControllerLogger extends BasicLogger {
     @LogMessage(level = Level.WARN)
     @Message(id = 14626, value = "Operation was interrupted before stability could be reached")
     void interruptedWaitingStability();
+
+    @LogMessage(level = Level.INFO)
+    @Message(id = 14627, value = "Attribute %s is deprecated, and it might be removed in future version!")
+    void attributeDeprecated(String name);
+
+    /**
+     * Logs a warnning message indicating a temp file could not be deleted.
+     *
+     * @param name temp filename
+     */
+    @LogMessage(level = Level.WARN)
+    @Message(id = 14628, value = "Cannot delete temp file %s, will be deleted on exit")
+    void cannotDeleteTempFile(String name);
+
+    /**
+     * Logs an error message indicating the given {@code address} does not match any known
+     * resource registration.
+     *
+     * @param address the address.
+     */
+    @LogMessage(level = ERROR)
+    @Message(id = 14629, value = "No resource definition is registered for address %s")
+    void noSuchResourceType(PathAddress address);
+
+    // END OF 146xx SERIES USABLE FOR LOGGER MESSAGES
+
+    /**
+     * Logs an error message indicating no handler is registered for an operation, represented by the {@code operationName}
+     * parameter, at {@code address}.
+     *
+     * @param operationName the operation name.
+     * @param address       the address.
+     */
+    @LogMessage(level = ERROR)
+    @Message(id = 13400, value = "No operation named '%s' exists at address %s")
+    void noHandlerForOperation(String operationName, PathAddress address);
+
+    @Message(id = 13403, value = "There were problems during the transformation process for target host: '%s' %nProblems found: %n%s")
+    @LogMessage(level = WARN)
+    void tranformationWarnings(String hostName, Set<String> problems);
+
+
+    @Message(id = 13404, value = "Extension '%s' is deprecated and may not be supported in future versions")
+    @LogMessage(level = WARN)
+    void extensionDeprecated(String extensionName);
+
+    @Message(id = 13405, value = "Subsystems %s provided by legacy extension '%s' are not supported on servers running this version. " +
+            "The extension is only supported for use by hosts running a previous release in a mixed-version managed domain. " +
+            "On this server the extension will not register any subsystems, and future attempts to create or address " +
+            "subsystem resources on this server will result in failure.")
+    @LogMessage(level = INFO)
+    void ignoringUnsupportedLegacyExtension(List<String> subsystemNames, String extensionName);
 }

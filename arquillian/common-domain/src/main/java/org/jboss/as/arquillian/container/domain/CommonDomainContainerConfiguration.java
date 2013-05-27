@@ -47,7 +47,7 @@ public class CommonDomainContainerConfiguration implements ContainerConfiguratio
 
     public CommonDomainContainerConfiguration() {
         managementAddress = getInetAddress("127.0.0.1");
-        managementPort = 9999;
+        managementPort = 9990;
     }
 
     public InetAddress getManagementAddress() {
@@ -124,7 +124,7 @@ public class CommonDomainContainerConfiguration implements ContainerConfiguratio
      * Change the container mode of the Servers or ServerGroups in the Domain.
      * format: host:server-name=manual,host:.*=suite
      *
-     * @param containerModeMap
+     * @param containerModeString
      */
     public void setContainerModeMap(String containerModeString) {
         this.containerModeMap = convertToMap(containerModeString);

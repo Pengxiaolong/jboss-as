@@ -27,7 +27,6 @@ import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.MAN
 
 import org.jboss.as.controller.AttributeDefinition;
 import org.jboss.as.controller.PathElement;
-import org.jboss.as.controller.ResourceDefinition;
 import org.jboss.as.controller.SimpleAttributeDefinition;
 import org.jboss.as.controller.SimpleAttributeDefinitionBuilder;
 import org.jboss.as.controller.SimpleResourceDefinition;
@@ -47,7 +46,7 @@ import org.jboss.dmr.ModelNode;
 import org.jboss.dmr.ModelType;
 
 /**
- * {@link ResourceDefinition} for the HTTP management interface resource.
+ * {@link org.jboss.as.controller.ResourceDefinition} for the HTTP management interface resource.
  *
  * @author Brian Stansberry (c) 2011 Red Hat Inc.
  */
@@ -75,11 +74,18 @@ public class HttpManagementResourceDefinition extends SimpleResourceDefinition {
             .setAllowExpression(true).setValidator(new IntRangeValidator(0, 65535, true, true))
             .build();
     public static final SimpleAttributeDefinition CONSOLE_ENABLED = new SimpleAttributeDefinitionBuilder(ModelDescriptionConstants.CONSOLE_ENABLED, ModelType.BOOLEAN, true)
+                .setAllowExpression(true)
                 .setXmlName(Attribute.CONSOLE_ENABLED.getLocalName())
                 .setDefaultValue(new ModelNode(true))
                 .build();
 
-    public static final AttributeDefinition[] ATTRIBUTE_DEFINITIONS = new AttributeDefinition[] {INTERFACE, HTTP_PORT, HTTPS_PORT, SECURITY_REALM,CONSOLE_ENABLED};
+    public static final SimpleAttributeDefinition HTTP_UPGRADE_ENABLED = new SimpleAttributeDefinitionBuilder(ModelDescriptionConstants.HTTP_UPGRADE_ENABLED, ModelType.BOOLEAN, true)
+                    .setAllowExpression(true)
+                    .setXmlName(Attribute.HTTP_UPGRADE_ENABLED.getLocalName())
+                    .setDefaultValue(new ModelNode(false))
+                    .build();
+
+    public static final AttributeDefinition[] ATTRIBUTE_DEFINITIONS = new AttributeDefinition[] {INTERFACE, HTTP_PORT, HTTPS_PORT, SECURITY_REALM,CONSOLE_ENABLED,HTTP_UPGRADE_ENABLED};
 
     public HttpManagementResourceDefinition(final LocalHostControllerInfoImpl hostControllerInfo,
                                              final HostControllerEnvironment environment) {

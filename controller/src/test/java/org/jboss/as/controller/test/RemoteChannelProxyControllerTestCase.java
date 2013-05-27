@@ -21,25 +21,22 @@
 */
 package org.jboss.as.controller.test;
 
-import java.io.IOException;
-
 import org.jboss.as.controller.ModelController;
 import org.jboss.as.controller.PathAddress;
 import org.jboss.as.controller.ProxyController;
 import org.jboss.as.controller.ProxyOperationAddressTranslator;
 import org.jboss.as.controller.remote.RemoteProxyController;
-import org.jboss.as.controller.remote.TransactionalProtocolHandlers;
 import org.jboss.as.controller.remote.TransactionalProtocolOperationHandler;
 import org.jboss.as.controller.support.RemoteChannelPairSetup;
 import org.jboss.as.protocol.mgmt.ManagementChannelHandler;
 import org.jboss.as.protocol.mgmt.support.ManagementChannelInitialization;
 import org.jboss.remoting3.Channel;
 import org.jboss.remoting3.CloseHandler;
-import org.jboss.remoting3.HandleableCloseable;
 import org.junit.After;
 
+import java.io.IOException;
+
 /**
- *
  * @author <a href="kabir.khan@jboss.com">Kabir Khan</a>
  * @version $Revision: 1.1 $
  */
@@ -60,7 +57,7 @@ public class RemoteChannelProxyControllerTestCase extends AbstractProxyControlle
             channels = new RemoteChannelPairSetup();
             channels.setupRemoting(new ManagementChannelInitialization() {
                 @Override
-                public HandleableCloseable.Key startReceiving(Channel channel) {
+                public ManagementChannelHandler startReceiving(Channel channel) {
                     final ManagementChannelHandler support = new ManagementChannelHandler(channel, channels.getExecutorService());
                     support.addHandlerFactory(new TransactionalProtocolOperationHandler(proxiedController, support));
                     channel.addCloseHandler(new CloseHandler<Channel>() {
@@ -70,7 +67,7 @@ public class RemoteChannelProxyControllerTestCase extends AbstractProxyControlle
                         }
                     });
                     channel.receiveMessage(support.getReceiver());
-                    return null;
+                    return support;
                 }
             });
             channels.startClientConnetion();

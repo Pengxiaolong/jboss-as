@@ -24,7 +24,6 @@ package org.jboss.as.server;
 
 import java.io.File;
 import java.io.IOException;
-import java.io.InputStream;
 import java.io.InvalidObjectException;
 import java.net.MalformedURLException;
 import java.net.URL;
@@ -227,7 +226,7 @@ public interface ServerMessages {
     String malformedCommandLineURL(String urlSpec, String option);
 
     /**
-     * Creates an error message indicating {@link java.util.Properties#load(InputStream) properties could not be loaded}
+     * Creates an error message indicating {@link java.util.Properties#load(java.io.InputStream) properties could not be loaded}
      * from a given url.
      *
      * @param url the provided url
@@ -596,8 +595,8 @@ public interface ServerMessages {
     @Message(id = 18759, value = "Failed to load module: %s")
     StartException failedToLoadModule(ModuleIdentifier module, @Cause ModuleLoadException cause);
 
-    @Message(id = 18760, value = "Timeout waiting for module service: %s")
-    ModuleLoadException timeoutWaitingForModuleService(ModuleIdentifier module);
+    //@Message(id = 18760, value = "Timeout waiting for module service: %s")
+    //ModuleLoadException timeoutWaitingForModuleService(ModuleIdentifier module);
 
     @Message(id = 18761, value = "%s cannot be defined when %s is also defined")
     OperationFailedException conflictingConfigs(String choice, String alternative);

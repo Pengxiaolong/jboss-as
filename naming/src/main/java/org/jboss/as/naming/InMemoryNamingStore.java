@@ -22,7 +22,23 @@
 
 package org.jboss.as.naming;
 
+import static org.jboss.as.naming.util.NamingUtils.cannotProceedException;
+import static org.jboss.as.naming.util.NamingUtils.emptyNameException;
+import static org.jboss.as.naming.util.NamingUtils.getLastComponent;
+import static org.jboss.as.naming.util.NamingUtils.isEmpty;
+import static org.jboss.as.naming.util.NamingUtils.isLastComponentEmpty;
+import static org.jboss.as.naming.util.NamingUtils.nameAlreadyBoundException;
+import static org.jboss.as.naming.util.NamingUtils.nameNotFoundException;
+import static org.jboss.as.naming.util.NamingUtils.notAContextException;
+
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Hashtable;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.atomic.AtomicReferenceFieldUpdater;
 import java.util.concurrent.locks.ReentrantLock;
+
 import javax.naming.Binding;
 import javax.naming.CannotProceedException;
 import javax.naming.CompositeName;
@@ -36,20 +52,6 @@ import javax.naming.event.EventContext;
 import javax.naming.event.NamingEvent;
 import javax.naming.event.NamingListener;
 import javax.naming.spi.ResolveResult;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.Hashtable;
-import java.util.List;
-import java.util.Map;
-import java.util.concurrent.atomic.AtomicReferenceFieldUpdater;
-import static org.jboss.as.naming.util.NamingUtils.cannotProceedException;
-import static org.jboss.as.naming.util.NamingUtils.emptyNameException;
-import static org.jboss.as.naming.util.NamingUtils.getLastComponent;
-import static org.jboss.as.naming.util.NamingUtils.isEmpty;
-import static org.jboss.as.naming.util.NamingUtils.isLastComponentEmpty;
-import static org.jboss.as.naming.util.NamingUtils.nameAlreadyBoundException;
-import static org.jboss.as.naming.util.NamingUtils.nameNotFoundException;
-import static org.jboss.as.naming.util.NamingUtils.notAContextException;
 
 
 /**
@@ -69,20 +71,50 @@ public class InMemoryNamingStore implements WritableNamingStore {
 
     private final ReentrantLock writeLock = new ReentrantLock();
 
+    private final Name baseName;
+
     /**
-     * Construct instance with no event support.
+     * Construct instance with no event support, and an empty base name.
      */
     public InMemoryNamingStore() {
-        this(null);
+        this(null, new CompositeName());
     }
 
     /**
-     * Construct instance with an event coordinator.
+     * Construct instance with an event coordinator, and an empty base name.
      *
      * @param eventCoordinator The event coordinator
      */
     public InMemoryNamingStore(final NamingEventCoordinator eventCoordinator) {
+        this(eventCoordinator, new CompositeName());
+    }
+
+    /**
+     * Construct instance with no event support, and the specified base name.
+     *
+     * @param baseName
+     */
+    public InMemoryNamingStore(final Name baseName) {
+        this(null, baseName);
+    }
+
+    /**
+     * Construct instance with an event coordinator, and the specified base name.
+     *
+     * @param eventCoordinator
+     * @param baseName
+     */
+    public InMemoryNamingStore(final NamingEventCoordinator eventCoordinator, final Name baseName) {
         this.eventCoordinator = eventCoordinator;
+        if(baseName == null) {
+            throw new NullPointerException(NamingMessages.MESSAGES.cannotBeNull("baseName"));
+        }
+        this.baseName = baseName;
+    }
+
+    /** {@inheritDoc} */
+    public Name getBaseName() throws NamingException {
+        return baseName;
     }
 
     /** {@inheritDoc} */
@@ -95,7 +127,6 @@ public class InMemoryNamingStore implements WritableNamingStore {
         if (isLastComponentEmpty(name)) {
             throw emptyNameException();
         }
-        checkPermissions(name, JndiPermission.Action.BIND);
 
         writeLock.lock();
         try {
@@ -115,7 +146,6 @@ public class InMemoryNamingStore implements WritableNamingStore {
         if (isLastComponentEmpty(name)) {
             throw emptyNameException();
         }
-        checkPermissions(name, JndiPermission.Action.REBIND);
 
         writeLock.lock();
         try {
@@ -135,7 +165,6 @@ public class InMemoryNamingStore implements WritableNamingStore {
         if (isLastComponentEmpty(name)) {
             throw emptyNameException();
         }
-        checkPermissions(name, JndiPermission.Action.UNBIND);
 
         writeLock.lock();
         try {
@@ -155,11 +184,15 @@ public class InMemoryNamingStore implements WritableNamingStore {
     public Object lookup(final Name name) throws NamingException {
         if (isEmpty(name)) {
             final Name emptyName = new CompositeName("");
-            checkPermissions(emptyName, JndiPermission.Action.LOOKUP);
             return new NamingContext(emptyName, this, new Hashtable<String, Object>());
         }
-        checkPermissions(name, JndiPermission.Action.LOOKUP);
         return root.accept(new LookupVisitor(name));
+    }
+
+    @Override
+    public Object lookup(Name name, boolean dereference) throws NamingException {
+        // ignoring dereference arg, it's not relevant to this store impl
+        return lookup(name);
     }
 
     /**
@@ -171,7 +204,6 @@ public class InMemoryNamingStore implements WritableNamingStore {
      */
     public List<NameClassPair> list(final Name name) throws NamingException {
         final Name nodeName = name.isEmpty() ? new CompositeName("") : name;
-        checkPermissions(nodeName, JndiPermission.Action.LIST);
         return root.accept(new ListVisitor(nodeName));
     }
 
@@ -184,15 +216,13 @@ public class InMemoryNamingStore implements WritableNamingStore {
      */
     public List<Binding> listBindings(final Name name) throws NamingException {
         final Name nodeName = name.isEmpty() ? new CompositeName("") : name;
-        checkPermissions(nodeName, JndiPermission.Action.LIST_BINDINGS);
-        return root.accept(new ListBindingsVisitor(name));
+        return root.accept(new ListBindingsVisitor(nodeName));
     }
 
     public Context createSubcontext(final Name name) throws NamingException {
         if (isLastComponentEmpty(name)) {
             throw emptyNameException();
         }
-        checkPermissions(name, JndiPermission.Action.CREATE_SUBCONTEXT);
         return root.accept(new CreateSubContextVisitor(name));
     }
 
@@ -251,13 +281,6 @@ public class InMemoryNamingStore implements WritableNamingStore {
             if (((Reference) object).get("nns") != null) {
                 throw cannotProceedException(object, name);
             }
-        }
-    }
-
-    private void checkPermissions(final Name name, JndiPermission.Action permission) {
-        final SecurityManager sm = System.getSecurityManager();
-        if (sm != null) {
-            sm.checkPermission(new JndiPermission(name, permission));
         }
     }
 

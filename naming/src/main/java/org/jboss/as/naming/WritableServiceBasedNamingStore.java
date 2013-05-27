@@ -27,53 +27,71 @@ import static org.jboss.as.naming.util.NamingUtils.isLastComponentEmpty;
 import static org.jboss.as.naming.util.NamingUtils.namingException;
 
 import java.util.Hashtable;
+import java.util.Set;
 
 import javax.naming.Context;
 import javax.naming.Name;
 import javax.naming.NamingException;
 
+import org.jboss.as.naming.deployment.JndiNamingDependencyProcessor;
 import org.jboss.as.naming.service.BinderService;
 import org.jboss.as.naming.util.ThreadLocalStack;
-import org.jboss.msc.service.AbstractServiceListener;
 import org.jboss.msc.service.ServiceBuilder;
 import org.jboss.msc.service.ServiceController;
 import org.jboss.msc.service.ServiceName;
 import org.jboss.msc.service.ServiceRegistry;
 import org.jboss.msc.service.ServiceTarget;
+import org.jboss.msc.service.StabilityMonitor;
 import org.jboss.msc.value.ImmediateValue;
 
 /**
  * @author John Bailey
+ * @author Eduardo Martins
+ * @author <a href="mailto:ropalka@redhat.com">Richard Opalka</a>
  */
 public class WritableServiceBasedNamingStore extends ServiceBasedNamingStore implements WritableNamingStore {
-    private static final ThreadLocalStack<WriteOwner> WRITE_OWNER = new ThreadLocalStack<WriteOwner>();
+    private static final ThreadLocalStack<ServiceName> WRITE_OWNER = new ThreadLocalStack<ServiceName>();
 
-    public WritableServiceBasedNamingStore(ServiceRegistry serviceRegistry, ServiceName serviceNameBase) {
+    private final ServiceTarget serviceTarget;
+
+    public WritableServiceBasedNamingStore(ServiceRegistry serviceRegistry, ServiceName serviceNameBase, ServiceTarget serviceTarget) {
         super(serviceRegistry, serviceNameBase);
+        this.serviceTarget = serviceTarget;
     }
 
     public void bind(final Name name, final Object object) throws NamingException {
-        final WriteOwner owner = requireOwner();
-
+        final ServiceName deploymentUnitServiceName = requireOwner();
         final ServiceName bindName = buildServiceName(name);
-        final BindListener listener = new BindListener();
+        bind(name, bindName, object, deploymentUnitServiceName);
+    }
 
-        final BinderService binderService = new BinderService(name.toString());
-        final ServiceBuilder<?> builder = owner.target.addService(bindName, binderService)
-                .addDependency(getServiceNameBase(), ServiceBasedNamingStore.class, binderService.getNamingStoreInjector())
-                .addInjection(binderService.getManagedObjectInjector(), new ValueManagedReferenceFactory(new ImmediateValue<Object>(object)))
-                .setInitialMode(ServiceController.Mode.ACTIVE)
-                .addListener(listener);
-        for(ServiceName dependency : owner.dependencies) {
-            builder.addDependency(dependency);
-        }
-        builder.install();
+    @SuppressWarnings("unchecked")
+    private void bind(final Name name, final ServiceName bindName, final Object object, final ServiceName deploymentUnitServiceName) throws NamingException {
         try {
-            listener.await();
+            final BinderService binderService = new BinderService(name.toString());
+            final ServiceBuilder<?> builder = serviceTarget.addService(bindName, binderService)
+                    .addDependency(getServiceNameBase(), ServiceBasedNamingStore.class, binderService.getNamingStoreInjector())
+                    .addInjection(binderService.getManagedObjectInjector(), new ValueManagedReferenceFactory(new ImmediateValue<Object>(object)))
+                    .setInitialMode(ServiceController.Mode.ACTIVE);
+            final ServiceController<?> binderServiceController = builder.install();
+            final StabilityMonitor monitor = new StabilityMonitor();
+            monitor.addController(binderServiceController);
+            try {
+                monitor.awaitStability();
+            } finally {
+                monitor.removeController(binderServiceController);
+            }
+            final Exception startException = binderServiceController.getStartException();
+            if (startException != null) {
+                throw startException;
+            }
+            binderService.acquire();
+            // add the service name to runtime bindings management service, which on stop releases the services.
+            final Set<ServiceName> duBindingReferences = (Set<ServiceName>) getServiceRegistry().getService(JndiNamingDependencyProcessor.serviceName(deploymentUnitServiceName)).getValue();
+            duBindingReferences.add(bindName);
         } catch (Exception e) {
             throw namingException("Failed to bind [" + object + "] at location [" + bindName + "]", e);
         }
-
     }
 
     public void bind(final Name name, final Object object, final Class<?> bindType) throws NamingException {
@@ -81,34 +99,45 @@ public class WritableServiceBasedNamingStore extends ServiceBasedNamingStore imp
     }
 
     public void rebind(Name name, Object object) throws NamingException {
+        final ServiceName deploymentUnitServiceName = requireOwner();
+        final ServiceName bindName = buildServiceName(name);
         try {
-            unbind(name);
+            unbind(name, bindName);
         } catch (NamingException ignore) {
             // rebind may fail if there is no existing binding
         }
-
-        bind(name, object);
+        bind(name, bindName, object, deploymentUnitServiceName);
     }
 
     public void rebind(final Name name, final Object object, final Class<?> bindType) throws NamingException {
         rebind(name, object);
     }
 
+    @SuppressWarnings("unchecked")
     public void unbind(final Name name) throws NamingException {
-        requireOwner();
+        final ServiceName deploymentUnitServiceName = requireOwner();
         final ServiceName bindName = buildServiceName(name);
+        // do the unbinding
+        unbind(name, bindName);
+        // remove the service name from runtime bindings management service
+        final Set<ServiceName> duBindingReferences = (Set<ServiceName>) getServiceRegistry().getService(JndiNamingDependencyProcessor.serviceName(deploymentUnitServiceName)).getValue();
+        duBindingReferences.remove(bindName);
+    }
 
+    private void unbind(final Name name, final ServiceName bindName) throws NamingException {
         final ServiceController<?> controller = getServiceRegistry().getService(bindName);
         if (controller == null) {
             throw MESSAGES.cannotResolveService(bindName);
         }
-
-        final UnbindListener listener = new UnbindListener();
-        controller.addListener(listener);
+        controller.setMode(ServiceController.Mode.REMOVE);
+        final StabilityMonitor monitor = new StabilityMonitor();
+        monitor.addController(controller);
         try {
-            listener.await();
+            monitor.awaitStability();
         } catch (Exception e) {
             throw namingException("Failed to unbind [" + bindName + "]", e);
+        } finally {
+            monitor.removeController(controller);
         }
     }
 
@@ -120,83 +149,20 @@ public class WritableServiceBasedNamingStore extends ServiceBasedNamingStore imp
         return new NamingContext(name, WritableServiceBasedNamingStore.this, new Hashtable<String, Object>());
     }
 
-    private WriteOwner requireOwner() {
-        final WriteOwner owner = WRITE_OWNER.peek();
+    private ServiceName requireOwner() {
+        final ServiceName owner = WRITE_OWNER.peek();
         if (owner == null) {
             throw MESSAGES.readOnlyNamingContext();
         }
         return owner;
     }
 
-    private class BindListener extends AbstractServiceListener<Object> {
-        private Exception exception;
-        private boolean complete;
-
-        public synchronized void transition(ServiceController<? extends Object> serviceController, ServiceController.Transition transition) {
-            switch (transition) {
-                case STARTING_to_UP: {
-                    complete = true;
-                    notifyAll();
-                    break;
-                }
-                case STARTING_to_START_FAILED: {
-                    complete = true;
-                    exception = serviceController.getStartException();
-                    notifyAll();
-                    break;
-                }
-            }
-        }
-
-        public synchronized void await() throws Exception {
-            while(!complete) {
-                wait();
-            }
-            if (exception != null) {
-                throw exception;
-            }
-        }
-    }
-
-    private class UnbindListener extends AbstractServiceListener<Object> {
-        private boolean complete;
-
-        public void listenerAdded(ServiceController<?> controller) {
-            controller.setMode(ServiceController.Mode.REMOVE);
-        }
-
-        public synchronized void transition(ServiceController<? extends Object> serviceController, ServiceController.Transition transition) {
-            switch (transition) {
-                case REMOVING_to_REMOVED: {
-                    complete = true;
-                    notifyAll();
-                    break;
-                }
-            }
-        }
-
-        public synchronized void await() throws Exception {
-            while(!complete) {
-                wait();
-            }
-        }
-    }
-
-    public static void pushOwner(final ServiceTarget target, final ServiceName... dependencies) {
-        WRITE_OWNER.push(new WriteOwner(target, dependencies));
+    public static void pushOwner(final ServiceName du) {
+        WRITE_OWNER.push(du);
     }
 
     public static void popOwner() {
         WRITE_OWNER.pop();
     }
 
-    private static class WriteOwner {
-        private final ServiceTarget target;
-        private final ServiceName[] dependencies;
-
-        public WriteOwner(final ServiceTarget target, final ServiceName... dependencies) {
-            this.target = target;
-            this.dependencies = dependencies;
-        }
-    }
 }

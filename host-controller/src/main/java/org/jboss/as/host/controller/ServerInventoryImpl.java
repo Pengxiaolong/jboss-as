@@ -26,20 +26,6 @@ import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.HOS
 import static org.jboss.as.host.controller.HostControllerLogger.ROOT_LOGGER;
 import static org.jboss.as.host.controller.HostControllerMessages.MESSAGES;
 
-import java.io.IOException;
-import java.net.InetSocketAddress;
-import java.nio.charset.Charset;
-import java.security.NoSuchAlgorithmException;
-import java.util.HashMap;
-import java.util.LinkedList;
-import java.util.List;
-import java.util.Locale;
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.TimeUnit;
-
 import javax.security.auth.callback.Callback;
 import javax.security.auth.callback.CallbackHandler;
 import javax.security.auth.callback.NameCallback;
@@ -47,13 +33,33 @@ import javax.security.auth.callback.PasswordCallback;
 import javax.security.auth.callback.UnsupportedCallbackException;
 import javax.security.sasl.AuthorizeCallback;
 import javax.security.sasl.RealmCallback;
+import java.io.IOException;
+import java.net.InetSocketAddress;
+import java.nio.charset.Charset;
+import java.security.NoSuchAlgorithmException;
+import java.security.SecureRandom;
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.LinkedList;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Random;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 
+import org.jboss.as.controller.CurrentOperationIdHolder;
 import org.jboss.as.controller.ModelVersion;
+import org.jboss.as.controller.PathAddress;
 import org.jboss.as.controller.ProxyController;
 import org.jboss.as.controller.client.helpers.domain.ServerStatus;
 import org.jboss.as.controller.extension.ExtensionRegistry;
+import org.jboss.as.controller.remote.TransactionalProtocolClient;
 import org.jboss.as.controller.transform.TransformationTarget;
 import org.jboss.as.controller.transform.TransformationTargetImpl;
+import org.jboss.as.controller.transform.TransformerRegistry;
 import org.jboss.as.domain.controller.DomainController;
 import org.jboss.as.process.ProcessControllerClient;
 import org.jboss.as.process.ProcessInfo;
@@ -168,7 +174,11 @@ public class ServerInventoryImpl implements ServerInventory {
         }
         ManagedServer server = servers.get(serverName);
         if(server == null) {
-            final ManagedServer newServer = createManagedServer(serverName, domainModel);
+            // Create a new authKey
+            final byte[] authKey = new byte[16];
+            new Random(new SecureRandom().nextLong()).nextBytes(authKey);
+            // Create the managed server
+            final ManagedServer newServer = createManagedServer(serverName, domainModel, authKey);
             server = servers.putIfAbsent(serverName, newServer);
             if(server == null) {
                 server = newServer;
@@ -179,7 +189,11 @@ public class ServerInventoryImpl implements ServerInventory {
             shutdownCondition.notifyAll();
         }
         if(blocking) {
+            // Block until the server started message
             server.awaitState(ManagedServer.InternalState.SERVER_STARTED);
+        } else {
+            // Wait until the server opens the mgmt connection
+            server.awaitState(ManagedServer.InternalState.SERVER_STARTING);
         }
         return server.getState();
     }
@@ -231,22 +245,30 @@ public class ServerInventoryImpl implements ServerInventory {
     }
 
     @Override
-    public void reconnectServer(final String serverName, final ModelNode domainModel, final boolean running) {
+    public void reconnectServer(final String serverName, final ModelNode domainModel, final byte[] authKey, final boolean running, final boolean stopping) {
         if(shutdown || connectionFinished) {
             throw HostControllerMessages.MESSAGES.hostAlreadyShutdown();
         }
-        final ManagedServer existing = servers.get(serverName);
+        ManagedServer existing = servers.get(serverName);
         if(existing != null) {
             ROOT_LOGGER.existingServerWithState(serverName, existing.getState());
             return;
         }
-        final ManagedServer server = createManagedServer(serverName, domainModel);
-        if(servers.putIfAbsent(serverName, server) != null) {
+        final ManagedServer server = createManagedServer(serverName, domainModel, authKey);
+        if ((existing = servers.putIfAbsent(serverName, server)) != null) {
             ROOT_LOGGER.existingServerWithState(serverName, existing.getState());
             return;
         }
         if(running) {
-            server.reconnectServerProcess();
+            if(!stopping) {
+                 server.reconnectServerProcess();
+                 // Register the server proxy at the domain controller
+                 domainController.registerRunningServer(server.getProxyController());
+            } else {
+                 server.setServerProcessStopping();
+            }
+        } else {
+            server.removeServerProcess();
         }
         synchronized (shutdownCondition) {
             shutdownCondition.notifyAll();
@@ -254,10 +276,49 @@ public class ServerInventoryImpl implements ServerInventory {
     }
 
     @Override
+    public ServerStatus reloadServer(final String serverName, final boolean blocking) {
+        if (shutdown || connectionFinished) {
+            throw HostControllerMessages.MESSAGES.hostAlreadyShutdown();
+        }
+        final ManagedServer server = servers.get(serverName);
+        if (server == null) {
+            return ServerStatus.STOPPED;
+        }
+        if (server.reload(CurrentOperationIdHolder.getCurrentOperationID())) {
+            // Reload with current permit
+            if (blocking) {
+                server.awaitState(ManagedServer.InternalState.SERVER_STARTED);
+            } else {
+                server.awaitState(ManagedServer.InternalState.SERVER_STARTING);
+            }
+        }
+        return determineServerStatus(serverName);
+    }
+
+    @Override
+    public void destroyServer(String serverName) {
+        final ManagedServer server = servers.get(serverName);
+        if(server == null) {
+            return;
+        }
+        server.destroy();
+    }
+
+    @Override
+    public void killServer(String serverName) {
+        final ManagedServer server = servers.get(serverName);
+        if(server == null) {
+            return;
+        }
+        server.kill();
+    }
+
+    @Override
     public void stopServers(final int gracefulTimeout) {
         stopServers(gracefulTimeout, false);
     }
 
+    @Override
     public void stopServers(final int gracefulTimeout, final boolean blockUntilStopped) {
         for(final ManagedServer server : servers.values()) {
             server.stop();
@@ -294,7 +355,19 @@ public class ServerInventoryImpl implements ServerInventory {
         }
     }
 
-    public void shutdown(final int gracefulTimeout, final boolean blockUntilStopped) {
+    @Override
+    // Hmm, maybe have startServer return some sort of Future, so the caller can decide to wait
+    public void awaitServersState(final Collection<String> serverNames, final boolean started) {
+        for (final String serverName : serverNames) {
+            final ManagedServer server = servers.get(serverName);
+            if(server == null) {
+                continue;
+            }
+            server.awaitState(started ? ManagedServer.InternalState.SERVER_STARTED : ManagedServer.InternalState.STOPPED);
+        }
+    }
+
+    void shutdown(final boolean shutdownServers, final int gracefulTimeout, final boolean blockUntilStopped) {
         final boolean shutdown = this.shutdown;
         this.shutdown = true;
         if(! shutdown) {
@@ -303,7 +376,10 @@ public class ServerInventoryImpl implements ServerInventory {
                 // nor can expect to receive any further notifications notifications.
                 return;
             }
-            stopServers(gracefulTimeout, blockUntilStopped);
+            if(shutdownServers) {
+                // Shutdown the servers as well
+                stopServers(gracefulTimeout, blockUntilStopped);
+            }
         }
     }
 
@@ -319,16 +395,19 @@ public class ServerInventoryImpl implements ServerInventory {
             return null;
         }
         try {
-            final ProxyController proxy = server.channelRegistered(channelAssociation);
+            final TransactionalProtocolClient client = server.channelRegistered(channelAssociation);
             final Channel channel = channelAssociation.getChannel();
             channel.addCloseHandler(new CloseHandler<Channel>() {
 
                 public void handleClose(final Channel closed, final IOException exception) {
-                    server.callbackUnregistered(proxy);
-                    domainController.unregisterRunningServer(server.getServerName());
+                    final boolean shuttingDown = shutdown || connectionFinished;
+                    // Unregister right away
+                    if(server.callbackUnregistered(client, shuttingDown)) {
+                        domainController.unregisterRunningServer(server.getServerName());
+                    }
                 }
             });
-            return proxy;
+            return server.getProxyController();
         } catch (IOException e) {
             throw new RuntimeException(e);
         }
@@ -336,13 +415,14 @@ public class ServerInventoryImpl implements ServerInventory {
 
     @Override
     public boolean serverReconnected(String serverProcessName, ManagementChannelHandler channelHandler) {
-        // For now just reuse the existing register and started notification
-        final ProxyController controller = serverCommunicationRegistered(serverProcessName, channelHandler);
+        final String serverName = ManagedServer.getServerName(serverProcessName);
+        final ManagedServer server = servers.get(serverName);
+        // Register the new communication channel
+        serverCommunicationRegistered(serverProcessName, channelHandler);
+        // Mark the server as started
         serverStarted(serverProcessName);
-        domainController.registerRunningServer(controller);
-        final boolean inSync = true;
-        // TODO determine whether the server is in sync
-        return inSync;
+        // If the server requires a reload, means we are out of sync
+        return server.isRequiresReload() == false;
     }
 
     @Override
@@ -353,6 +433,8 @@ public class ServerInventoryImpl implements ServerInventory {
             ROOT_LOGGER.noServerAvailable(serverName);
             return;
         }
+        // always un-register in case the process exits
+        domainController.unregisterRunningServer(server.getServerName());
         server.processFinished();
         synchronized (shutdownCondition) {
             shutdownCondition.notifyAll();
@@ -474,22 +556,17 @@ public class ServerInventoryImpl implements ServerInventory {
         }
     }
 
-    private ManagedServer createManagedServer(final String serverName, final ModelNode domainModel) {
+    private ManagedServer createManagedServer(final String serverName, final ModelNode domainModel, final byte[] authKey) {
         final String hostControllerName = domainController.getLocalHostInfo().getLocalHostName();
         final ModelNode hostModel = domainModel.require(HOST).require(hostControllerName);
         final ManagedServerBootCmdFactory combiner = new ManagedServerBootCmdFactory(serverName, domainModel, hostModel, environment, domainController.getExpressionResolver());
-        final ManagedServer.ManagedServerBootConfiguration configuration = combiner.createConfiguration();
-        final ModelNode subsystems = resolveSubsystems(extensionRegistry);
-        final TransformationTarget target = TransformationTargetImpl.create(extensionRegistry.getTransformerRegistry(), ModelVersion.create(Version.MANAGEMENT_MAJOR_VERSION, Version.MANAGEMENT_MINOR_VERSION, Version.MANAGEMENT_MICRO_VERSION), subsystems, TransformationTarget.TransformationTargetType.SERVER);
-        return new ManagedServer(hostControllerName, serverName, processControllerClient, managementAddress, configuration, target);
-    }
-
-    public static ModelNode resolveSubsystems(final ExtensionRegistry extensionRegistry) {
-        final ModelNode subsystems = new ModelNode();
-        for (final String extension : extensionRegistry.getExtensionModuleNames()) {
-            extensionRegistry.recordSubsystemVersions(extension, subsystems);
-        }
-        return subsystems;
+        final ManagedServerBootConfiguration configuration = combiner.createConfiguration();
+        final Map<PathAddress, ModelVersion> subsystems = TransformerRegistry.resolveVersions(extensionRegistry);
+        final ModelVersion modelVersion = ModelVersion.create(Version.MANAGEMENT_MAJOR_VERSION, Version.MANAGEMENT_MINOR_VERSION, Version.MANAGEMENT_MICRO_VERSION);
+        //We don't need any transformation between host and server
+        final TransformationTarget target = TransformationTargetImpl.create(extensionRegistry.getTransformerRegistry(),
+                modelVersion, subsystems, null, TransformationTarget.TransformationTargetType.SERVER, null);
+        return new ManagedServer(hostControllerName, serverName, authKey, processControllerClient, managementAddress, configuration, target);
     }
 
     @Override

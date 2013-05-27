@@ -21,15 +21,21 @@
 */
 package org.jboss.as.domain.controller.operations;
 
-import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.PROFILE;
+import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.OP_ADDR;
 
+import org.jboss.as.controller.ModelOnlyWriteAttributeHandler;
 import org.jboss.as.controller.OperationContext;
+import org.jboss.as.controller.OperationContext.ResultAction;
+import org.jboss.as.controller.OperationContext.Stage;
 import org.jboss.as.controller.OperationFailedException;
+import org.jboss.as.controller.OperationStepHandler;
+import org.jboss.as.controller.PathAddress;
 import org.jboss.as.controller.PathElement;
-import org.jboss.as.controller.operations.global.WriteAttributeHandlers.StringLengthValidatingHandler;
 import org.jboss.as.controller.registry.Resource;
 import org.jboss.as.domain.controller.DomainControllerMessages;
 import org.jboss.as.domain.controller.operations.coordination.ServerOperationResolver;
+import org.jboss.as.domain.controller.resources.ServerGroupResourceDefinition;
+import org.jboss.as.host.controller.mgmt.DomainControllerRuntimeIgnoreTransformationRegistry;
 import org.jboss.dmr.ModelNode;
 
 /**
@@ -38,26 +44,68 @@ import org.jboss.dmr.ModelNode;
  *
  * @author <a href="kabir.khan@jboss.com">Kabir Khan</a>
  */
-public class ServerGroupProfileWriteAttributeHandler extends StringLengthValidatingHandler {
+public class ServerGroupProfileWriteAttributeHandler extends ModelOnlyWriteAttributeHandler {
 
-    public static final ServerGroupProfileWriteAttributeHandler INSTANCE = new ServerGroupProfileWriteAttributeHandler();
+    private final boolean master;
+    private final DomainControllerRuntimeIgnoreTransformationRegistry registry;
 
-    private ServerGroupProfileWriteAttributeHandler() {
-        super(1, false);
+    public ServerGroupProfileWriteAttributeHandler(boolean master, DomainControllerRuntimeIgnoreTransformationRegistry registry) {
+        super(ServerGroupResourceDefinition.PROFILE);
+        this.master = master;
+        this.registry = registry;
     }
 
     @Override
-    protected void modelChanged(OperationContext context, ModelNode operation, String attributeName, ModelNode newValue,
-            ModelNode currentValue) throws OperationFailedException {
+    protected void finishModelStage(OperationContext context, ModelNode operation, String attributeName, ModelNode newValue,
+                                    ModelNode currentValue, Resource resource) throws OperationFailedException {
         if (newValue.equals(currentValue)) {
             //Set an attachment to avoid propagation to the servers, we don't want them to go into restart-required if nothing changed
             ServerOperationResolver.addToDontPropagateToServersAttachment(context, operation);
         }
-        final Resource profile = context.getOriginalRootResource().getChild(PathElement.pathElement(PROFILE, newValue.asString()));
-        if (profile == null) {
-            throw DomainControllerMessages.MESSAGES.noProfileCalled(newValue.asString());
+
+        // Validate the profile reference.
+
+        // Future proofing: We resolve the profile in Stage.MODEL even though system properties may not be available yet
+        // solely because currently the attribute doesn't support expressions. In the future if system properties
+        // can safely be resolved in stage model, this profile attribute can be changed and this will still work.
+        boolean reloadRequired = false;
+        final String profile = ServerGroupResourceDefinition.PROFILE.resolveModelAttribute(context, resource.getModel()).asString();
+        try {
+            context.readResourceFromRoot(PathAddress.pathAddress(PathElement.pathElement(ServerGroupResourceDefinition.PROFILE.getName(), profile)));
+        } catch (Exception e) {
+            if (master) {
+                throw DomainControllerMessages.MESSAGES.noProfileCalled(profile);
+            } else {
+                //We are a slave HC and we don't have the profile required, so put the slave AND the server into reload-required
+                context.reloadRequired();
+                reloadRequired = true;
+            }
         }
 
-        context.completeStep(OperationContext.RollbackHandler.NOOP_ROLLBACK_HANDLER);
+        if (registry != null) {
+            registry.changeServerGroupProfile(context, PathAddress.pathAddress(operation.require(OP_ADDR)), newValue.asString());
+        }
+
+        if (reloadRequired) {
+            final boolean revertReloadRequiredOnRollback = reloadRequired;
+            //We are adding an extra step here to be able to see if we rolled back
+            //This is currently not possible with AbstractWriteAttributeHandler and I don't want to clutter up that class
+            //any more
+            context.addStep(new OperationStepHandler() {
+                @Override
+                public void execute(OperationContext context, ModelNode operation) throws OperationFailedException {
+                    context.completeStep(new OperationContext.ResultHandler() {
+                        @Override
+                        public void handleResult(ResultAction resultAction, OperationContext context, ModelNode operation) {
+                            if (resultAction == ResultAction.ROLLBACK) {
+                                if (revertReloadRequiredOnRollback){
+                                    context.revertReloadRequired();
+                                }
+                            }
+                        }
+                    });
+                }
+            }, Stage.MODEL);
+        }
     }
 }

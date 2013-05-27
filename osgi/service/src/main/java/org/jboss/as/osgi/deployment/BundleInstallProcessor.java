@@ -22,27 +22,35 @@
 
 package org.jboss.as.osgi.deployment;
 
-import static org.jboss.as.osgi.service.InitialDeploymentTracker.REGISTER_PHASE_SERVICES_COMPLETE;
+import static org.jboss.as.osgi.OSGiLogger.LOGGER;
 import static org.jboss.as.server.deployment.Attachments.BUNDLE_STATE_KEY;
+import static org.jboss.osgi.framework.spi.IntegrationConstants.STORAGE_STATE_KEY;
 
 import org.jboss.as.osgi.OSGiConstants;
+import org.jboss.as.osgi.service.BundleLifecycleIntegration;
 import org.jboss.as.osgi.service.InitialDeploymentTracker;
-import org.jboss.as.server.deployment.AttachmentKey;
+import org.jboss.as.server.Services;
 import org.jboss.as.server.deployment.Attachments.BundleState;
 import org.jboss.as.server.deployment.DeploymentPhaseContext;
 import org.jboss.as.server.deployment.DeploymentUnit;
 import org.jboss.as.server.deployment.DeploymentUnitProcessingException;
 import org.jboss.as.server.deployment.DeploymentUnitProcessor;
+import org.jboss.msc.service.ServiceContainer;
 import org.jboss.msc.service.ServiceController;
-import org.jboss.msc.service.ServiceController.Mode;
-import org.jboss.msc.service.ServiceName;
 import org.jboss.msc.service.ServiceRegistry;
+import org.jboss.msc.service.ServiceController.Substate;
 import org.jboss.osgi.deployment.deployer.Deployment;
-import org.jboss.osgi.framework.BundleManager;
-import org.jboss.osgi.framework.IntegrationService;
-import org.jboss.osgi.framework.StorageState;
-import org.jboss.osgi.framework.StorageStatePlugin;
+import org.jboss.osgi.framework.spi.BundleManager;
+import org.jboss.osgi.framework.spi.IntegrationServices;
+import org.jboss.osgi.framework.spi.StorageManager;
+import org.jboss.osgi.framework.spi.StorageState;
+import org.jboss.osgi.resolver.XBundle;
+import org.jboss.osgi.resolver.XBundleRevision;
+import org.jboss.osgi.resolver.XResource.State;
+import org.osgi.framework.Bundle;
+import org.osgi.framework.BundleContext;
 import org.osgi.framework.BundleException;
+import org.osgi.framework.wiring.BundleWiring;
 
 /**
  * Processes deployments that have OSGi metadata attached.
@@ -52,7 +60,6 @@ import org.osgi.framework.BundleException;
  */
 public class BundleInstallProcessor implements DeploymentUnitProcessor {
 
-    private final AttachmentKey<ServiceName> BUNDLE_INSTALL_SERVICE = AttachmentKey.create(ServiceName.class);
     private final InitialDeploymentTracker deploymentTracker;
 
     public BundleInstallProcessor(InitialDeploymentTracker deploymentTracker) {
@@ -66,46 +73,81 @@ public class BundleInstallProcessor implements DeploymentUnitProcessor {
         if (deployment == null)
             return;
 
-        ServiceName serviceName;
         try {
-            final BundleManager bundleManager = depUnit.getAttachment(OSGiConstants.BUNDLE_MANAGER_KEY);
+            BundleManager bundleManager = depUnit.getAttachment(OSGiConstants.BUNDLE_MANAGER_KEY);
+            BundleContext syscontext = depUnit.getAttachment(OSGiConstants.SYSTEM_CONTEXT_KEY);
             if (deploymentTracker.hasDeploymentName(depUnit.getName())) {
                 restoreStorageState(phaseContext, deployment);
             }
-            serviceName = bundleManager.installBundle(deployment, null);
+            XBundleRevision brev = bundleManager.createBundleRevision(syscontext, deployment, phaseContext.getServiceTarget());
+            depUnit.putAttachment(OSGiConstants.BUNDLE_REVISION_KEY, brev);
+            depUnit.putAttachment(BUNDLE_STATE_KEY, BundleState.INSTALLED);
         } catch (BundleException ex) {
             throw new DeploymentUnitProcessingException(ex);
         }
-
-        // Add a dependency on the next phase for this bundle to be installed
-        phaseContext.addDeploymentDependency(serviceName, OSGiConstants.BUNDLE_KEY);
-
-        // Add a dependency on the next phase for all persisten bundles to be installed
-        if (deploymentTracker.isComplete() == false) {
-            phaseContext.addDeploymentDependency(REGISTER_PHASE_SERVICES_COMPLETE, AttachmentKey.create(Object.class));
-        }
-
-        depUnit.putAttachment(BUNDLE_STATE_KEY, BundleState.INSTALLED);
-        depUnit.putAttachment(BUNDLE_INSTALL_SERVICE, serviceName);
     }
 
     @Override
     public void undeploy(final DeploymentUnit depUnit) {
-        ServiceName serviceName = depUnit.getAttachment(BUNDLE_INSTALL_SERVICE);
-        ServiceController<?> controller = serviceName != null ? depUnit.getServiceRegistry().getService(serviceName) : null;
-        if (controller != null) {
-            controller.setMode(Mode.REMOVE);
-            depUnit.putAttachment(BUNDLE_STATE_KEY, BundleState.UNINSTALLED);
+        XBundleRevision brev = depUnit.getAttachment(OSGiConstants.BUNDLE_REVISION_KEY);
+        if (brev == null)
+            return;
+
+        XBundle bundle = brev.getBundle();
+        BundleManager bundleManager = depUnit.getAttachment(OSGiConstants.BUNDLE_MANAGER_KEY);
+        if (uninstallRequired(depUnit, brev)) {
+            try {
+                int options = getUninstallOptions(bundleManager);
+                bundleManager.uninstallBundle(bundle, options);
+            } catch (BundleException ex) {
+                Deployment dep = depUnit.getAttachment(OSGiConstants.DEPLOYMENT_KEY);
+                LOGGER.errorFailedToUninstallDeployment(ex, dep);
+            }
+        } else {
+            BundleWiring wiring = brev.getWiringSupport().getWiring(false);
+            if (wiring == null || !wiring.isInUse()) {
+                bundleManager.removeRevision(brev, 0);
+            }
         }
     }
 
     private void restoreStorageState(final DeploymentPhaseContext phaseContext, final Deployment deployment) {
         ServiceRegistry serviceRegistry = phaseContext.getServiceRegistry();
-        StorageStatePlugin storageProvider = (StorageStatePlugin) serviceRegistry.getRequiredService(IntegrationService.STORAGE_STATE_PLUGIN).getValue();
+        StorageManager storageProvider = (StorageManager) serviceRegistry.getRequiredService(IntegrationServices.STORAGE_MANAGER_PLUGIN).getValue();
         StorageState storageState = storageProvider.getStorageState(deployment.getLocation());
         if (storageState != null) {
             deployment.setAutoStart(storageState.isPersistentlyStarted());
-            deployment.addAttachment(StorageState.class, storageState);
+            deployment.putAttachment(STORAGE_STATE_KEY, storageState);
         }
+    }
+
+    private boolean uninstallRequired(DeploymentUnit depUnit, XBundleRevision brev) {
+
+        // No uninstall when activation failed
+        Boolean startFailed = depUnit.removeAttachment(OSGiConstants.DEFERRED_ACTIVATION_FAILED);
+        if (Boolean.TRUE.equals(startFailed))
+            return false;
+
+        // No uninstall if the bundle is already uninstalled
+        XBundle bundle = brev.getBundle();
+        if (bundle.getState() == Bundle.UNINSTALLED || brev.getState() == State.UNINSTALLED)
+            return false;
+
+        // No uninstall if this is not the current revision
+        if (bundle.getBundleRevision() != brev)
+            return false;
+
+        // No uninstall if the bundle is refreshing
+        if (BundleLifecycleIntegration.isBundleRefreshing(bundle))
+            return false;
+
+        return true;
+    }
+
+    private int getUninstallOptions(BundleManager bundleManager) {
+        ServiceContainer serviceContainer = bundleManager.getServiceContainer();
+        ServiceController<?> controller = serviceContainer.getRequiredService(Services.JBOSS_SERVER_CONTROLLER);
+        boolean stopRequested = controller.getSubstate() == Substate.STOP_REQUESTED;
+        return stopRequested ? Bundle.STOP_TRANSIENT : 0;
     }
 }

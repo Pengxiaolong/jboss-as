@@ -22,6 +22,7 @@
 
 package org.jboss.as.logging;
 
+import java.util.Arrays;
 import java.util.Set;
 
 import org.jboss.as.controller.OperationFailedException;
@@ -60,6 +61,25 @@ public final class Logging {
     }
 
     /**
+     * Checks to see within the flags if a reload, i.e. not a full restart, is required.
+     *
+     * @param flags the flags to check
+     *
+     * @return {@code true} if a reload is required, otherwise {@code false}
+     */
+    public static boolean requiresReload(final Set<Flag> flags) {
+        for (Flag flag : flags) {
+            switch (flag) {
+                case RESTART_ALL_SERVICES:
+                case RESTART_RESOURCE_SERVICES: {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    /**
      * Creates a new {@link OperationFailedException} with the message as a {@link ModelNode model node}.
      *
      * @param message the message to initialize the {@link ModelNode model node} with
@@ -80,5 +100,32 @@ public final class Logging {
      */
     public static OperationFailedException createOperationFailure(final Throwable cause, final String message) {
         return new OperationFailedException(cause, new ModelNode(message));
+    }
+
+    /**
+     * Joins two arrays.
+     * <p/>
+     * If the base array is null, the {@code add} parameter is returned. If the add array is null, the {@code base}
+     * array is returned.
+     *
+     * @param base the base array to add to
+     * @param add  the array to add
+     * @param <T>  the type of the array
+     *
+     * @return the joined array
+     */
+    static <T> T[] join(final T[] base, final T... add) {
+        if (add == null) {
+            return base;
+        } else if (base == null) {
+            return add;
+        }
+        final T[] result = Arrays.copyOf(base, base.length + add.length);
+        System.arraycopy(add, 0, result, base.length, add.length);
+        return result;
+    }
+
+    static String fixFormatPattern(final String currentPattern) {
+        return currentPattern.replaceAll("(%K\\{[a-zA-Z]*?})", "");
     }
 }

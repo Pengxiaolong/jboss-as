@@ -21,6 +21,9 @@
  */
 package org.jboss.as.ejb3.subsystem;
 
+import java.util.ArrayList;
+import java.util.List;
+
 import org.jboss.as.controller.AttributeDefinition;
 import org.jboss.as.controller.OperationContext;
 import org.jboss.as.controller.OperationFailedException;
@@ -37,14 +40,13 @@ import org.jboss.as.controller.operations.validation.AllowedValuesValidator;
 import org.jboss.as.controller.operations.validation.ModelTypeValidator;
 import org.jboss.as.controller.registry.AttributeAccess;
 import org.jboss.as.controller.registry.ManagementResourceRegistration;
+import org.jboss.as.controller.transform.description.RejectAttributeChecker;
+import org.jboss.as.controller.transform.description.ResourceTransformationDescriptionBuilder;
 import org.jboss.as.ejb3.EjbMessages;
 import org.jboss.as.ejb3.remote.EJBRemoteConnectorService;
 import org.jboss.dmr.ModelNode;
 import org.jboss.dmr.ModelType;
 import org.jboss.msc.service.ServiceName;
-
-import java.util.ArrayList;
-import java.util.List;
 
 
 /**
@@ -61,7 +63,9 @@ class ChannelCreationOptionResource extends SimpleResourceDefinition {
      * Attribute definition of the channel creation option "value"
      */
     static final SimpleAttributeDefinition CHANNEL_CREATION_OPTION_VALUE = new SimpleAttributeDefinitionBuilder(EJB3SubsystemModel.VALUE, ModelType.STRING, true)
-            .setFlags(AttributeAccess.Flag.RESTART_RESOURCE_SERVICES).build();
+            .setAllowExpression(true)
+            .setFlags(AttributeAccess.Flag.RESTART_RESOURCE_SERVICES)
+            .build();
 
     /**
      * Attribute definition of the channel creation option "type"
@@ -180,6 +184,12 @@ class ChannelCreationOptionResource extends SimpleResourceDefinition {
                 }
             }
         }
+    }
+
+    static void registerTransformers_1_1_0(ResourceTransformationDescriptionBuilder parent) {
+        parent.addChildResource(INSTANCE.getPathElement())
+            .getAttributeBuilder()
+                .addRejectCheck(RejectAttributeChecker.SIMPLE_EXPRESSIONS, CHANNEL_CREATION_OPTION_VALUE);
     }
 
 

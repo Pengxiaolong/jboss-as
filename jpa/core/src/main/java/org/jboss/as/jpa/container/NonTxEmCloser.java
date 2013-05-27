@@ -22,7 +22,7 @@
 
 package org.jboss.as.jpa.container;
 
-import static org.jboss.as.jpa.JpaLogger.ROOT_LOGGER;
+import static org.jboss.as.jpa.messages.JpaLogger.ROOT_LOGGER;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -39,7 +39,7 @@ public class NonTxEmCloser {
      * Each thread will have its own list of SB invocations in progress.
      * Key = scoped persistence unit name
      */
-    public static ThreadLocalStack<Map<String, EntityManager>> nonTxStack = new ThreadLocalStack<Map<String, EntityManager>>();
+    public static final ThreadLocalStack<Map<String, EntityManager>> nonTxStack = new ThreadLocalStack<Map<String, EntityManager>>();
 
     /**
      * entered new session bean invocation, start new collection for tracking transactional entity managers created

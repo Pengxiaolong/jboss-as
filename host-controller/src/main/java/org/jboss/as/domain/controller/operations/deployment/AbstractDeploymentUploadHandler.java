@@ -37,7 +37,6 @@ import org.jboss.dmr.ModelNode;
  */
 public abstract class AbstractDeploymentUploadHandler implements OperationStepHandler {
 
-    private static final String[] EMPTY = new String[0];
     private final ContentRepository contentRepository;
     protected final AttributeDefinition attribute;
 
@@ -69,7 +68,7 @@ public abstract class AbstractDeploymentUploadHandler implements OperationStepHa
         }
         // else this is a slave domain controller and we should ignore this operation
 
-        context.completeStep();
+        context.stepCompleted();
     }
 
     protected abstract InputStream getContentInputStream(OperationContext context, ModelNode operation) throws OperationFailedException;

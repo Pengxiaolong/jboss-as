@@ -36,6 +36,8 @@ import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.util.Map;
 import java.util.Properties;
+import org.wildfly.security.manager.WildFlySecurityManager;
+
 import java.util.logging.LogManager;
 
 /**
@@ -61,88 +63,173 @@ import java.util.logging.LogManager;
  */
 public class EmbeddedServerFactory {
 
+    private static final String MODULE_ID_EMBEDDED = "org.jboss.as.embedded";
+    private static final String MODULE_ID_LOGMANAGER = "org.jboss.logmanager";
+    private static final String MODULE_ID_VFS = "org.jboss.vfs";
+    private static final String SYSPROP_KEY_CLASS_PATH = "java.class.path";
+    private static final String SYSPROP_KEY_MODULE_PATH = "module.path";
+    private static final String SYSPROP_KEY_LOGMANAGER = "java.util.logging.manager";
+    private static final String SYSPROP_KEY_JBOSS_HOME_DIR = "jboss.home.dir";
+    private static final String SYSPROP_KEY_JBOSS_MODULES_DIR = "jboss.modules.dir";
+    private static final String SYSPROP_KEY_JBOSS_BUNDLES_DIR = "jboss.bundles.dir";
+    private static final String SYSPROP_VALUE_JBOSS_LOGMANAGER = "org.jboss.logmanager.LogManager";
+
     private EmbeddedServerFactory() {
     }
 
-    public static StandaloneServer create(final ModuleLoader moduleLoader, final File jbossHomeDir, final Properties systemProps, final Map<String, String> systemEnv) {
-        try {
-            // Load the server Module and get its ClassLoader
-            final ModuleIdentifier serverModuleId = ModuleIdentifier.create("org.jboss.as.server");
-            final Module serverModule = moduleLoader.loadModule(serverModuleId);
-            final ModuleClassLoader serverModuleClassLoader = serverModule.getClassLoader();
-
-            Class<?> embeddedStandAloneServerFactoryClass = serverModuleClassLoader.loadClass("org.jboss.as.server.EmbeddedStandAloneServerFactory");
-            Method createMethod = embeddedStandAloneServerFactoryClass.getMethod("create", File.class, ModuleLoader.class, Properties.class, Map.class);
-            final StandaloneServer standaloneServer = (StandaloneServer) createMethod.invoke(null, jbossHomeDir, moduleLoader, systemProps, systemEnv);
-            return standaloneServer;
-        } catch (ModuleLoadException e) {
-            throw MESSAGES.moduleLoaderError(e, e.getMessage(), moduleLoader);
-        } catch (ClassNotFoundException e) {
-            throw new RuntimeException(e);
-        } catch (NoSuchMethodException e) {
-            throw new RuntimeException(e);
-        } catch (InvocationTargetException e) {
-            throw new RuntimeException(e);
-        } catch (IllegalAccessException e) {
-            throw new RuntimeException(e);
-        }
+    public static StandaloneServer create(String jbossHomePath, String modulePath, String bundlePath, String... systemPackages) {
+        return create(jbossHomePath, modulePath, bundlePath, systemPackages, null);
     }
 
-    public static StandaloneServer create(final File jbossHomeDir, final Properties systemProps, final Map<String, String> systemEnv, String...systemPackages) {
-        if (jbossHomeDir == null || jbossHomeDir.isDirectory() == false)
-            throw MESSAGES.invalidJbossHome(jbossHomeDir);
+    public static StandaloneServer create(String jbossHomePath, String modulePath, String bundlePath, String[] systemPackages, String[] cmdargs) {
+        if (jbossHomePath == null || jbossHomePath.isEmpty()) {
+            throw MESSAGES.invalidJBossHome(jbossHomePath);
+        }
+        File jbossHomeDir = new File(jbossHomePath);
+        if (!jbossHomeDir.isDirectory()) {
+            throw MESSAGES.invalidJBossHome(jbossHomePath);
+        }
 
-        if (systemProps.getProperty(ServerEnvironment.HOME_DIR) == null)
-            systemProps.setProperty(ServerEnvironment.HOME_DIR, jbossHomeDir.getAbsolutePath());
+        if (modulePath == null)
+            modulePath = jbossHomeDir.getAbsolutePath() + File.separator + "modules";
+        if (bundlePath == null)
+            bundlePath = jbossHomeDir.getAbsolutePath() + File.separator + "bundles";
 
-        File modulesDir = new File(jbossHomeDir + "/modules");
-        final ModuleLoader moduleLoader = InitialModuleLoaderFactory.getModuleLoader(modulesDir, systemPackages);
+        return create(setupModuleLoader(modulePath, systemPackages), jbossHomeDir, bundlePath, cmdargs);
+    }
 
+    public static StandaloneServer create(ModuleLoader moduleLoader, File jbossHomeDir) {
+        String bundlePath = jbossHomeDir.getAbsolutePath() + File.separator + "bundles";
+        return create(moduleLoader, jbossHomeDir, bundlePath, new String[0]);
+    }
+
+    private static StandaloneServer create(ModuleLoader moduleLoader, File jbossHomeDir, String bundlePath, String[] cmdargs) {
+
+        setupBundlePath(bundlePath);
+        setupVfsModule(moduleLoader);
+        setupLoggingSystem(moduleLoader);
+
+        // Embedded Server wants this, too. Seems redundant, but supply it.
+        WildFlySecurityManager.setPropertyPrivileged(SYSPROP_KEY_JBOSS_HOME_DIR, jbossHomeDir.getAbsolutePath());
+
+        // Load the Embedded Server Module
+        final Module embeddedModule;
         try {
-            Module.registerURLStreamHandlerFactoryModule(moduleLoader.loadModule(ModuleIdentifier.create("org.jboss.vfs")));
+            embeddedModule = moduleLoader.loadModule(ModuleIdentifier.create(MODULE_ID_EMBEDDED));
+        } catch (final ModuleLoadException mle) {
+            throw MESSAGES.moduleLoaderError(mle, MODULE_ID_EMBEDDED, moduleLoader);
+        }
 
-            // Initialize the Logging system
-            ModuleIdentifier logModuleId = ModuleIdentifier.create("org.jboss.logmanager");
-            ModuleClassLoader logModuleClassLoader = moduleLoader.loadModule(logModuleId).getClassLoader();
-            ClassLoader ctxClassLoader = Thread.currentThread().getContextClassLoader();
-            try {
-                Thread.currentThread().setContextClassLoader(logModuleClassLoader);
-                systemProps.setProperty("java.util.logging.manager", "org.jboss.logmanager.LogManager");
-                if (LogManager.getLogManager().getClass() == LogManager.class) {
-                    System.err.println(MESSAGES.failedToLoadLogModule(logModuleId));
-                } else {
-                    Module.setModuleLogger(new JDKModuleLogger());
-                }
-            } finally {
-                Thread.currentThread().setContextClassLoader(ctxClassLoader);
+        // Load the Embedded Server Factory via the modular environment
+        final ModuleClassLoader embeddedModuleCL = embeddedModule.getClassLoader();
+        final Class<?> embeddedServerFactoryClass;
+        final Class<?> standaloneServerClass;
+        try {
+            embeddedServerFactoryClass = embeddedModuleCL.loadClass(EmbeddedStandAloneServerFactory.class.getName());
+            standaloneServerClass = embeddedModuleCL.loadClass(StandaloneServer.class.getName());
+        } catch (final ClassNotFoundException cnfe) {
+            throw MESSAGES.cannotLoadEmbeddedServerFactory(cnfe, EmbeddedStandAloneServerFactory.class.getName());
+        }
+
+        // Get a handle to the method which will create the server
+        final Method createServerMethod;
+        try {
+            createServerMethod = embeddedServerFactoryClass.getMethod("create", File.class, ModuleLoader.class, Properties.class, Map.class, String[].class);
+        } catch (final NoSuchMethodException nsme) {
+            throw MESSAGES.cannotGetReflectiveMethod(nsme, "create", embeddedServerFactoryClass.getName());
+        }
+
+        // Create the server
+        Object standaloneServerImpl;
+        try {
+            Properties sysprops = WildFlySecurityManager.getSystemPropertiesPrivileged();
+            Map<String, String> sysenv = WildFlySecurityManager.getSystemEnvironmentPrivileged();
+            String[] args = cmdargs != null ? cmdargs : new String[0];
+            standaloneServerImpl = createServerMethod.invoke(null, jbossHomeDir, moduleLoader, sysprops, sysenv, args);
+        } catch (final InvocationTargetException ite) {
+            throw MESSAGES.cannotCreateStandaloneServer(ite.getCause(), createServerMethod);
+        } catch (final IllegalAccessException iae) {
+            throw MESSAGES.cannotCreateStandaloneServer(iae, createServerMethod);
+        }
+        return new StandaloneServerIndirection(standaloneServerClass, standaloneServerImpl);
+    }
+
+    private static String trimPathToModulesDir(String modulePath) {
+        int index = modulePath.indexOf(File.pathSeparator);
+        return index == -1 ? modulePath : modulePath.substring(0, index);
+    }
+
+    private static ModuleLoader setupModuleLoader(String modulePath, String... systemPackages) {
+        assert modulePath != null : "modulePath not null";
+
+        WildFlySecurityManager.setPropertyPrivileged(SYSPROP_KEY_JBOSS_MODULES_DIR, trimPathToModulesDir(modulePath));
+
+        final String classPath = WildFlySecurityManager.getPropertyPrivileged(SYSPROP_KEY_CLASS_PATH, null);
+        try {
+            // Set up sysprop env
+            WildFlySecurityManager.clearPropertyPrivileged(SYSPROP_KEY_CLASS_PATH);
+            WildFlySecurityManager.setPropertyPrivileged(SYSPROP_KEY_MODULE_PATH, modulePath);
+
+            StringBuffer packages = new StringBuffer("org.jboss.modules,org.jboss.msc,org.jboss.dmr,org.jboss.threads,org.jboss.as.controller.client");
+            if (systemPackages != null) {
+                for (String packageName : systemPackages)
+                    packages.append("," + packageName);
             }
+            WildFlySecurityManager.setPropertyPrivileged("jboss.modules.system.pkgs", packages.toString());
 
-            __redirected.__JAXPRedirected.changeAll(ModuleIdentifier.fromString("javax.xml.jaxp-provider"), moduleLoader);
-
-            return create(moduleLoader, jbossHomeDir, systemProps, systemEnv);
-        }
-        catch (ModuleLoadException e) {
-            throw new RuntimeException(e);
+            // Get the module loader
+            final ModuleLoader moduleLoader = Module.getBootModuleLoader();
+            return moduleLoader;
+        } finally {
+            // Return to previous state for classpath prop
+            WildFlySecurityManager.setPropertyPrivileged(SYSPROP_KEY_CLASS_PATH, classPath);
         }
     }
 
-    @Deprecated
-    public static void main(String[] args) throws Throwable {
-        SecurityActions.setSystemProperty("java.util.logging.manager", "org.jboss.logmanager.LogManager");
+    private static void setupBundlePath(final String bundlePath) {
+        assert bundlePath != null : "bundlePath not null";
 
-        String jbossHomeKey = "jboss.home";
-        String jbossHomeProp = System.getProperty(jbossHomeKey);
-        if (jbossHomeProp == null)
-            throw MESSAGES.systemPropertyNotFound(jbossHomeKey);
+        final File bundlesDir = new File(bundlePath);
+        assert bundlesDir.isDirectory() : "bundlesDir not a directory";
 
-        File jbossHomeDir = new File(jbossHomeProp);
-        if (jbossHomeDir.isDirectory() == false)
-            throw MESSAGES.invalidJbossHome(jbossHomeDir);
+        WildFlySecurityManager.setPropertyPrivileged(SYSPROP_KEY_JBOSS_BUNDLES_DIR, bundlesDir.getAbsolutePath());
+    }
 
-        Module.registerURLStreamHandlerFactoryModule(Module.getBootModuleLoader().loadModule(ModuleIdentifier.create("org.jboss.vfs")));
-        StandaloneServer server = create(jbossHomeDir, System.getProperties(), System.getenv());
-        server.start();
-        server.stop();
-        System.exit(0);
+    private static void setupVfsModule(final ModuleLoader moduleLoader) {
+        final ModuleIdentifier vfsModuleID = ModuleIdentifier.create(MODULE_ID_VFS);
+        final Module vfsModule;
+        try {
+            vfsModule = moduleLoader.loadModule(vfsModuleID);
+        } catch (final ModuleLoadException mle) {
+            throw MESSAGES.moduleLoaderError(mle, MODULE_ID_VFS, moduleLoader);
+        }
+        Module.registerURLStreamHandlerFactoryModule(vfsModule);
+    }
+
+    private static void setupLoggingSystem(ModuleLoader moduleLoader) {
+        final ModuleIdentifier logModuleId = ModuleIdentifier.create(MODULE_ID_LOGMANAGER);
+        final Module logModule;
+        try {
+            logModule = moduleLoader.loadModule(logModuleId);
+        } catch (final ModuleLoadException mle) {
+            throw MESSAGES.moduleLoaderError(mle, MODULE_ID_LOGMANAGER, moduleLoader);
+        }
+
+        final ModuleClassLoader logModuleClassLoader = logModule.getClassLoader();
+        final ClassLoader tccl = WildFlySecurityManager.getCurrentContextClassLoaderPrivileged();
+        try {
+            WildFlySecurityManager.setCurrentContextClassLoaderPrivileged(logModuleClassLoader);
+            WildFlySecurityManager.setPropertyPrivileged(SYSPROP_KEY_LOGMANAGER, SYSPROP_VALUE_JBOSS_LOGMANAGER);
+
+            final Class<?> actualLogManagerClass = LogManager.getLogManager().getClass();
+            if (actualLogManagerClass == LogManager.class) {
+                System.err.println("Cannot not load JBoss LogManager. The LogManager has likely been accessed prior to this initialization.");
+            } else {
+                Module.setModuleLogger(new JDKModuleLogger());
+            }
+        } finally {
+            // Reset TCCL
+            WildFlySecurityManager.setCurrentContextClassLoaderPrivileged(tccl);
+        }
     }
 }

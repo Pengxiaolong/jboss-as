@@ -22,6 +22,9 @@
 
 package org.jboss.as.messaging;
 
+
+import static org.jboss.as.messaging.QueueDefinition.forwardToRuntimeQueue;
+
 import java.util.EnumSet;
 import java.util.Locale;
 
@@ -72,6 +75,26 @@ public class QueueControlHandler extends AbstractQueueControlHandler<QueueContro
                 return MessagingDescriptions.getNoArgSimpleReplyOperation(locale, LIST_SCHEDULED_MESSAGES_AS_JSON, "queue", ModelType.STRING, true);
             }
         }, flags);
+    }
+
+    /*
+     * Do not check whether the queue resource exists.
+     *
+     * In the core queue resource does not exist, the {@link #executeRuntimeStep(org.jboss.as.controller.OperationContext, org.jboss.dmr.ModelNode)}
+     * will forward the operation to the corresponding runtime-queue.
+     */
+    @Override
+    protected boolean resourceMustExist(OperationContext context, ModelNode operation) {
+        return false;
+    }
+
+    @Override
+    protected void executeRuntimeStep(OperationContext context, ModelNode operation) throws OperationFailedException {
+        if (forwardToRuntimeQueue(context, operation, INSTANCE)) {
+            context.stepCompleted();
+        } else {
+            super.executeRuntimeStep(context, operation);
+        }
     }
 
     @Override

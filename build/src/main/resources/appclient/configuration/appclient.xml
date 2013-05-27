@@ -20,14 +20,13 @@
   ~ 02110-1301 USA, or see the FSF site: http://www.fsf.org.
   -->
 
-<server xmlns="urn:jboss:domain:1.4">
+<server xmlns="urn:jboss:domain:2.0">
 
     <extensions>
         <extension module="org.jboss.as.connector"/>
         <extension module="org.jboss.as.ee"/>
         <extension module="org.jboss.as.ejb3"/>
         <extension module="org.jboss.as.jacorb"/>
-        <extension module="org.jboss.as.jaxr"/>
         <extension module="org.jboss.as.jpa"/>
         <extension module="org.jboss.as.logging"/>
         <extension module="org.jboss.as.naming"/>
@@ -37,11 +36,11 @@
     </extensions>
 
     <profile>
-        <subsystem xmlns="urn:jboss:domain:logging:1.1">
+        <subsystem xmlns="urn:jboss:domain:logging:1.2">
             <console-handler name="CONSOLE">
                 <level name="INFO"/>
                 <formatter>
-                    <pattern-formatter pattern="%d{HH:mm:ss,SSS} %-5p [%c] (%t) %s%E%n"/>
+                    <pattern-formatter pattern="%K{level}%d{HH:mm:ss,SSS} %-5p [%c] (%t) %s%E%n"/>
                 </formatter>
             </console-handler>
 
@@ -142,9 +141,6 @@
                     </authorization>
                 </security-domain>
             </security-domains>
-        </subsystem>
-        <subsystem xmlns="urn:jboss:domain:jaxr:1.1">
-            <connection-factory jndi-name="java:jboss/jaxr/ConnectionFactory"/>
         </subsystem>
         <subsystem xmlns="urn:jboss:domain:transactions:1.2">
             <recovery-environment socket-binding="txn-recovery-environment" status-socket-binding="txn-status-manager"/>

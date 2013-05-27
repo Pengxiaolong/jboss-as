@@ -23,37 +23,45 @@
 package org.jboss.as.connector.subsystems.resourceadapters;
 
 import static org.jboss.as.connector.subsystems.resourceadapters.Constants.ARCHIVE;
+import static org.jboss.as.connector.subsystems.resourceadapters.Constants.MODULE;
 import static org.jboss.as.connector.subsystems.resourceadapters.Constants.RESOURCEADAPTERS_NAME;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.ADD;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.OP_ADDR;
+
+import java.util.LinkedList;
+import java.util.List;
 
 import org.jboss.as.connector.util.ConnectorServices;
 import org.jboss.as.controller.OperationContext;
 import org.jboss.as.controller.OperationFailedException;
 import org.jboss.as.controller.OperationStepHandler;
 import org.jboss.as.controller.PathAddress;
+import org.jboss.as.controller.ServiceVerificationHandler;
 import org.jboss.as.controller.operations.common.Util;
 import org.jboss.dmr.ModelNode;
+import org.jboss.msc.service.ServiceController;
 import org.jboss.msc.service.ServiceName;
-
-import java.util.List;
 
 /**
  * @author @author <a href="mailto:stefano.maestri@redhat.com">Stefano
  *         Maestri</a>
  */
-public class RaRemove extends RaOperationUtil implements OperationStepHandler {
+public class RaRemove implements OperationStepHandler {
     static final RaRemove INSTANCE = new RaRemove();
 
     public void execute(OperationContext context, ModelNode operation) throws OperationFailedException {
 
         final ModelNode opAddr = operation.require(OP_ADDR);
-        final String raName = PathAddress.pathAddress(opAddr).getLastElement().getValue();
+        final String name = PathAddress.pathAddress(opAddr).getLastElement().getValue();
 
         // Compensating is add
         final ModelNode model = context.readModel(PathAddress.EMPTY_ADDRESS);
-        final String archive = model.get(ARCHIVE.getName()).asString();
-
+        final String archiveOrModuleName;
+        if (model.get(ARCHIVE.getName()).isDefined()) {
+            archiveOrModuleName = ARCHIVE.resolveModelAttribute(context, model).asString();
+        } else {
+            archiveOrModuleName = MODULE.resolveModelAttribute(context, model).asString();
+        }
         final ModelNode compensating = Util.getEmptyOperation(ADD, opAddr);
 
         if (model.hasDefined(RESOURCEADAPTERS_NAME)) {
@@ -69,8 +77,15 @@ public class RaRemove extends RaOperationUtil implements OperationStepHandler {
         context.addStep(new OperationStepHandler() {
             public void execute(OperationContext context, ModelNode operation) throws OperationFailedException {
 
-                RaOperationUtil.deactivateIfActive(context, raName);
-                ServiceName raServiceName = ServiceName.of(ConnectorServices.RA_SERVICE, raName);
+                final boolean wasActive = RaOperationUtil.removeIfActive(context, name);
+                ServiceName raServiceName = ServiceName.of(ConnectorServices.RA_SERVICE, name);
+                ServiceController<?> serviceController =  context.getServiceRegistry(false).getService(raServiceName);
+                final ModifiableResourceAdapter resourceAdapter;
+                if (serviceController != null) {
+                    resourceAdapter = (ModifiableResourceAdapter) serviceController.getValue();
+                } else {
+                    resourceAdapter = null;
+                }
                 final List<ServiceName> serviceNameList = context.getServiceRegistry(false).getServiceNames();
                 for (ServiceName name : serviceNameList) {
                     if (raServiceName.isParentOf(name)) {
@@ -78,11 +93,39 @@ public class RaRemove extends RaOperationUtil implements OperationStepHandler {
                     }
 
                 }
+
+                if (model.get(MODULE.getName()).isDefined()) {
+                    //ServiceName deploymentServiceName = ConnectorServices.getDeploymentServiceName(model.get(MODULE.getName()).asString());
+                    //context.removeService(deploymentServiceName);
+                    ServiceName deployerServiceName = ConnectorServices.RESOURCE_ADAPTER_DEPLOYER_SERVICE_PREFIX.append(name);
+                    context.removeService(deployerServiceName);
+                    ServiceName inactiveServiceName = ConnectorServices.INACTIVE_RESOURCE_ADAPTER_SERVICE.append(name);
+                    context.removeService(inactiveServiceName);
+                }
+
                 context.removeService(raServiceName);
                 context.completeStep(new OperationContext.RollbackHandler() {
                     @Override
                     public void handleRollback(OperationContext context, ModelNode operation) {
-                        // TODO:  AS7-5609 RE-ADD SERVICES
+                        if (resourceAdapter != null) {
+                            List<ServiceController<?>>  newControllers = new LinkedList<ServiceController<?>>();
+                            if (model.get(ARCHIVE.getName()).isDefined()) {
+                                RaOperationUtil.installRaServices(context, new ServiceVerificationHandler(), name, resourceAdapter, newControllers);
+                            } else {
+                                try {
+                                    RaOperationUtil.installRaServicesAndDeployFromModule(context, new ServiceVerificationHandler(), name, resourceAdapter, archiveOrModuleName, newControllers);
+                                } catch (OperationFailedException e) {
+
+                                }
+                            }
+                            try {
+                                if (wasActive)
+                                    RaOperationUtil.activate(context, archiveOrModuleName, null);
+                            } catch (OperationFailedException e) {
+
+                            }
+                        }
+
                     }
                 });
             }

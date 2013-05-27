@@ -50,7 +50,7 @@ import javax.management.remote.JMXConnector;
 import javax.management.remote.JMXConnectorFactory;
 import javax.management.remote.JMXServiceURL;
 
-import junit.framework.Assert;
+import org.junit.Assert;
 
 import org.jboss.arquillian.container.test.api.RunAsClient;
 import org.jboss.arquillian.junit.Arquillian;
@@ -248,7 +248,7 @@ public class ModelControllerMBeanTestCase {
     private MBeanServerConnection setupAndGetConnection() throws Exception {
         // Make sure that we can connect to the MBean server
         String urlString = System
-                .getProperty("jmx.service.url", "service:jmx:remoting-jmx://" + managementClient.getMgmtAddress() + ":" + managementClient.getMgmtPort());
+                .getProperty("jmx.service.url", "service:jmx:http-remoting-jmx://" + managementClient.getMgmtAddress() + ":" + managementClient.getMgmtPort());
         JMXServiceURL serviceURL = new JMXServiceURL(urlString);
         connector = JMXConnectorFactory.connect(serviceURL, null);
         return connector.getMBeanServerConnection();

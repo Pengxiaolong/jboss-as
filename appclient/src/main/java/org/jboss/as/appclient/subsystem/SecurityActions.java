@@ -22,12 +22,12 @@
 
 package org.jboss.as.appclient.subsystem;
 
-import java.security.AccessController;
-import java.security.PrivilegedAction;
 import java.security.Provider;
 import java.security.Security;
-import java.util.Map;
-import java.util.Properties;
+import org.wildfly.security.manager.AddGlobalSecurityProviderAction;
+import org.wildfly.security.manager.WildFlySecurityManager;
+
+import static java.security.AccessController.doPrivileged;
 
 /**
  * Security actions to access system environment information.  No methods in
@@ -41,86 +41,11 @@ class SecurityActions {
     private SecurityActions() {
     }
 
-    static String getSystemProperty(final String key) {
-        if (System.getSecurityManager() == null) {
-            return System.getProperty(key);
-        }
-
-        return AccessController.doPrivileged(new PrivilegedAction<String>() {
-
-            @Override
-            public String run() {
-                return System.getProperty(key);
-            }
-        });
-    }
-
-    static void setSystemProperty(final String key, final String value) {
-        if (System.getSecurityManager() == null) {
-            System.setProperty(key, value);
-        } else {
-            AccessController.doPrivileged(new PrivilegedAction<Void>() {
-
-                @Override
-                public Void run() {
-                    System.setProperty(key, value);
-                    return null;
-                }
-            });
-        }
-    }
-
-    static void clearSystemProperty(final String key) {
-        if (System.getSecurityManager() == null) {
-            System.clearProperty(key);
-        } else {
-            AccessController.doPrivileged(new PrivilegedAction<Void>() {
-
-                @Override
-                public Void run() {
-                    System.clearProperty(key);
-                    return null;
-                }
-            });
-        }
-    }
-
-    static Properties getSystemProperties() {
-        if (System.getSecurityManager() == null) {
-            return System.getProperties();
-        } else {
-            return AccessController.doPrivileged(new PrivilegedAction<Properties>() {
-                public Properties run() {
-                    return System.getProperties();
-                }
-            });
-        }
-    }
-
-    static Map<String, String> getSystemEnvironment() {
-        if (System.getSecurityManager() == null) {
-            return System.getenv();
-        } else {
-            return AccessController.doPrivileged(new PrivilegedAction<Map<String, String>>() {
-                public Map<String, String> run() {
-                    return System.getenv();
-                }
-            });
-        }
-    }
-
     static void addProvider(final Provider provider) {
-        if (System.getSecurityManager() == null) {
+        if (! WildFlySecurityManager.isChecking()) {
             Security.addProvider(provider);
         } else {
-            AccessController.doPrivileged(new PrivilegedAction<Void>() {
-
-                @Override
-                public Void run() {
-                    Security.addProvider(provider);
-                    return null;
-                }
-            });
+            doPrivileged(new AddGlobalSecurityProviderAction(provider));
         }
     }
 }

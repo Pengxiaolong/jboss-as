@@ -27,6 +27,7 @@ import java.util.Locale;
 import java.util.ResourceBundle;
 
 import org.jboss.as.controller.AttributeDefinition;
+import org.jboss.as.controller.ModelOnlyWriteAttributeHandler;
 import org.jboss.as.controller.PathElement;
 import org.jboss.as.controller.SimpleAttributeDefinition;
 import org.jboss.as.controller.SimpleAttributeDefinitionBuilder;
@@ -34,7 +35,6 @@ import org.jboss.as.controller.SimpleResourceDefinition;
 import org.jboss.as.controller.descriptions.ModelDescriptionConstants;
 import org.jboss.as.controller.descriptions.StandardResourceDescriptionResolver;
 import org.jboss.as.controller.operations.common.ProcessEnvironmentSystemPropertyUpdater;
-import org.jboss.as.controller.operations.global.WriteAttributeHandlers;
 import org.jboss.as.controller.operations.validation.ModelTypeValidator;
 import org.jboss.as.controller.operations.validation.StringLengthValidator;
 import org.jboss.as.controller.registry.ManagementResourceRegistration;
@@ -48,10 +48,13 @@ import org.jboss.dmr.ModelNode;
 import org.jboss.dmr.ModelType;
 
 /**
+ * {@link org.jboss.as.controller.ResourceDefinition} for system property configuration resources.
  *
  * @author <a href="kabir.khan@jboss.com">Kabir Khan</a>
  */
 public class SystemPropertyResourceDefinition extends SimpleResourceDefinition {
+
+    public static final PathElement PATH = PathElement.pathElement(SYSTEM_PROPERTY);
 
     public static final SimpleAttributeDefinition VALUE = SimpleAttributeDefinitionBuilder.create(ModelDescriptionConstants.VALUE, ModelType.STRING, true)
             .setAllowExpression(true)
@@ -61,6 +64,7 @@ public class SystemPropertyResourceDefinition extends SimpleResourceDefinition {
     public static final SimpleAttributeDefinition BOOT_TIME = SimpleAttributeDefinitionBuilder.create(ModelDescriptionConstants.BOOT_TIME, ModelType.BOOLEAN, true)
             .setValidator(new ModelTypeValidator(ModelType.BOOLEAN, true))
             .setDefaultValue(new ModelNode(true))
+            .setAllowExpression(true)
             .build();
 
     static final AttributeDefinition[] ALL_ATTRIBUTES = new AttributeDefinition[] {VALUE, BOOT_TIME};
@@ -70,7 +74,7 @@ public class SystemPropertyResourceDefinition extends SimpleResourceDefinition {
     final boolean useBoottime;
 
     private SystemPropertyResourceDefinition(Location location, ProcessEnvironmentSystemPropertyUpdater systemPropertyUpdater, boolean useBoottime) {
-        super(PathElement.pathElement(SYSTEM_PROPERTY),
+        super(PATH,
                 new ReplaceResourceNameResourceDescriptionResolver(location, SYSTEM_PROPERTY),
                 new SystemPropertyAddHandler(systemPropertyUpdater, useBoottime, useBoottime ? ALL_ATTRIBUTES : SERVER_ATTRIBUTES),
                 new SystemPropertyRemoveHandler(systemPropertyUpdater));
@@ -90,7 +94,7 @@ public class SystemPropertyResourceDefinition extends SimpleResourceDefinition {
     public void registerAttributes(ManagementResourceRegistration resourceRegistration) {
         resourceRegistration.registerReadWriteAttribute(VALUE, null, new SystemPropertyValueWriteAttributeHandler(systemPropertyUpdater, VALUE));
         if (useBoottime) {
-            resourceRegistration.registerReadWriteAttribute(BOOT_TIME, null, new WriteAttributeHandlers.AttributeDefinitionValidatingHandler(BOOT_TIME));
+            resourceRegistration.registerReadWriteAttribute(BOOT_TIME, null, new ModelOnlyWriteAttributeHandler(BOOT_TIME));
         }
     }
 

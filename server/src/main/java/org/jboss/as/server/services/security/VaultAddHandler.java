@@ -30,7 +30,6 @@ import org.jboss.as.controller.ServiceVerificationHandler;
 import org.jboss.as.server.ServerMessages;
 import org.jboss.as.server.controller.resources.VaultResourceDefinition;
 import org.jboss.dmr.ModelNode;
-import org.jboss.dmr.Property;
 import org.jboss.msc.service.ServiceController;
 
 /**
@@ -71,10 +70,9 @@ public class VaultAddHandler extends AbstractAddStepHandler {
 
         if (vaultReader != null) {
             final Map<String, Object> vaultOptions = new HashMap<String, Object>();
-            ModelNode optionsNode = VaultResourceDefinition.VAULT_OPTIONS.resolveModelAttribute(context, model);
-            if (optionsNode.isDefined()) {
-                for (Property prop : optionsNode.asPropertyList()) {
-                    vaultOptions.put(prop.getName(), prop.getValue().asString());
+            if (operation.hasDefined(VaultResourceDefinition.VAULT_OPTIONS.getName())) {
+                for (Map.Entry<String, String> vaultOption : VaultResourceDefinition.VAULT_OPTIONS.unwrap(context, model).entrySet()) {
+                    vaultOptions.put(vaultOption.getKey(), vaultOption.getValue());
                 }
             }
             try {

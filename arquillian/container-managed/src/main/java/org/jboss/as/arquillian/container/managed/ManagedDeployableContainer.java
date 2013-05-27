@@ -16,21 +16,29 @@
  */
 package org.jboss.as.arquillian.container.managed;
 
-import java.io.BufferedReader;
+import java.io.BufferedInputStream;
+import java.io.BufferedOutputStream;
 import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileNotFoundException;
+import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.InputStreamReader;
+import java.io.OutputStream;
 import java.net.DatagramSocket;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.util.ArrayList;
+import java.util.Iterator;
 import java.util.List;
 import java.util.concurrent.TimeoutException;
 import java.util.logging.Logger;
 
 import org.jboss.arquillian.container.spi.client.container.LifecycleException;
 import org.jboss.as.arquillian.container.CommonDeployableContainer;
+import org.jboss.as.protocol.StreamUtils;
+import org.jboss.as.server.ServerMessages;
+import org.jboss.dmr.ModelNode;
 
 /**
  * The managed deployable container.
@@ -40,7 +48,12 @@ import org.jboss.as.arquillian.container.CommonDeployableContainer;
  */
 public final class ManagedDeployableContainer extends CommonDeployableContainer<ManagedContainerConfiguration> {
 
-    private static final String CONFIG_PATH = "/standalone/configuration/";
+    static final String TEMP_CONTAINER_DIRECTORY = "arquillian-temp-container";
+
+    static final String CONFIG_DIR = "configuration";
+    static final String SERVER_BASE_DIR = "standalone";
+    static final String LOG_DIR = "log";
+    static final String DATA_DIR = "data";
 
     private static final int PORT_RANGE_MIN = 1;
     private static final int PORT_RANGE_MAX = 65535;
@@ -114,24 +127,33 @@ public final class ManagedDeployableContainer extends CommonDeployableContainer<
                 cmd.add("-ea");
             }
 
+            String serverBaseDir = getSystemPropertyValue(cmd, "jboss.server.base.dir", jbossHome + File.separatorChar + SERVER_BASE_DIR);
+
+            // Create a clean server base to run the container; ARQ-638
+            if (config.isSetupCleanServerBaseDir() || config.getCleanServerBaseDir() != null) {
+                serverBaseDir = setupCleanServerDirectories(serverBaseDir, jbossHome, config.getCleanServerBaseDir()).getAbsolutePath();
+                replaceSystemPropertyValue(cmd, "jboss.server.base.dir", serverBaseDir);
+            }
+
+            final String bootLogFileDefaultValue = serverBaseDir + File.separatorChar + LOG_DIR + File.separatorChar + "boot.log";
+            final String loggingConfigurationDefaultValue = serverBaseDir + File.separatorChar + CONFIG_DIR + File.separatorChar + "logging.properties";
             cmd.add("-Djboss.home.dir=" + jbossHome);
-            cmd.add("-Dorg.jboss.boot.log.file=" + jbossHome + "/standalone/log/boot.log");
-            cmd.add("-Dlogging.configuration=file:" + jbossHome + CONFIG_PATH + "logging.properties");
+            cmd.add("-Dorg.jboss.boot.log.file=" + getSystemPropertyValue(cmd, "org.jboss.boot.log.file", getFile(bootLogFileDefaultValue, jbossHome).getAbsolutePath()));
+            cmd.add("-Dlogging.configuration=" + getSystemPropertyValue(cmd, "logging.configuration", getFile(loggingConfigurationDefaultValue, jbossHome).toURI().toString()));
             cmd.add("-Djboss.bundles.dir=" + bundlesPath);
             cmd.add("-jar");
             cmd.add(modulesJar.getAbsolutePath());
             cmd.add("-mp");
             cmd.add(modulesPath);
-            cmd.add("-jaxpmodule");
-            cmd.add("javax.xml.jaxp-provider");
             cmd.add("org.jboss.as.standalone");
             cmd.add("-server-config");
             cmd.add(config.getServerConfig());
             if (config.isAdminOnly())
-               cmd.add("--admin-only");
+                cmd.add("--admin-only");
 
             // Wait on ports before launching; AS7-4070
             this.waitOnPorts();
+
 
             log.info("Starting container with: " + cmd.toString());
             ProcessBuilder processBuilder = new ProcessBuilder(cmd);
@@ -181,6 +203,7 @@ public final class ManagedDeployableContainer extends CommonDeployableContainer<
     /**
      * If specified in the configuration, waits on the specified ports to become
      * available for the specified time, else throws a {@link PortAcquisitionTimeoutException}
+     *
      * @throws PortAcquisitionTimeoutException
      */
     private void waitOnPorts() throws PortAcquisitionTimeoutException {
@@ -212,7 +235,7 @@ public final class ManagedDeployableContainer extends CommonDeployableContainer<
 
                     // Log that we're waiting
                     log.warning("Waiting on port " + port + " to become available for "
-                        + (timeoutInSeconds - elapsedSeconds) + "s");
+                            + (timeoutInSeconds - elapsedSeconds) + "s");
                 }
             }
         }
@@ -264,11 +287,40 @@ public final class ManagedDeployableContainer extends CommonDeployableContainer<
         }
         try {
             if (process != null) {
-                process.destroy();
+                Thread shutdown = new Thread(new Runnable() {
+                    @Override
+                    public void run() {
+                        try {
+                            Thread.sleep(getContainerConfiguration().getStopTimeoutInSeconds() * 1000);
+                        } catch (InterruptedException e) {
+                            return;
+                        }
+
+                        // The process hasn't shutdown within 60 seconds. Terminate forcibly.
+                        if (process != null) {
+                            process.destroy();
+                        }
+                    }
+                });
+                shutdown.start();
+
+                // AS7-6620: Create the shutdown operation and run it asynchronously and wait for process to terminate
+                ModelNode op = new ModelNode();
+                op.get("operation").set("shutdown");
+                getManagementClient().getControllerClient().executeAsync(op, null);
+
                 process.waitFor();
                 process = null;
+
+                shutdown.interrupt();
             }
         } catch (Exception e) {
+            try {
+                if(process != null) {
+                    process.destroy();
+                    process.waitFor();
+                }
+            }catch (Exception ignore) {}
             throw new LifecycleException("Could not stop container", e);
         }
     }
@@ -296,7 +348,7 @@ public final class ManagedDeployableContainer extends CommonDeployableContainer<
     private void failDueToRunning() throws LifecycleException {
         throw new LifecycleException(
                 "The server is already running! " +
-                        "Managed containers does not support connecting to running server instances due to the " +
+                        "Managed containers do not support connecting to running server instances due to the " +
                         "possible harmful effect of connecting to the wrong server. Please stop server before running or " +
                         "change to another type of container.\n" +
                         "To disable this check and allow Arquillian to connect to a running server, " +
@@ -327,17 +379,195 @@ public final class ManagedDeployableContainer extends CommonDeployableContainer<
             final InputStream stream = process.getInputStream();
             final boolean writeOutput = getContainerConfiguration().isOutputToConsole();
 
-           try {
-              byte[] buf = new byte[32];
-              int num;
-              // Do not try reading a line cos it considers '\r' end of line
-              while((num = stream.read(buf)) != -1){
-                 if (writeOutput)
-                    System.out.write(buf, 0, num);
-              }
-           } catch (IOException e) {
-           }
+            try {
+                byte[] buf = new byte[32];
+                int num;
+                // Do not try reading a line cos it considers '\r' end of line
+                while ((num = stream.read(buf)) != -1) {
+                    if (writeOutput)
+                        System.out.write(buf, 0, num);
+                }
+            } catch (IOException e) {
+            }
         }
 
+    }
+
+    /**
+     * Replace the value of the system property from a list of command line arguments.
+     *
+     * @param cmdArguments list of command line arguments
+     * @param systemPropertyName name of the system property
+     * @param newValue the new value
+     */
+    private void replaceSystemPropertyValue(List<String> cmdArguments, String systemPropertyName, String newValue) {
+        final String argument = "-D" + systemPropertyName + "=";
+        final Iterator<String> cmdArgumentsIterator = cmdArguments.iterator();
+        while(cmdArgumentsIterator.hasNext()) {
+            String cmdArgument = cmdArgumentsIterator.next();
+            if (cmdArgument.startsWith(argument)) {
+                cmdArgumentsIterator.remove();
+            }
+        }
+        cmdArguments.add(argument + newValue);
+    }
+
+    /**
+     * Get the value of the system property from a list of command line arguments.
+     *
+     * @param cmdArguments list of command line arguments
+     * @param systemPropertyName name of the system property
+     * @param defaultValue the default value
+     * @return The value of the {@code systemPropertyName} if found in the {@code cmdArguments}
+     *         or the {@code defaultValue}
+     */
+    private String getSystemPropertyValue(List<String> cmdArguments, String systemPropertyName, String defaultValue) {
+        final String argument = "-D" + systemPropertyName + "=";
+        for (String cmdArgument : cmdArguments) {
+            if (cmdArgument.startsWith(argument)) {
+                return cmdArgument.substring(argument.length());
+            }
+        }
+        return defaultValue;
+    }
+
+    /**
+     * Get a File from a file pathname.<br/>
+     * If the file or directory denoted by {@code pathname} doesn't exist,
+     * check if a relative path to the {@code jbossHome} dir exists.
+     *
+     * @param filePathname the file pathname
+     * @param jbossHome the jboss home directory
+     * @return the File form for the file pathname.
+     */
+    static File getFile(final String filePathname, final String jbossHome) {
+        File result = new File(filePathname);
+        // AS7-1752 see if a non-existent relative path exists relative to the home dir
+        if (!result.exists() && !result.isAbsolute()) {
+            File relative = new File(jbossHome, filePathname);
+            if (relative.exists()) {
+                result = relative;
+            }
+        }
+        return result;
+    }
+
+    /**
+     * Setup clean directories to run the container.
+     * @param serverBaseDir the server base directory
+     * @param jbossHome the JBoss home
+     * @param cleanServerBaseDirPath the clean server base directory
+     */
+    static File setupCleanServerDirectories(String serverBaseDir, String jbossHome, String cleanServerBaseDirPath) throws IOException {
+        final File cleanServerBaseDir;
+        if (cleanServerBaseDirPath != null) {
+            cleanServerBaseDir = new File(cleanServerBaseDirPath);
+        } else {
+            cleanServerBaseDir = createTempServerBaseDirectory();
+        }
+        if (!cleanServerBaseDir.exists()) {
+            throw ServerMessages.MESSAGES.serverBaseDirectoryDoesNotExist(cleanServerBaseDir);
+        }
+        if (!cleanServerBaseDir.isDirectory()) {
+            throw ServerMessages.MESSAGES.serverBaseDirectoryIsNotADirectory(cleanServerBaseDir);
+        }
+        copyOriginalDirectoryToCleanServerBaseDir(CONFIG_DIR, serverBaseDir, jbossHome, cleanServerBaseDir);
+        copyOriginalDirectoryToCleanServerBaseDir(DATA_DIR, serverBaseDir, jbossHome, cleanServerBaseDir);
+        // For jboss.server.deployment.scanner.default
+        File deploymentsDir = new File(cleanServerBaseDir, "deployments");
+        deploymentsDir.mkdir();
+        return cleanServerBaseDir;
+    }
+
+    /**
+     * Copy the original directory to the clean server base directory.
+     * @param originalDirName Name of the original directory
+     * @param cleanServerBaseDir the clean server base directories
+     * @param serverBaseDir the server base directory
+     * @param jbossHome the jboss home
+     * @throws IOException
+     */
+    static void copyOriginalDirectoryToCleanServerBaseDir(String originalDirName, String serverBaseDir, String jbossHome, File cleanServerBaseDir)
+            throws IOException {
+        final File originalDir = getFile(serverBaseDir + File.separatorChar + originalDirName, jbossHome);
+
+        File cleanDir = new File(cleanServerBaseDir, originalDirName);
+        cleanDir.mkdir();
+
+        if (originalDir.exists()) {
+            copyDirectory(originalDir, cleanDir);
+        }
+    }
+
+    /**
+     * Create a temporary directory to setup clean directories to run the container.
+     *
+     * @throws IOException
+     */
+    static File createTempServerBaseDirectory() throws IOException {
+        File tempDir = new File(System.getProperty("java.io.tmpdir"));
+        File tempContainer = new File(tempDir, TEMP_CONTAINER_DIRECTORY);
+        // Delete the previous directory if exists...
+        if (tempContainer.exists()) {
+            deleteRecursively(tempContainer);
+        }
+        if (!tempContainer.mkdir()) {
+            throw new IOException("Could not create temp directory: " + tempContainer.getAbsolutePath());
+        }
+        return tempContainer;
+    }
+
+    /**
+     * Copy directory from {@code src} to {@code dest}.
+     *
+     * @param src Source directory
+     * @param dest Destination directory
+     */
+    private static void copyDirectory(File src, File dest) {
+        for (String current : src.list()) {
+            final File srcFile = new File(src, current);
+            final File destFile = new File(dest, current);
+
+            if (srcFile.isDirectory()) {
+                destFile.mkdir();
+                copyDirectory(srcFile, destFile);
+            } else {
+                try {
+                    final InputStream in = new BufferedInputStream(new FileInputStream(srcFile));
+                    final OutputStream out = new BufferedOutputStream(new FileOutputStream(destFile));
+
+                    try {
+                        int i;
+                        while ((i = in.read()) != -1) {
+                            out.write(i);
+                        }
+                    } catch (IOException e) {
+                        throw ServerMessages.MESSAGES.errorCopyingFile(srcFile.getAbsolutePath(), destFile.getAbsolutePath(), e);
+                    } finally {
+                        StreamUtils.safeClose(in);
+                        StreamUtils.safeClose(out);
+                    }
+
+                } catch (FileNotFoundException e) {
+                    throw new RuntimeException(e);
+                }
+            }
+        }
+    }
+
+    /**
+     * Delete a file if exists.
+     *
+     * @param file the file to delete
+     */
+    static void deleteRecursively(File file) {
+        if (file.exists()) {
+            if (file.isDirectory()) {
+                for (String name : file.list()) {
+                    deleteRecursively(new File(file, name));
+                }
+            }
+            file.delete();
+        }
     }
 }

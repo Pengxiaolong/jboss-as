@@ -22,17 +22,17 @@
 
 package org.jboss.as.web;
 
-import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.ADD;
-import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.DESCRIBE;
-import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.FAILED;
-import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.FAILURE_DESCRIPTION;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.NAME;
-import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.OUTCOME;
+import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.OP;
+import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.OP_ADDR;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.SUBSYSTEM;
+import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.UNDEFINE_ATTRIBUTE_OPERATION;
+import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.VALUE;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.WRITE_ATTRIBUTE_OPERATION;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 import org.jboss.as.controller.Extension;
 import org.jboss.as.controller.ExtensionContext;
@@ -46,14 +46,15 @@ import org.jboss.as.controller.operations.common.GenericSubsystemDescribeHandler
 import org.jboss.as.controller.parsing.ExtensionParsingContext;
 import org.jboss.as.controller.registry.AliasEntry;
 import org.jboss.as.controller.registry.ManagementResourceRegistration;
-import org.jboss.as.controller.registry.OperationEntry;
-import org.jboss.as.controller.transform.AbstractSubsystemTransformer;
-import org.jboss.as.controller.transform.AliasOperationTransformer;
-import org.jboss.as.controller.transform.AliasOperationTransformer.AddressTransformer;
 import org.jboss.as.controller.transform.OperationResultTransformer;
 import org.jboss.as.controller.transform.OperationTransformer;
 import org.jboss.as.controller.transform.TransformationContext;
-import org.jboss.as.controller.transform.TransformersSubRegistration;
+import org.jboss.as.controller.transform.description.AttributeConverter;
+import org.jboss.as.controller.transform.description.DiscardAttributeChecker;
+import org.jboss.as.controller.transform.description.RejectAttributeChecker;
+import org.jboss.as.controller.transform.description.ResourceTransformationDescriptionBuilder;
+import org.jboss.as.controller.transform.description.TransformationDescription;
+import org.jboss.as.controller.transform.description.TransformationDescriptionBuilder;
 import org.jboss.dmr.ModelNode;
 
 /**
@@ -65,40 +66,32 @@ import org.jboss.dmr.ModelNode;
 public class WebExtension implements Extension {
     public static final String SUBSYSTEM_NAME = "web";
     public static final PathElement SUBSYSTEM_PATH = PathElement.pathElement(SUBSYSTEM, SUBSYSTEM_NAME);
+    public static final PathElement VALVE_PATH = PathElement.pathElement(Constants.VALVE);
     protected static final PathElement CONNECTOR_PATH = PathElement.pathElement(Constants.CONNECTOR);
-
     protected static final PathElement SSL_PATH = PathElement.pathElement(Constants.CONFIGURATION, Constants.SSL);
     protected static final PathElement SSL_ALIAS = PathElement.pathElement(Constants.SSL, Constants.CONFIGURATION);
-
     protected static final PathElement HOST_PATH = PathElement.pathElement(Constants.VIRTUAL_SERVER);
-
     protected static final PathElement JSP_CONFIGURATION_PATH = PathElement.pathElement(Constants.CONFIGURATION, Constants.JSP_CONFIGURATION);
     protected static final PathElement STATIC_RESOURCES_PATH = PathElement.pathElement(Constants.CONFIGURATION, Constants.STATIC_RESOURCES);
     protected static final PathElement CONTAINER_PATH = PathElement.pathElement(Constants.CONFIGURATION, Constants.CONTAINER);
-
     protected static final PathElement ACCESS_LOG_PATH = PathElement.pathElement(Constants.CONFIGURATION, Constants.ACCESS_LOG);
     protected static final PathElement ACCESS_LOG_ALIAS = PathElement.pathElement(Constants.ACCESS_LOG, Constants.CONFIGURATION);
-
     protected static final PathElement REWRITE_PATH = PathElement.pathElement(Constants.REWRITE);
-
     protected static final PathElement SSO_PATH = PathElement.pathElement(Constants.CONFIGURATION, Constants.SSO);
     protected static final PathElement SSO_ALIAS = PathElement.pathElement(Constants.SSO, Constants.CONFIGURATION);
-
     protected static final PathElement DIRECTORY_PATH = PathElement.pathElement(Constants.SETTING, Constants.DIRECTORY);
     protected static final PathElement DIRECTORY_ALIAS = PathElement.pathElement(Constants.DIRECTORY, Constants.CONFIGURATION);
-
     protected static final PathElement REWRITECOND_PATH = PathElement.pathElement(Constants.CONDITION);
-
+    protected static final PathElement PARAM = PathElement.pathElement(Constants.PARAM);
     private static final String RESOURCE_NAME = WebExtension.class.getPackage().getName() + ".LocalDescriptions";
+    private static final int MANAGEMENT_API_MAJOR_VERSION = 2;
+    private static final int MANAGEMENT_API_MINOR_VERSION = 0;
+    private static final int MANAGEMENT_API_MICRO_VERSION = 0;
 
     static StandardResourceDescriptionResolver getResourceDescriptionResolver(final String keyPrefix) {
         String prefix = SUBSYSTEM_NAME + (keyPrefix == null ? "" : "." + keyPrefix);
         return new StandardResourceDescriptionResolver(prefix, RESOURCE_NAME, WebExtension.class.getClassLoader(), true, false);
     }
-
-    private static final int MANAGEMENT_API_MAJOR_VERSION = 1;
-    private static final int MANAGEMENT_API_MINOR_VERSION = 2;
-    private static final int MANAGEMENT_API_MICRO_VERSION = 0;
 
     /**
      * {@inheritDoc}
@@ -154,7 +147,12 @@ public class WebExtension implements Extension {
         final ManagementResourceRegistration deployments = subsystem.registerDeploymentModel(WebDeploymentDefinition.INSTANCE);
         deployments.registerSubModel(WebDeploymentServletDefinition.INSTANCE);
 
-        registerTransformers_1_1_0(subsystem);
+        // Global valve.
+        registration.registerSubModel(WebValveDefinition.INSTANCE);
+
+        if (context.isRegisterTransformers()) {
+            registerTransformers_1_1_0(subsystem);
+        }
     }
 
     /**
@@ -162,116 +160,110 @@ public class WebExtension implements Extension {
      */
     @Override
     public void initializeParsers(ExtensionParsingContext context) {
-        context.setSubsystemXmlMapping(SUBSYSTEM_NAME, Namespace.WEB_1_2.getUriString(), WebSubsystemParser.getInstance());
-        context.setSubsystemXmlMapping(SUBSYSTEM_NAME, Namespace.WEB_1_1.getUriString(), WebSubsystemParser.getInstance());
-        context.setSubsystemXmlMapping(SUBSYSTEM_NAME, Namespace.WEB_1_0.getUriString(), WebSubsystemParser.getInstance());
-
+        for (Namespace ns : Namespace.values()) {
+            if (ns.getUriString() != null) {
+                context.setSubsystemXmlMapping(SUBSYSTEM_NAME, ns.getUriString(), WebSubsystemParser.getInstance());
+            }
+        }
         context.setProfileParsingCompletionHandler(new DefaultJsfProfileCompletionHandler());
     }
 
     private void registerTransformers_1_1_0(SubsystemRegistration registration) {
 
-        final TransformersSubRegistration transformers = registration.registerModelTransformers(ModelVersion.create(1, 1, 0), new AbstractSubsystemTransformer(SUBSYSTEM_NAME) {
-            @Override
-            protected ModelNode transformModel(TransformationContext context, ModelNode model) {
-                if (model.hasDefined(Constants.CONNECTOR)) {
-                    for (String name : model.get(Constants.CONNECTOR).keys()) {
-                        swap(model.get(Constants.CONNECTOR, name), SSL_PATH, SSL_ALIAS);
+        final int defaultRedirectPort = 443;
+        final ResourceTransformationDescriptionBuilder subsystemRoot = TransformationDescriptionBuilder.Factory.createSubsystemInstance();
+
+        // Discard valve
+        subsystemRoot.rejectChildResource(VALVE_PATH);
+
+        // Reject expressions for configuration
+        subsystemRoot.addChildResource(JSP_CONFIGURATION_PATH).getAttributeBuilder()
+                .addRejectCheck(RejectAttributeChecker.SIMPLE_EXPRESSIONS, WebJSPDefinition.JSP_ATTRIBUTES);
+        subsystemRoot.addChildResource(STATIC_RESOURCES_PATH).getAttributeBuilder()
+                .addRejectCheck(RejectAttributeChecker.SIMPLE_EXPRESSIONS, WebStaticResources.STATIC_ATTRIBUTES);
+        subsystemRoot.addChildResource(CONTAINER_PATH).getAttributeBuilder()
+                .addRejectCheck(RejectAttributeChecker.SIMPLE_EXPRESSIONS, WebContainerDefinition.CONTAINER_ATTRIBUTES);
+
+        final ResourceTransformationDescriptionBuilder connectorBuilder = subsystemRoot.addChildResource(CONNECTOR_PATH);
+        connectorBuilder.getAttributeBuilder()
+                .addRejectCheck(RejectAttributeChecker.SIMPLE_EXPRESSIONS, WebConnectorDefinition.CONNECTOR_ATTRIBUTES)
+                .addRejectCheck(new RejectAttributeChecker.DefaultRejectAttributeChecker() {
+                    @Override
+                    protected boolean rejectAttribute(PathAddress address, String attributeName, ModelNode attributeValue, TransformationContext context) {
+                        return attributeValue.isDefined();
                     }
-                }
-                if (model.hasDefined(Constants.VIRTUAL_SERVER)) {
-                    for (String name : model.get(Constants.VIRTUAL_SERVER).keys()) {
-                        ModelNode virtualServer = model.get(Constants.VIRTUAL_SERVER, name);
-                        swap(virtualServer, SSO_PATH, SSO_ALIAS);
-                        swap(virtualServer, ACCESS_LOG_PATH, ACCESS_LOG_ALIAS);
-                        ModelNode accessLog = virtualServer.get(ACCESS_LOG_ALIAS.getKey(), ACCESS_LOG_ALIAS.getValue());
-                        swap(accessLog, DIRECTORY_PATH, DIRECTORY_ALIAS);
-                    }
-                }
-
-                return model;
-            }
-
-            private void swap(ModelNode parent, PathElement original, PathElement old) {
-                if (parent.hasDefined(original.getKey()) && parent.get(original.getKey()).hasDefined(original.getValue())) {
-                    ModelNode sslConfig = parent.get(original.getKey(),original.getValue());
-                    parent.get(old.getKey(), old.getValue()).set(sslConfig.clone());
-                    parent.get(original.getKey()).remove(original.getValue());
-                    if (parent.get(original.getKey()).asList().isEmpty()){
-                        parent.remove(original.getKey());
-                    }
-                }
-            }
-        });
-
-        TransformersSubRegistration connectors = transformers.registerSubResource(CONNECTOR_PATH);
-        connectors.registerOperationTransformer(ADD, new OperationTransformer() {
-            @Override
-            public TransformedOperation transformOperation(final TransformationContext context, final PathAddress address, final ModelNode operation)
-                    throws OperationFailedException {
-
-                //Don't error on the way out, it might be ignored on the slave
-                final boolean hasDefinedVirtualServer = operation.hasDefined(Constants.VIRTUAL_SERVER);
-                return new TransformedOperation(operation, new OperationResultTransformer() {
 
                     @Override
-                    public ModelNode transformResult(ModelNode result) {
-                        if (!hasDefinedVirtualServer) {
-                            return result;
-                        }
-                        if (result.get(OUTCOME).asString().equals(FAILED)) {
-                            result.get(FAILURE_DESCRIPTION).set(WebMessages.MESSAGES.transformationVersion_1_1_0_JBPAPP_9314());
-                        }
-                        return result;
+                    public String getRejectionLogMessage(Map<String, ModelNode> attributes) {
+                        return WebMessages.MESSAGES.transformationVersion_1_1_0_JBPAPP_9314();
                     }
-                });
-            }
-        });
-        connectors.registerOperationTransformer(WRITE_ATTRIBUTE_OPERATION, new OperationTransformer() {
-
-            @Override
-            public TransformedOperation transformOperation(final TransformationContext context, final PathAddress address, final ModelNode operation)
-                    throws OperationFailedException {
-
-                //Don't error on the way out, it might be ignored on the slave
-                final boolean isVirtualServer = operation.get(NAME).asString().equals(Constants.VIRTUAL_SERVER);
-                return new TransformedOperation(operation, new OperationResultTransformer() {
-
+                }, Constants.VIRTUAL_SERVER)
+                .setValueConverter(new AttributeConverter.DefaultAttributeConverter() {
                     @Override
-                    public ModelNode transformResult(ModelNode result) {
-                        if (!isVirtualServer) {
-                            return result;
+                    protected void convertAttribute(PathAddress address, String attributeName, ModelNode attributeValue, TransformationContext context) {
+                        if (!attributeValue.isDefined()) {
+                            attributeValue.set(defaultRedirectPort);
                         }
-                        if (result.get(OUTCOME).asString().equals(FAILED)) {
-                            result.get(FAILURE_DESCRIPTION).set(WebMessages.MESSAGES.transformationVersion_1_1_0_JBPAPP_9314());
+                    }
+                }, WebConnectorDefinition.REDIRECT_PORT.getName())
+                .end()
+                .addOperationTransformationOverride(UNDEFINE_ATTRIBUTE_OPERATION)
+                    .inheritResourceAttributeDefinitions() // although probably not necessary
+                    .setCustomOperationTransformer(new OperationTransformer() {
+                        @Override
+                        public TransformedOperation transformOperation(TransformationContext context, PathAddress address, ModelNode operation) throws OperationFailedException {
+                            final String attributeName = operation.require(NAME).asString();
+                            if(WebConnectorDefinition.REDIRECT_PORT.getName().equals(attributeName)) {
+                                final ModelNode transformed = new ModelNode();
+                                transformed.get(OP).set(WRITE_ATTRIBUTE_OPERATION);
+                                transformed.get(OP_ADDR).set(address.toModelNode());
+                                transformed.get(NAME).set(attributeName);
+                                transformed.get(VALUE).set(defaultRedirectPort);
+                                return new TransformedOperation(transformed, OperationResultTransformer.ORIGINAL_RESULT);
+                            }
+                            return new TransformedOperation(operation, OperationResultTransformer.ORIGINAL_RESULT);
                         }
-                        return result;
-                    }
-                });
-                }
-            });
+                    })
+                ;
 
-
-        TransformersSubRegistration ssl = connectors.registerSubResource(SSL_PATH, AliasOperationTransformer.replaceLastElement(SSL_ALIAS));
-        TransformersSubRegistration virtualServer = transformers.registerSubResource(HOST_PATH);
-        TransformersSubRegistration sso = virtualServer.registerSubResource(SSO_PATH, AliasOperationTransformer.replaceLastElement(SSO_ALIAS));
-        TransformersSubRegistration accessLog = virtualServer.registerSubResource(ACCESS_LOG_PATH, AliasOperationTransformer.replaceLastElement(ACCESS_LOG_ALIAS));
-        TransformersSubRegistration accessLogDir = accessLog.registerSubResource(DIRECTORY_PATH, AliasOperationTransformer.create(new AddressTransformer() {
-            @Override
-            public PathAddress transformAddress(PathAddress address) {
-                PathAddress copy = PathAddress.EMPTY_ADDRESS;
-                for (PathElement element : address) {
-                    if (element.getKey().equals(Constants.CONFIGURATION)) {
-                        copy = copy.append(ACCESS_LOG_ALIAS);
-                    } else if (element.getKey().equals(Constants.SETTING)) {
-                        copy = copy.append(DIRECTORY_ALIAS);
-                    } else {
-                        copy = copy.append(element);
+        //
+        connectorBuilder.addChildRedirection(SSL_PATH, SSL_ALIAS).getAttributeBuilder()
+                .addRejectCheck(RejectAttributeChecker.SIMPLE_EXPRESSIONS, WebSSLDefinition.SSL_ATTRIBUTES)
+                .addRejectCheck(RejectAttributeChecker.DEFINED, WebSSLDefinition.SSL_PROTOCOL)
+                .setDiscard(DiscardAttributeChecker.UNDEFINED, WebSSLDefinition.SSL_PROTOCOL)
+                .setValueConverter(new AttributeConverter.DefaultAttributeConverter() {
+                    @Override
+                    protected void convertAttribute(PathAddress address, String attributeName, ModelNode attributeValue, TransformationContext context) {
+                        if (attributeValue.isDefined() && attributeValue.asString().equals(address.getLastElement().getKey())) {
+                            attributeValue.clear();
+                        }
                     }
-                }
-                return copy;
-            }
-        }));
+                }, WebSSLDefinition.NAME)
+                .end();
+
+        final ResourceTransformationDescriptionBuilder hostBuilder = subsystemRoot.addChildResource(HOST_PATH).getAttributeBuilder()
+                .addRejectCheck(RejectAttributeChecker.SIMPLE_EXPRESSIONS, WebVirtualHostDefinition.DEFAULT_WEB_MODULE)
+                .end();
+
+        final ResourceTransformationDescriptionBuilder rewriteBuilder = hostBuilder.addChildResource(REWRITE_PATH).getAttributeBuilder()
+                .addRejectCheck(RejectAttributeChecker.SIMPLE_EXPRESSIONS, WebReWriteDefinition.FLAGS, WebReWriteDefinition.PATTERN, WebReWriteDefinition.SUBSTITUTION)
+                .end();
+
+        rewriteBuilder.addChildResource(REWRITECOND_PATH).getAttributeBuilder()
+                .addRejectCheck(RejectAttributeChecker.SIMPLE_EXPRESSIONS, WebReWriteConditionDefinition.ATTRIBUTES);
+
+        hostBuilder.addChildRedirection(SSO_PATH, SSO_ALIAS).getAttributeBuilder()
+                .addRejectCheck(RejectAttributeChecker.SIMPLE_EXPRESSIONS, WebSSODefinition.SSO_ATTRIBUTES)
+                .end();
+
+        final ResourceTransformationDescriptionBuilder accessLogBuilder = hostBuilder.addChildRedirection(ACCESS_LOG_PATH, ACCESS_LOG_ALIAS).getAttributeBuilder()
+                .addRejectCheck(RejectAttributeChecker.SIMPLE_EXPRESSIONS, WebAccessLogDefinition.ACCESS_LOG_ATTRIBUTES)
+                .end();
+
+        accessLogBuilder.addChildRedirection(DIRECTORY_PATH, DIRECTORY_ALIAS);
+
+        // Register
+        TransformationDescription.Tools.register(subsystemRoot.build(), registration, ModelVersion.create(1, 1, 0));
     }
 
     private static class StandardWebExtensionAliasEntry extends AliasEntry {
@@ -300,4 +292,5 @@ public class WebExtension implements Extension {
             return PathAddress.pathAddress(list);
         }
     }
+
 }

@@ -23,8 +23,6 @@ import java.io.InputStream;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
-import javax.inject.Inject;
-
 import org.jboss.arquillian.container.test.api.Deployer;
 import org.jboss.arquillian.container.test.api.Deployment;
 import org.jboss.arquillian.junit.Arquillian;
@@ -32,7 +30,7 @@ import org.jboss.arquillian.test.api.ArquillianResource;
 import org.jboss.as.test.integration.osgi.xservice.bundle.SimpleActivator;
 import org.jboss.as.test.integration.osgi.xservice.bundle.SimpleService;
 import org.jboss.as.test.osgi.FrameworkUtils;
-import org.jboss.osgi.spi.OSGiManifestBuilder;
+import org.jboss.osgi.metadata.OSGiManifestBuilder;
 import org.jboss.shrinkwrap.api.ShrinkWrap;
 import org.jboss.shrinkwrap.api.asset.Asset;
 import org.jboss.shrinkwrap.api.spec.JavaArchive;
@@ -43,7 +41,6 @@ import org.osgi.framework.BundleActivator;
 import org.osgi.framework.BundleContext;
 import org.osgi.framework.BundleEvent;
 import org.osgi.framework.BundleListener;
-import org.osgi.service.packageadmin.PackageAdmin;
 
 /**
  * Bundle gets installed/uninstalled through the deployment API.
@@ -59,8 +56,8 @@ public class BundleDeploymentCaseTwoTestCase {
     @ArquillianResource
     public Deployer deployer;
 
-    @Inject
-    public BundleContext context;
+    @ArquillianResource
+    BundleContext context;
 
     @Deployment
     public static JavaArchive createdeployment() {
@@ -71,7 +68,6 @@ public class BundleDeploymentCaseTwoTestCase {
                 OSGiManifestBuilder builder = OSGiManifestBuilder.newInstance();
                 builder.addBundleSymbolicName(archive.getName());
                 builder.addBundleManifestVersion(2);
-                builder.addImportPackages(PackageAdmin.class);
                 return builder.openStream();
             }
         });
@@ -84,7 +80,7 @@ public class BundleDeploymentCaseTwoTestCase {
         deployer.deploy(BUNDLE_DEPLOYMENT_NAME);
 
         // Find the deployed bundle
-        Bundle bundle = FrameworkUtils.getDeployedBundle(context, BUNDLE_DEPLOYMENT_NAME, null);
+        Bundle bundle = context.getBundle(BUNDLE_DEPLOYMENT_NAME);
 
         // Start the bundle. Note, it may have started already
         bundle.start();

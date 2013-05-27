@@ -25,7 +25,6 @@ package org.jboss.as.domain.management.security;
 import org.jboss.as.controller.AttributeDefinition;
 import org.jboss.as.controller.OperationStepHandler;
 import org.jboss.as.controller.PathElement;
-import org.jboss.as.controller.ResourceDefinition;
 import org.jboss.as.controller.SimpleAttributeDefinition;
 import org.jboss.as.controller.SimpleAttributeDefinitionBuilder;
 import org.jboss.as.controller.SimpleResourceDefinition;
@@ -38,7 +37,7 @@ import org.jboss.as.controller.registry.OperationEntry;
 import org.jboss.dmr.ModelType;
 
 /**
- * {@link ResourceDefinition} for a management security realm references to property files.
+ * {@link org.jboss.as.controller.ResourceDefinition} for a management security realm references to property files.
  *
  * This abstract definition is shared by both the authentication and authorization definitions that depend on properties files.
  *
@@ -46,8 +45,10 @@ import org.jboss.dmr.ModelType;
  */
 public abstract class PropertiesFileResourceDefinition extends SimpleResourceDefinition {
 
-    public static final SimpleAttributeDefinition PATH = new SimpleAttributeDefinitionBuilder(ModelDescriptionConstants.PATH,
-            ModelType.STRING, false).setValidator(new StringLengthValidator(1, Integer.MAX_VALUE, false, false))
+    public static final SimpleAttributeDefinition PATH =
+            new SimpleAttributeDefinitionBuilder(ModelDescriptionConstants.PATH, ModelType.STRING, false)
+            .setAllowExpression(true)
+            .setValidator(new StringLengthValidator(1, Integer.MAX_VALUE, false, true))
             .setFlags(AttributeAccess.Flag.RESTART_RESOURCE_SERVICES).build();
 
     public static final SimpleAttributeDefinition RELATIVE_TO = new SimpleAttributeDefinitionBuilder(

@@ -19,7 +19,6 @@
 package org.jboss.as.server.services.net;
 
 import org.jboss.as.controller.ControllerMessages;
-import org.jboss.as.controller.OperationContext;
 import org.jboss.as.controller.OperationFailedException;
 import org.jboss.as.controller.resource.AbstractSocketBindingResourceDefinition;
 import org.jboss.as.network.SocketBinding;
@@ -48,7 +47,7 @@ public class ClientMappingsHandler extends AbstractBindingWriteHandler {
         try {
             binding.setClientMappings(BindingAddHandler.parseClientMappings(attributeValue));
         } catch (OperationFailedException e) {
-            ControllerMessages.MESSAGES.failedToRecoverServices(e);
+            throw ControllerMessages.MESSAGES.failedToRecoverServices(e);
         }
     }
 }

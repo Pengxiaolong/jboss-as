@@ -40,6 +40,7 @@ import java.util.List;
 import java.util.Set;
 
 import org.jboss.as.controller.AttributeDefinition;
+import org.jboss.as.controller.ModelOnlyWriteAttributeHandler;
 import org.jboss.as.controller.OperationFailedException;
 import org.jboss.as.controller.PathElement;
 import org.jboss.as.controller.PropertiesAttributeDefinition;
@@ -61,7 +62,6 @@ import org.jboss.as.controller.operations.common.SnapshotListHandler;
 import org.jboss.as.controller.operations.common.SnapshotTakeHandler;
 import org.jboss.as.controller.operations.common.ValidateAddressOperationHandler;
 import org.jboss.as.controller.operations.common.XmlMarshallingHandler;
-import org.jboss.as.controller.operations.global.WriteAttributeHandlers;
 import org.jboss.as.controller.operations.validation.AbstractParameterValidator;
 import org.jboss.as.controller.operations.validation.EnumValidator;
 import org.jboss.as.controller.operations.validation.IntRangeValidator;
@@ -70,16 +70,15 @@ import org.jboss.as.controller.operations.validation.StringLengthValidator;
 import org.jboss.as.controller.persistence.ExtensibleConfigurationPersister;
 import org.jboss.as.controller.registry.ManagementResourceRegistration;
 import org.jboss.as.controller.registry.OperationEntry;
-import org.jboss.as.controller.registry.OperationEntry.EntryType;
 import org.jboss.as.controller.resource.InterfaceDefinition;
 import org.jboss.as.controller.resource.SocketBindingGroupResourceDefinition;
 import org.jboss.as.controller.services.path.PathManagerService;
 import org.jboss.as.controller.services.path.PathResourceDefinition;
 import org.jboss.as.controller.transform.SubsystemDescriptionDump;
-import org.jboss.as.domain.controller.DomainTransformers;
+import org.jboss.as.domain.controller.DomainController;
 import org.jboss.as.domain.controller.LocalHostControllerInfo;
-import org.jboss.as.domain.controller.descriptions.DomainRootDescription;
 import org.jboss.as.domain.controller.operations.ApplyExtensionsHandler;
+import org.jboss.as.domain.controller.operations.ApplyMissingDomainModelResourcesHandler;
 import org.jboss.as.domain.controller.operations.ApplyRemoteMasterDomainModelHandler;
 import org.jboss.as.domain.controller.operations.DomainServerLifecycleHandlers;
 import org.jboss.as.domain.controller.operations.DomainSocketBindingGroupRemoveHandler;
@@ -91,8 +90,10 @@ import org.jboss.as.domain.controller.operations.deployment.DeploymentFullReplac
 import org.jboss.as.domain.controller.operations.deployment.DeploymentUploadBytesHandler;
 import org.jboss.as.domain.controller.operations.deployment.DeploymentUploadStreamAttachmentHandler;
 import org.jboss.as.domain.controller.operations.deployment.DeploymentUploadURLHandler;
+import org.jboss.as.domain.controller.transformers.DomainTransformers;
 import org.jboss.as.host.controller.HostControllerEnvironment;
 import org.jboss.as.host.controller.ignored.IgnoredDomainResourceRegistry;
+import org.jboss.as.host.controller.mgmt.DomainControllerRuntimeIgnoreTransformationRegistry;
 import org.jboss.as.management.client.content.ManagedDMRContentTypeResourceDefinition;
 import org.jboss.as.repository.ContentRepository;
 import org.jboss.as.repository.HostFileRepository;
@@ -105,15 +106,13 @@ import org.jboss.as.server.controller.resources.SystemPropertyResourceDefinition
 import org.jboss.as.server.deploymentoverlay.DeploymentOverlayDefinition;
 import org.jboss.as.server.operations.LaunchTypeHandler;
 import org.jboss.as.server.operations.ServerVersionOperations.DefaultEmptyListAttributeHandler;
-import org.jboss.as.server.operations.ServerVersionOperations.ManagementVersionAttributeHandler;
-import org.jboss.as.server.operations.ServerVersionOperations.ProductInfoAttributeHandler;
-import org.jboss.as.server.operations.ServerVersionOperations.ReleaseVersionAttributeHandler;
 import org.jboss.as.server.services.net.LocalDestinationOutboundSocketBindingResourceDefinition;
 import org.jboss.as.server.services.net.RemoteDestinationOutboundSocketBindingResourceDefinition;
 import org.jboss.dmr.ModelNode;
 import org.jboss.dmr.ModelType;
 
 /**
+ * {@link org.jboss.as.controller.ResourceDefinition} for the root resource in the domain-wide model.
  *
  * @author <a href="kabir.khan@jboss.com">Kabir Khan</a>
  */
@@ -170,6 +169,7 @@ public class DomainRootDefinition extends SimpleResourceDefinition {
             .build();
 
 
+    private final DomainController domainController;
     private final LocalHostControllerInfo hostControllerInfo;
     private final HostControllerEnvironment environment;
     private final ExtensibleConfigurationPersister configurationPersister;
@@ -179,15 +179,19 @@ public class DomainRootDefinition extends SimpleResourceDefinition {
     private final ExtensionRegistry extensionRegistry;
     private final IgnoredDomainResourceRegistry ignoredDomainResourceRegistry;
     private final PathManagerService pathManager;
+    private final DomainControllerRuntimeIgnoreTransformationRegistry runtimeIgnoreTransformationRegistry;
 
-
-    public DomainRootDefinition(final HostControllerEnvironment environment,
+    public DomainRootDefinition(
+            final DomainController domainController,
+            final HostControllerEnvironment environment,
             final ExtensibleConfigurationPersister configurationPersister, final ContentRepository contentRepo,
             final HostFileRepository fileRepository, final boolean isMaster,
             final LocalHostControllerInfo hostControllerInfo,
             final ExtensionRegistry extensionRegistry, final IgnoredDomainResourceRegistry ignoredDomainResourceRegistry,
-            final PathManagerService pathManager) {
-        super(PathElement.pathElement("this-will-be-ignored-since-we-are-root"), DomainRootDescription.getResourceDescriptionResolver(DOMAIN, false));
+            final PathManagerService pathManager,
+            final DomainControllerRuntimeIgnoreTransformationRegistry runtimeIgnoreTransformationRegistry) {
+        super(PathElement.pathElement("this-will-be-ignored-since-we-are-root"), DomainResolver.getResolver(DOMAIN, false));
+        this.domainController = domainController;
         this.isMaster = isMaster;
         this.environment = environment;
         this.hostControllerInfo = hostControllerInfo;
@@ -197,27 +201,27 @@ public class DomainRootDefinition extends SimpleResourceDefinition {
         this.extensionRegistry = extensionRegistry;
         this.ignoredDomainResourceRegistry = ignoredDomainResourceRegistry;
         this.pathManager = pathManager;
+        this.runtimeIgnoreTransformationRegistry = runtimeIgnoreTransformationRegistry;
     }
 
     @Override
     public void registerAttributes(ManagementResourceRegistration resourceRegistration) {
         super.registerAttributes(resourceRegistration);
-        resourceRegistration.registerReadWriteAttribute(NAME, null, new WriteAttributeHandlers.AttributeDefinitionValidatingHandler(NAME));
+        resourceRegistration.registerReadWriteAttribute(NAME, null, new ModelOnlyWriteAttributeHandler(NAME));
 
         resourceRegistration.registerReadOnlyAttribute(PROCESS_TYPE, isMaster ? ProcessTypeHandler.MASTER : ProcessTypeHandler.SLAVE);
         resourceRegistration.registerReadOnlyAttribute(LAUNCH_TYPE, new LaunchTypeHandler(ServerEnvironment.LaunchType.DOMAIN));
         resourceRegistration.registerReadOnlyAttribute(LOCAL_HOST_NAME, new LocalHostNameOperationHandler(hostControllerInfo));
 
-        resourceRegistration.registerReadOnlyAttribute(MANAGEMENT_MAJOR_VERSION, ManagementVersionAttributeHandler.INSTANCE);
-        resourceRegistration.registerReadOnlyAttribute(MANAGEMENT_MINOR_VERSION, ManagementVersionAttributeHandler.INSTANCE);
-        resourceRegistration.registerReadOnlyAttribute(MANAGEMENT_MICRO_VERSION, ManagementVersionAttributeHandler.INSTANCE);
+        resourceRegistration.registerReadOnlyAttribute(MANAGEMENT_MAJOR_VERSION, null);
+        resourceRegistration.registerReadOnlyAttribute(MANAGEMENT_MINOR_VERSION, null);
+        resourceRegistration.registerReadOnlyAttribute(MANAGEMENT_MICRO_VERSION, null);
 
-        resourceRegistration.registerReadOnlyAttribute(RELEASE_VERSION, ReleaseVersionAttributeHandler.INSTANCE);
-        resourceRegistration.registerReadOnlyAttribute(RELEASE_CODENAME, ReleaseVersionAttributeHandler.INSTANCE);
+        resourceRegistration.registerReadOnlyAttribute(RELEASE_VERSION, null);
+        resourceRegistration.registerReadOnlyAttribute(RELEASE_CODENAME, null);
 
-        ProductInfoAttributeHandler infoHandler = new ProductInfoAttributeHandler(environment != null ? environment.getProductConfig() : null);
-        resourceRegistration.registerReadOnlyAttribute(PRODUCT_NAME, infoHandler);
-        resourceRegistration.registerReadOnlyAttribute(PRODUCT_VERSION, infoHandler);
+        resourceRegistration.registerReadOnlyAttribute(PRODUCT_NAME, null);
+        resourceRegistration.registerReadOnlyAttribute(PRODUCT_VERSION, null);
 
         resourceRegistration.registerReadOnlyAttribute(NAMESPACES, DefaultEmptyListAttributeHandler.INSTANCE);
         resourceRegistration.registerReadOnlyAttribute(SCHEMA_LOCATIONS, DefaultEmptyListAttributeHandler.INSTANCE);
@@ -228,16 +232,15 @@ public class DomainRootDefinition extends SimpleResourceDefinition {
         super.registerOperations(resourceRegistration);
 
         final EnumSet<OperationEntry.Flag> readOnly = EnumSet.of(OperationEntry.Flag.READ_ONLY);
-        final EnumSet<OperationEntry.Flag> masterOnly = EnumSet.of(OperationEntry.Flag.MASTER_HOST_CONTROLLER_ONLY);
 
         // Other root resource operations
         XmlMarshallingHandler xmh = new XmlMarshallingHandler(configurationPersister);
-        resourceRegistration.registerOperationHandler(XmlMarshallingHandler.OPERATION_NAME, xmh, xmh, false, OperationEntry.EntryType.PUBLIC, readOnly);
+        resourceRegistration.registerOperationHandler(XmlMarshallingHandler.DEFINITION, xmh);
 
-        resourceRegistration.registerOperationHandler(NamespaceAddHandler.OPERATION_NAME, NamespaceAddHandler.INSTANCE, NamespaceAddHandler.INSTANCE, false);
-        resourceRegistration.registerOperationHandler(NamespaceRemoveHandler.OPERATION_NAME, NamespaceRemoveHandler.INSTANCE, NamespaceRemoveHandler.INSTANCE, false);
-        resourceRegistration.registerOperationHandler(SchemaLocationAddHandler.OPERATION_NAME, SchemaLocationAddHandler.INSTANCE, SchemaLocationAddHandler.INSTANCE, false);
-        resourceRegistration.registerOperationHandler(SchemaLocationRemoveHandler.OPERATION_NAME, SchemaLocationRemoveHandler.INSTANCE, SchemaLocationRemoveHandler.INSTANCE, false);
+        resourceRegistration.registerOperationHandler(NamespaceAddHandler.DEFINITION, NamespaceAddHandler.INSTANCE);
+        resourceRegistration.registerOperationHandler(NamespaceRemoveHandler.DEFINITION, NamespaceRemoveHandler.INSTANCE);
+        resourceRegistration.registerOperationHandler(SchemaLocationAddHandler.DEFINITION, SchemaLocationAddHandler.INSTANCE);
+        resourceRegistration.registerOperationHandler(SchemaLocationRemoveHandler.DEFINITION, SchemaLocationRemoveHandler.INSTANCE);
 
         if (isMaster) {
             DeploymentUploadURLHandler.registerMaster(resourceRegistration, contentRepo);
@@ -245,33 +248,33 @@ public class DomainRootDefinition extends SimpleResourceDefinition {
             DeploymentUploadBytesHandler.registerMaster(resourceRegistration, contentRepo);
 
             SnapshotDeleteHandler snapshotDelete = new SnapshotDeleteHandler(configurationPersister);
-            resourceRegistration.registerOperationHandler(SnapshotDeleteHandler.OPERATION_NAME, snapshotDelete, snapshotDelete, false, EntryType.PUBLIC, masterOnly);
+            resourceRegistration.registerOperationHandler(SnapshotDeleteHandler.DEFINITION, snapshotDelete);
             SnapshotListHandler snapshotList = new SnapshotListHandler(configurationPersister);
-            resourceRegistration.registerOperationHandler(SnapshotListHandler.OPERATION_NAME, snapshotList, snapshotList, false, EntryType.PUBLIC, masterOnly);
+            resourceRegistration.registerOperationHandler(SnapshotListHandler.DEFINITION, snapshotList);
             SnapshotTakeHandler snapshotTake = new SnapshotTakeHandler(configurationPersister);
-            resourceRegistration.registerOperationHandler(SnapshotTakeHandler.OPERATION_NAME, snapshotTake, snapshotTake, false, EntryType.PUBLIC, masterOnly);
+            resourceRegistration.registerOperationHandler(SnapshotTakeHandler.DEFINITION, snapshotTake);
 
             final SubsystemDescriptionDump dumper = new SubsystemDescriptionDump(extensionRegistry);
-            resourceRegistration.registerOperationHandler(SubsystemDescriptionDump.DEFINITION, dumper, false);
+            resourceRegistration.registerOperationHandler(SubsystemDescriptionDump.DEFINITION, dumper);
         } else {
             DeploymentUploadURLHandler.registerSlave(resourceRegistration);
             DeploymentUploadStreamAttachmentHandler.registerSlave(resourceRegistration);
             DeploymentUploadBytesHandler.registerSlave(resourceRegistration);
 
             final ApplyExtensionsHandler aexh = new ApplyExtensionsHandler(extensionRegistry, hostControllerInfo, ignoredDomainResourceRegistry);
-            resourceRegistration.registerOperationHandler(ApplyExtensionsHandler.OPERATION_NAME, aexh, aexh, false, EntryType.PRIVATE);
+            resourceRegistration.registerOperationHandler(ApplyExtensionsHandler.DEFINITION, aexh);
 
-            ApplyRemoteMasterDomainModelHandler armdmh = new ApplyRemoteMasterDomainModelHandler(fileRepository,
+            ApplyRemoteMasterDomainModelHandler armdmh = new ApplyRemoteMasterDomainModelHandler(domainController, environment, fileRepository,
                     contentRepo, hostControllerInfo, ignoredDomainResourceRegistry);
-            resourceRegistration.registerOperationHandler(ApplyRemoteMasterDomainModelHandler.OPERATION_NAME, armdmh, armdmh, false, OperationEntry.EntryType.PRIVATE);
+            resourceRegistration.registerOperationHandler(ApplyRemoteMasterDomainModelHandler.DEFINITION, armdmh);
+            ApplyMissingDomainModelResourcesHandler amdmrh = new ApplyMissingDomainModelResourcesHandler(domainController, environment, hostControllerInfo, ignoredDomainResourceRegistry);
+            resourceRegistration.registerOperationHandler(ApplyMissingDomainModelResourcesHandler.DEFINITION, amdmrh);
         }
         resourceRegistration.registerOperationHandler(DeploymentAttributes.FULL_REPLACE_DEPLOYMENT_DEFINITION, isMaster ? new DeploymentFullReplaceHandler(contentRepo) : new DeploymentFullReplaceHandler(fileRepository));
 
-        resourceRegistration.registerOperationHandler(ValidateAddressOperationHandler.OPERATION_NAME, ValidateAddressOperationHandler.INSTANCE,
-                ValidateAddressOperationHandler.INSTANCE, false, EnumSet.of(OperationEntry.Flag.READ_ONLY));
+        resourceRegistration.registerOperationHandler(ValidateAddressOperationHandler.DEFINITION, ValidateAddressOperationHandler.INSTANCE);
 
-        resourceRegistration.registerOperationHandler(ResolveExpressionOnDomainHandler.OPERATION_NAME, ResolveExpressionOnDomainHandler.INSTANCE,
-                ResolveExpressionOnDomainHandler.INSTANCE, EnumSet.of(OperationEntry.Flag.READ_ONLY, OperationEntry.Flag.DOMAIN_PUSH_TO_SERVERS));
+        resourceRegistration.registerOperationHandler(ResolveExpressionOnDomainHandler.DEFINITION, ResolveExpressionOnDomainHandler.INSTANCE);
 
         DomainServerLifecycleHandlers.registerDomainHandlers(resourceRegistration);
     }
@@ -289,9 +292,9 @@ public class DomainRootDefinition extends SimpleResourceDefinition {
         ));
         resourceRegistration.registerSubModel(new ProfileResourceDefinition(extensionRegistry));
         resourceRegistration.registerSubModel(PathResourceDefinition.createNamed(pathManager));
-        resourceRegistration.registerSubModel(DomainDeploymentResourceDescription.createForDomainRoot(isMaster, contentRepo, fileRepository));
+        resourceRegistration.registerSubModel(DomainDeploymentResourceDefinition.createForDomainRoot(isMaster, contentRepo, fileRepository));
         resourceRegistration.registerSubModel(new DeploymentOverlayDefinition(null, contentRepo, fileRepository));
-        resourceRegistration.registerSubModel(new ServerGroupResourceDefinition(contentRepo, fileRepository));
+        resourceRegistration.registerSubModel(new ServerGroupResourceDefinition(isMaster, contentRepo, fileRepository, runtimeIgnoreTransformationRegistry));
 
         //TODO socket-binding-group currently lives in controller and the child RDs live in domain so they currently need passing in from here
         resourceRegistration.registerSubModel(new SocketBindingGroupResourceDefinition(
@@ -305,10 +308,10 @@ public class DomainRootDefinition extends SimpleResourceDefinition {
         //TODO perhaps all these desriptions and the validator log messages should be moved into management-client-content?
         resourceRegistration.registerSubModel(
                 new ManagedDMRContentTypeResourceDefinition(contentRepo, ROLLOUT_PLAN,
-                PathElement.pathElement(MANAGEMENT_CLIENT_CONTENT, ROLLOUT_PLANS), new RolloutPlanValidator(), DomainRootDescription.getResourceDescriptionResolver(ROLLOUT_PLANS), DomainRootDescription.getResourceDescriptionResolver(ROLLOUT_PLAN)));
+                PathElement.pathElement(MANAGEMENT_CLIENT_CONTENT, ROLLOUT_PLANS), new RolloutPlanValidator(), DomainResolver.getResolver(ROLLOUT_PLANS), DomainResolver.getResolver(ROLLOUT_PLAN)));
 
         // Extensions
-        resourceRegistration.registerSubModel(new ExtensionResourceDefinition(extensionRegistry, true, !isMaster));
+        resourceRegistration.registerSubModel(new ExtensionResourceDefinition(extensionRegistry, true, false, !isMaster));
 
 
         // Initialize the domain transformers

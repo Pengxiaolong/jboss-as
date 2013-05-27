@@ -27,17 +27,17 @@
     <modelVersion>4.0.0</modelVersion>
 
     <parent>
-        <groupId>org.jboss.as</groupId>
-        <artifactId>jboss-as-parent</artifactId>
-        <version>7.2.0.Alpha1-SNAPSHOT</version>
+        <groupId>org.wildfly</groupId>
+        <artifactId>wildfly-parent</artifactId>
+        <version>8.0.0.Alpha2-SNAPSHOT</version>
         <relativePath>../../pom.xml</relativePath>
     </parent>
 
-    <groupId>org.jboss.as</groupId>
-    <artifactId>jboss-as-ejb-client-bom</artifactId>
+    <groupId>org.wildfly</groupId>
+    <artifactId>wildfly-ejb-client-bom</artifactId>
     <packaging>pom</packaging>
 
-    <name>JBoss Application Server: EJB Client BOM</name>
+    <name>WildFly: EJB Client BOM</name>
 
     <description>
         This artifact provides a bill of materials (BOM) for remoting based EJB usage.
@@ -73,7 +73,7 @@
         </dependency>
 
         <dependency>
-            <groupId>org.jboss.remoting3</groupId>
+            <groupId>org.jboss.remoting</groupId>
             <artifactId>jboss-remoting</artifactId>
         </dependency>
 
@@ -89,7 +89,7 @@
 
         <dependency>
             <groupId>org.jboss.spec.javax.ejb</groupId>
-            <artifactId>jboss-ejb-api_3.1_spec</artifactId>
+            <artifactId>jboss-ejb-api_3.2_spec</artifactId>
         </dependency>
 
         <dependency>

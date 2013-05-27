@@ -39,6 +39,7 @@ import javax.security.sasl.RealmCallback;
 
 import org.jboss.as.arquillian.api.ContainerResource;
 import org.jboss.as.arquillian.container.ManagementClient;
+import org.jboss.as.test.categories.CommonCriteria;
 import org.jboss.as.test.integration.ejb.security.authorization.AnnOnlyCheckSFSBForInjection;
 import org.jboss.as.test.integration.ejb.security.authorization.AnnOnlyCheckSLSBForInjection;
 import org.jboss.as.test.integration.ejb.security.authorization.ParentAnnOnlyCheck;
@@ -75,16 +76,14 @@ public abstract class AnnSBTest {
 
 
     public static Archive<JavaArchive> testAppDeployment(final Logger LOG, final String MODULE, final Class SB_TO_TEST) {
-        // using JavaArchive doesn't work, because of a bug in Arquillian, it only deploys wars properly
         final JavaArchive jar = ShrinkWrap.create(JavaArchive.class, MODULE + ".jar")
            .addClass(SB_TO_TEST)
            .addClass(SimpleAuthorizationRemote.class)
            .addClass(ParentAnnOnlyCheck.class)
            .addClass(AnnOnlyCheckSLSBForInjection.class)
-           .addClass(AnnOnlyCheckSFSBForInjection.class)
-              //.addClass(Util.class)
-              //.addClass(SecurityTest.class)
-           .addAsManifestResource("ejb3/security/EMPTY_MANIFEST.MF", "MANIFEST.MF");
+           .addClass(AnnOnlyCheckSFSBForInjection.class);
+        jar.addAsManifestResource(AnnSBTest.class.getPackage(), "jboss-ejb3.xml", "jboss-ejb3.xml");
+        jar.addPackage(CommonCriteria.class.getPackage());
         LOG.info(jar.toString(true));
         return jar;
     }

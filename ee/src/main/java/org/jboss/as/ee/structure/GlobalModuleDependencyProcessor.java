@@ -21,7 +21,8 @@
  */
 package org.jboss.as.ee.structure;
 
-import org.jboss.as.ee.subsystem.GlobalModulesDefinition;
+import java.util.List;
+
 import org.jboss.as.server.deployment.Attachments;
 import org.jboss.as.server.deployment.DeploymentPhaseContext;
 import org.jboss.as.server.deployment.DeploymentUnit;
@@ -29,9 +30,10 @@ import org.jboss.as.server.deployment.DeploymentUnitProcessingException;
 import org.jboss.as.server.deployment.DeploymentUnitProcessor;
 import org.jboss.as.server.deployment.module.ModuleDependency;
 import org.jboss.as.server.deployment.module.ModuleSpecification;
-import org.jboss.dmr.ModelNode;
 import org.jboss.modules.Module;
-import org.jboss.modules.ModuleIdentifier;
+import org.jboss.modules.filter.PathFilters;
+
+import static org.jboss.as.ee.subsystem.GlobalModulesDefinition.GlobalModule;
 
 /**
  * Dependency processor that adds modules defined in the global-modules section of
@@ -41,7 +43,7 @@ import org.jboss.modules.ModuleIdentifier;
  */
 public class GlobalModuleDependencyProcessor implements DeploymentUnitProcessor {
 
-    private volatile ModelNode globalModules = new ModelNode();
+    private volatile List<GlobalModule> globalModules;
 
     public GlobalModuleDependencyProcessor() {
     }
@@ -51,16 +53,22 @@ public class GlobalModuleDependencyProcessor implements DeploymentUnitProcessor 
         final DeploymentUnit deploymentUnit = phaseContext.getDeploymentUnit();
         final ModuleSpecification moduleSpecification = deploymentUnit.getAttachment(Attachments.MODULE_SPECIFICATION);
 
-        final ModelNode globalMods = this.globalModules;
+        final List<GlobalModule> globalMods = this.globalModules;
 
-        if (globalMods.isDefined()) {
-            for (final ModelNode module : globalMods.asList()) {
-                final String name = module.get(GlobalModulesDefinition.NAME).asString();
-                String slot = module.hasDefined(GlobalModulesDefinition.SLOT) ? module.get(GlobalModulesDefinition.SLOT).asString() : GlobalModulesDefinition.DEFAULT_SLOT;
-                final ModuleIdentifier identifier = ModuleIdentifier.create(name, slot);
-                moduleSpecification.addSystemDependency(new ModuleDependency(Module.getBootModuleLoader(), identifier, false, false, true, false));
+            for (final GlobalModule module : globalMods) {
+                final ModuleDependency dependency = new ModuleDependency(Module.getBootModuleLoader(), module.getModuleIdentifier(), false, false, module.isServices(), false);
+
+                if (module.isMetaInf()) {
+                    dependency.addImportFilter(PathFilters.getMetaInfSubdirectoriesFilter(), true);
+                    dependency.addImportFilter(PathFilters.getMetaInfFilter(), true);
+                }
+
+                if(module.isAnnotations()) {
+                    deploymentUnit.addToAttachmentList(Attachments.ADDITIONAL_ANNOTATION_INDEXES, module.getModuleIdentifier());
+                }
+
+                moduleSpecification.addSystemDependency(dependency);
             }
-        }
     }
 
     @Override
@@ -68,7 +76,11 @@ public class GlobalModuleDependencyProcessor implements DeploymentUnitProcessor 
 
     }
 
-    public void setGlobalModules(final ModelNode globalModules) {
+    /**
+     * Set the global modules configuration for the container.
+     * @param globalModules a fully resolved (i.e. with expressions resolved and default values set) global modules configuration
+     */
+    public void setGlobalModules(final List<GlobalModule> globalModules) {
         this.globalModules = globalModules;
     }
 }

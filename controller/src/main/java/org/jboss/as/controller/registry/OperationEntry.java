@@ -34,18 +34,13 @@ import org.jboss.as.controller.descriptions.DescriptionProvider;
  */
 public final class OperationEntry {
     public enum EntryType {
-        PUBLIC, PRIVATE;
+        PUBLIC, PRIVATE
     }
 
     /** Flags to indicate special characteristics of an operation */
     public enum Flag {
         /** Operation only reads, does not modify */
         READ_ONLY,
-        /** Operation only performs a deployment upload
-         * @deprecated use {@link #MASTER_HOST_CONTROLLER_ONLY}
-         */
-        @Deprecated
-        DEPLOYMENT_UPLOAD,
         /** The operation modifies the configuration and can be applied to the runtime without requiring a restart */
         RESTART_NONE,
         /** The operation modifies the configuration but can only be applied to the runtime via a full jvm restart */

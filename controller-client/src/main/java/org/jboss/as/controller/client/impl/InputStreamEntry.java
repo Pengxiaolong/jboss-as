@@ -22,9 +22,9 @@
 
 package org.jboss.as.controller.client.impl;
 
+import org.jboss.as.controller.client.ControllerClientLogger;
 import org.jboss.as.protocol.StreamUtils;
 
-import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.Closeable;
 import java.io.DataOutput;
@@ -116,7 +116,6 @@ public interface InputStreamEntry extends Closeable {
         public synchronized int initialize() throws IOException {
             if(temp == null) {
                 temp = File.createTempFile("client", "stream");
-                temp.deleteOnExit();
                 final FileOutputStream os = new FileOutputStream(temp);
                 try {
                     StreamUtils.copyStream(original, os);
@@ -144,7 +143,10 @@ public interface InputStreamEntry extends Closeable {
 
         @Override
         public synchronized void close() throws IOException {
-            temp.delete();
+            if (!temp.delete()) {
+                ControllerClientLogger.ROOT_LOGGER.cannotDeleteTempFile(temp.getName());
+                temp.deleteOnExit();
+            }
             temp = null;
         }
     }

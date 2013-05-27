@@ -30,6 +30,7 @@ import javax.ejb.TransactionManagementType;
 
 import org.hibernate.Session;
 import org.hibernate.SessionFactory;
+import org.hibernate.boot.registry.StandardServiceRegistryBuilder;
 import org.hibernate.cfg.AvailableSettings;
 import org.hibernate.cfg.Configuration;
 import org.hibernate.cfg.Environment;
@@ -41,7 +42,7 @@ import org.hibernate.service.ServiceRegistryBuilder;
 /**
  * Test that naturalId API used with Hibernate sessionfactory can be inititated from hibernate.cfg.xml and properties added to
  * Hibernate Configuration in AS7 container
- * 
+ *
  * @author Madhumita Sadhukhan
  */
 @Stateful
@@ -54,6 +55,11 @@ public class SFSBHibernateSFNaturalId {
 
     protected static final Class[] NO_CLASSES = new Class[0];
     protected static final String NO_MAPPINGS = new String();
+
+
+    public void cleanup() {
+        sessionFactory.close();
+    }
 
     public void setupConfig() {
         // static {
@@ -77,7 +83,7 @@ public class SFSBHibernateSFNaturalId {
             // build the serviceregistry
             final BootstrapServiceRegistryBuilder bootstrapbuilder = new BootstrapServiceRegistryBuilder();
             builder = new ServiceRegistryBuilder(bootstrapbuilder.build()).applySettings(properties);
-            serviceRegistry = builder.buildServiceRegistry();
+            serviceRegistry = builder.build();
 
             // Create the SessionFactory from Configuration
             sessionFactory = configuration.configure("hibernate.cfg.xml").buildSessionFactory(serviceRegistry);

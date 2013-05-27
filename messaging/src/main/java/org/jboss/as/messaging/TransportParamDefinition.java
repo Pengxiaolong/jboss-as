@@ -25,15 +25,13 @@ package org.jboss.as.messaging;
 import static org.jboss.as.controller.SimpleAttributeDefinitionBuilder.create;
 import static org.jboss.dmr.ModelType.STRING;
 
-import org.jboss.as.controller.OperationContext;
+import org.jboss.as.controller.AttributeDefinition;
 import org.jboss.as.controller.OperationFailedException;
 import org.jboss.as.controller.OperationStepHandler;
-import org.jboss.as.controller.PathAddress;
 import org.jboss.as.controller.PathElement;
 import org.jboss.as.controller.SimpleAttributeDefinition;
 import org.jboss.as.controller.SimpleResourceDefinition;
 import org.jboss.as.controller.registry.ManagementResourceRegistration;
-import org.jboss.as.controller.registry.Resource;
 import org.jboss.dmr.ModelNode;
 
 /**
@@ -43,42 +41,34 @@ import org.jboss.dmr.ModelNode;
  */
 public class TransportParamDefinition extends SimpleResourceDefinition {
 
+    public static final PathElement PATH = PathElement.pathElement(CommonAttributes.PARAM);
+
     static final SimpleAttributeDefinition VALUE = create("value", STRING)
+            .setAllowExpression(true)
             .setRestartAllServices()
             .build();
 
-    static final OperationStepHandler PARAM_ADD = new OperationStepHandler() {
-        @Override
-        public void execute(final OperationContext context, final ModelNode operation) throws OperationFailedException {
-            final Resource resource = context.createResource(PathAddress.EMPTY_ADDRESS);
-            VALUE.validateAndSet(operation, resource.getModel());
-            TransportConfigOperationHandlers.reloadRequiredStep(context);
-            context.completeStep();
-        }
-    };
+    public static final AttributeDefinition[] ATTRIBUTES_WITH_EXPRESSION_ALLOWED_IN_1_2_0 = { VALUE };
 
-    static final OperationStepHandler PARAM_ATTR = new OperationStepHandler() {
+    static final OperationStepHandler PARAM_ADD = new HornetQReloadRequiredHandlers.AddStepHandler() {
         @Override
-        public void execute(final OperationContext context, final ModelNode operation) throws OperationFailedException {
-            final Resource resource = context.readResourceForUpdate(PathAddress.EMPTY_ADDRESS);
-            VALUE.validateAndSet(operation, resource.getModel());
-            TransportConfigOperationHandlers.reloadRequiredStep(context);
-            context.completeStep();
+        protected void populateModel(ModelNode operation, ModelNode model) throws OperationFailedException {
+            VALUE.validateAndSet(operation, model);
         }
     };
 
     public TransportParamDefinition() {
-        super(PathElement.pathElement(CommonAttributes.PARAM),
+        super(PATH,
                 MessagingExtension.getResourceDescriptionResolver("transport-config." + CommonAttributes.PARAM),
                 PARAM_ADD,
-                TransportConfigOperationHandlers.REMOVE);
+                new HornetQReloadRequiredHandlers.RemoveStepHandler());
     }
 
     @Override
     public void registerAttributes(ManagementResourceRegistration registry) {
         super.registerAttributes(registry);
 
-        registry.registerReadWriteAttribute(VALUE, null, PARAM_ATTR);
+        registry.registerReadWriteAttribute(VALUE, null, new HornetQReloadRequiredHandlers.WriteAttributeHandler(VALUE));
     }
 
 }

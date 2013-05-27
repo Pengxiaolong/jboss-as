@@ -33,23 +33,24 @@ import java.util.concurrent.atomic.AtomicReference;
 import org.jboss.as.clustering.ClusterNode;
 import org.jboss.as.clustering.GroupRpcDispatcher;
 import org.jboss.as.clustering.ResponseFilter;
+import org.jboss.as.clustering.impl.CoreGroupCommunicationService;
 import org.jboss.as.clustering.msc.AsynchronousService;
+import org.jboss.as.clustering.msc.DelegatingServiceBuilder;
+import org.jboss.as.clustering.msc.ServiceContainerHelper;
+import org.jboss.as.clustering.msc.ServiceControllerFactory;
 import org.jboss.as.clustering.service.ServiceProviderRegistry;
 import org.jboss.as.clustering.service.ServiceProviderRegistryService;
 import org.jboss.msc.service.AbstractServiceListener;
-import org.jboss.msc.service.BatchServiceTarget;
 import org.jboss.msc.service.Service;
 import org.jboss.msc.service.ServiceBuilder;
-import org.jboss.msc.service.ServiceContainer;
 import org.jboss.msc.service.ServiceController;
 import org.jboss.msc.service.ServiceListener;
 import org.jboss.msc.service.ServiceName;
 import org.jboss.msc.service.ServiceRegistry;
 import org.jboss.msc.service.ServiceTarget;
 import org.jboss.msc.service.StartContext;
+import org.jboss.msc.service.StartException;
 import org.jboss.msc.service.StopContext;
-import org.jboss.msc.service.ValueService;
-import org.jboss.msc.value.ImmediateValue;
 import org.jboss.msc.value.InjectedValue;
 
 /**
@@ -58,12 +59,12 @@ import org.jboss.msc.value.InjectedValue;
  */
 public class SingletonService<T extends Serializable> implements Service<T>, ServiceProviderRegistry.Listener, SingletonRpcHandler<T>, Singleton {
 
-    public static final String DEFAULT_CONTAINER = "cluster";
+    public static final String DEFAULT_CONTAINER = "singleton";
 
     private final InjectedValue<ServiceProviderRegistry> registryRef = new InjectedValue<ServiceProviderRegistry>();
     private final InjectedValue<GroupRpcDispatcher> dispatcherRef = new InjectedValue<GroupRpcDispatcher>();
     private final Service<T> service;
-    private final ServiceName serviceName;
+    private final ServiceName targetServiceName;
     private final ServiceName singletonServiceName;
     private final AtomicBoolean master = new AtomicBoolean(false);
 
@@ -74,27 +75,17 @@ public class SingletonService<T extends Serializable> implements Service<T>, Ser
     private volatile SingletonRpcHandler<T> handler;
     private volatile ServiceRegistry container;
     private volatile boolean restartOnMerge = true;
+    final int quorum;
 
     public SingletonService(Service<T> service, ServiceName serviceName) {
+        this(service, serviceName, 1);
+    }
+
+    public SingletonService(Service<T> service, ServiceName serviceName, int quorum) {
         this.service = service;
-        this.serviceName = serviceName.append("service");
+        this.targetServiceName = serviceName.append("service");
         this.singletonServiceName = serviceName;
-    }
-
-    /*
-     * Retain for binary-compatibility w/7.1.2.Final
-     */
-    @Deprecated
-    public ServiceBuilder<T> build(ServiceContainer target) {
-        return this.build((ServiceTarget) target);
-    }
-
-    /*
-     * Retain for binary-compatibility w/7.1.2.Final
-     */
-    @Deprecated
-    public ServiceBuilder<T> build(ServiceContainer target, String container) {
-        return this.build((ServiceTarget) target, DEFAULT_CONTAINER);
+        this.quorum = quorum;
     }
 
     public ServiceBuilder<T> build(ServiceTarget target) {
@@ -102,20 +93,43 @@ public class SingletonService<T extends Serializable> implements Service<T>, Ser
     }
 
     public ServiceBuilder<T> build(ServiceTarget target, String container) {
-        final BatchServiceTarget batchTarget = target.batchTarget();
-        batchTarget.addService(this.serviceName, this.service).setInitialMode(ServiceController.Mode.NEVER).install();
-        batchTarget.addService(this.singletonServiceName.append("singleton"), new ValueService<Singleton>(new ImmediateValue<Singleton>(this))).addDependency(this.singletonServiceName).setInitialMode(ServiceController.Mode.PASSIVE).install();
+        final ServiceBuilder<T> serviceBuilder = target.addService(this.targetServiceName, this.service).setInitialMode(ServiceController.Mode.NEVER);
+        // Remove target service when this service is removed
         final ServiceListener<T> listener = new AbstractServiceListener<T>() {
             @Override
             public void serviceRemoveRequested(ServiceController<? extends T> controller) {
-                batchTarget.removeServices();
+                ServiceController<?> service = controller.getServiceContainer().getService(SingletonService.this.targetServiceName);
+                if (service != null) {
+                    service.setMode(ServiceController.Mode.REMOVE);
+                }
             }
         };
-        return AsynchronousService.addService(target, this.singletonServiceName, this)
+        final ServiceBuilder<T> singletonBuilder = AsynchronousService.addService(target, this.singletonServiceName, this)
+                .addAliases(this.singletonServiceName.append("singleton"))
                 .addDependency(ServiceProviderRegistryService.getServiceName(container), ServiceProviderRegistry.class, this.registryRef)
-                .addDependency(ServiceName.JBOSS.append(DEFAULT_CONTAINER, container), GroupRpcDispatcher.class, this.dispatcherRef)
+                .addDependency(CoreGroupCommunicationService.getServiceName(container), GroupRpcDispatcher.class, this.dispatcherRef)
                 .addListener(listener)
         ;
+        // Add dependencies to the target service builder, but install should return the installed singleton controller
+        return new DelegatingServiceBuilder<T>(serviceBuilder, ServiceControllerFactory.SIMPLE) {
+            @Override
+            public ServiceBuilder<T> addAliases(ServiceName... aliases) {
+                singletonBuilder.addAliases(aliases);
+                return this;
+            }
+
+            @Override
+            public ServiceBuilder<T> setInitialMode(ServiceController.Mode mode) {
+                singletonBuilder.setInitialMode(mode);
+                return this;
+            }
+
+            @Override
+            public ServiceController<T> install() {
+                super.install();
+                return singletonBuilder.install();
+            }
+        };
     }
 
     @Override
@@ -124,7 +138,7 @@ public class SingletonService<T extends Serializable> implements Service<T>, Ser
         this.dispatcher = this.dispatcherRef.getValue();
         this.registry = this.registryRef.getValue();
         final String name = this.singletonServiceName.getCanonicalName();
-        this.handler = new RpcHandler(this.dispatcher, name);
+        this.handler = new RpcHandler(name);
         this.dispatcher.registerRPCHandler(name, this);
         this.registry.register(name, this);
         this.started = true;
@@ -172,8 +186,17 @@ public class SingletonService<T extends Serializable> implements Service<T>, Ser
     }
 
     private boolean elected(Set<ClusterNode> candidates) {
+        int size = candidates.size();
+        if (size < this.quorum) {
+            SingletonLogger.ROOT_LOGGER.quorumNotReached(this.singletonServiceName.getCanonicalName(), this.quorum);
+            return false;
+        } else if (size == this.quorum) {
+            SingletonLogger.ROOT_LOGGER.quorumJustReached(this.singletonServiceName.getCanonicalName(), this.quorum);
+        }
         ClusterNode elected = this.election(candidates);
-        SingletonLogger.ROOT_LOGGER.elected(elected.getName(), this.singletonServiceName.getCanonicalName());
+        if (elected != null) {
+            SingletonLogger.ROOT_LOGGER.elected(elected.getName(), this.singletonServiceName.getCanonicalName());
+        }
         return (elected != null) ? elected.equals(this.dispatcher.getClusterNode()) : false;
     }
 
@@ -189,11 +212,18 @@ public class SingletonService<T extends Serializable> implements Service<T>, Ser
 
     private void startNewMaster() {
         this.master.set(true);
-        this.container.getRequiredService(this.serviceName).setMode(ServiceController.Mode.ACTIVE);
+        ServiceController<?> service = this.container.getRequiredService(this.targetServiceName);
+        try {
+            ServiceContainerHelper.start(service);
+        } catch (StartException e) {
+            SingletonLogger.ROOT_LOGGER.serviceStartFailed(e, this.targetServiceName.getCanonicalName());
+            ServiceContainerHelper.stop(service);
+        }
     }
 
     @Override
     public T getValue() {
+        if (!this.started) throw new IllegalStateException();
         AtomicReference<T> ref = this.getValueRef();
         if (ref == null) {
             ref = this.handler.getValueRef();
@@ -209,23 +239,21 @@ public class SingletonService<T extends Serializable> implements Service<T>, Ser
     @Override
     public void stopOldMaster() {
         if (this.master.compareAndSet(true, false)) {
-            this.container.getRequiredService(this.serviceName).setMode(ServiceController.Mode.NEVER);
+            ServiceContainerHelper.stop(this.container.getRequiredService(this.targetServiceName));
         }
     }
 
     private class RpcHandler implements SingletonRpcHandler<T>, ResponseFilter {
-        private final GroupRpcDispatcher dispatcher;
-        private String name;
+        private final String name;
 
-        RpcHandler(GroupRpcDispatcher dispatcher, String name) {
-            this.dispatcher = dispatcher;
+        RpcHandler(String name) {
             this.name = name;
         }
 
         @Override
         public void stopOldMaster() {
             try {
-                this.dispatcher.callMethodOnCluster(this.name, "stopOldMaster", new Object[0], new Class<?>[0], true);
+                SingletonService.this.dispatcher.callMethodOnCluster(this.name, "stopOldMaster", new Object[0], new Class<?>[0], true);
             } catch (Exception e) {
                 throw new IllegalStateException(e);
             }
@@ -239,7 +267,7 @@ public class SingletonService<T extends Serializable> implements Service<T>, Ser
                     if (!SingletonService.this.started) {
                         throw new IllegalStateException(SingletonMessages.MESSAGES.notStarted(this.name));
                     }
-                    results = this.dispatcher.callMethodOnCluster(this.name, "getValueRef", new Object[0], new Class<?>[0], false, this);
+                    results = SingletonService.this.dispatcher.callMethodOnCluster(this.name, "getValueRef", new Object[0], new Class<?>[0], false, this);
                     Iterator<AtomicReference<T>> refs = results.iterator();
                     while (refs.hasNext()) {
                         // Prune non-master results
@@ -254,8 +282,12 @@ public class SingletonService<T extends Serializable> implements Service<T>, Ser
                         throw SingletonMessages.MESSAGES.unexpectedResponseCount(this.name, count);
                     }
                     if (count == 0) {
-                        // This can happen If we're in the middle of a new master election, so just try again
                         SingletonLogger.ROOT_LOGGER.noResponseFromMaster(this.name);
+                        // Verify whether there is no master because a quorum was not reached during the last election
+                        if (SingletonService.this.registry.getServiceProviders(this.name).size() < SingletonService.this.quorum) {
+                            return new AtomicReference<T>();
+                        }
+                        // Otherwise, we're in the midst of a new master election, so just try again
                         Thread.yield();
                     }
                 }

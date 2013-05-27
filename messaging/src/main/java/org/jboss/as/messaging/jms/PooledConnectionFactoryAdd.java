@@ -24,6 +24,7 @@ package org.jboss.as.messaging.jms;
 
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.OP_ADDR;
 import static org.jboss.as.messaging.CommonAttributes.CONNECTOR;
+import static org.jboss.as.messaging.CommonAttributes.JGROUPS_CHANNEL;
 import static org.jboss.as.messaging.CommonAttributes.LOCAL;
 import static org.jboss.as.messaging.CommonAttributes.LOCAL_TX;
 import static org.jboss.as.messaging.CommonAttributes.NONE;
@@ -43,7 +44,10 @@ import org.jboss.as.controller.OperationFailedException;
 import org.jboss.as.controller.PathAddress;
 import org.jboss.as.controller.ServiceVerificationHandler;
 import org.jboss.as.controller.descriptions.DescriptionProvider;
+import org.jboss.as.controller.registry.Resource;
 import org.jboss.as.messaging.AlternativeAttributeCheckHandler;
+import org.jboss.as.messaging.CommonAttributes;
+import org.jboss.as.messaging.HornetQActivationService;
 import org.jboss.as.messaging.MessagingDescriptions;
 import org.jboss.as.messaging.MessagingServices;
 import org.jboss.as.messaging.jms.ConnectionFactoryAttributes.Common;
@@ -86,8 +90,10 @@ public class PooledConnectionFactoryAdd extends AbstractAddStepHandler implement
         }
 
         // We validated that jndiName part of the model in populateModel
-        // TODO we only use a single jndi name here but the xsd indicates support for many
-        final String jndiName = resolvedModel.get(Common.ENTRIES.getName()).asList().get(0).asString();
+        final List<String> jndiNames = new ArrayList<String>();
+        for (ModelNode node : resolvedModel.get(Common.ENTRIES.getName()).asList()) {
+            jndiNames.add(node.asString());
+        }
 
         final int minPoolSize = resolvedModel.get(ConnectionFactoryAttributes.Pooled.MIN_POOL_SIZE.getName()).asInt();
         final int maxPoolSize = resolvedModel.get(ConnectionFactoryAttributes.Pooled.MAX_POOL_SIZE.getName()).asInt();
@@ -111,20 +117,30 @@ public class PooledConnectionFactoryAdd extends AbstractAddStepHandler implement
         List<String> connectors = getConnectors(resolvedModel);
 
         String discoveryGroupName = getDiscoveryGroup(resolvedModel);
+        String jgroupsChannelName = null;
+        if (discoveryGroupName != null) {
+            Resource dgResource = context.readResourceFromRoot(MessagingServices.getHornetQServerPathAddress(address).append(CommonAttributes.DISCOVERY_GROUP, discoveryGroupName));
+            ModelNode dgModel = dgResource.getModel();
+            jgroupsChannelName = JGROUPS_CHANNEL.resolveModelAttribute(context, dgModel).asString();
+        }
 
         List<PooledConnectionFactoryConfigProperties> adapterParams = getAdapterParams(resolvedModel, context);
 
         final ServiceName hqServiceName = MessagingServices.getHornetQServiceName(address);
+        final PathAddress hqServiceAddress = MessagingServices.getHornetQServerPathAddress(address);
         ServiceName hornetQResourceAdapterService = JMSServices.getPooledConnectionFactoryBaseServiceName(hqServiceName).append(name);
-        PooledConnectionFactoryService resourceAdapterService = new PooledConnectionFactoryService(name, connectors, discoveryGroupName, adapterParams, jndiName, txSupport, minPoolSize, maxPoolSize);
+
+        PooledConnectionFactoryService resourceAdapterService = new PooledConnectionFactoryService(name, connectors, discoveryGroupName, hqServiceAddress.getLastElement().getValue(), jgroupsChannelName, adapterParams, jndiNames, txSupport, minPoolSize, maxPoolSize);
+
         ServiceBuilder serviceBuilder = serviceTarget
                 .addService(hornetQResourceAdapterService, resourceAdapterService)
                 .addDependency(TxnServices.JBOSS_TXN_TRANSACTION_MANAGER, resourceAdapterService.getTransactionManager())
                 .addDependency(hqServiceName, HornetQServer.class, resourceAdapterService.getHornetQService())
+                .addDependency(HornetQActivationService.getHornetQActivationServiceName(hqServiceName))
                 .addDependency(JMSServices.getJmsManagerBaseServiceName(hqServiceName))
+                .setInitialMode(Mode.PASSIVE)
                 .addListener(verificationHandler);
-
-        newControllers.add(serviceBuilder.setInitialMode(Mode.ACTIVE).install());
+        newControllers.add(serviceBuilder.install());
     }
 
     static List<String> getConnectors(final ModelNode model) {

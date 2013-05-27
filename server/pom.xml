@@ -27,59 +27,48 @@
     <modelVersion>4.0.0</modelVersion>
 
     <parent>
-        <groupId>org.jboss.as</groupId>
-        <artifactId>jboss-as-parent</artifactId>
-        <version>7.2.0.Alpha1-SNAPSHOT</version>
+        <groupId>org.wildfly</groupId>
+        <artifactId>wildfly-parent</artifactId>
+        <version>8.0.0.Alpha2-SNAPSHOT</version>
     </parent>
 
-    <groupId>org.jboss.as</groupId>
-    <artifactId>jboss-as-server</artifactId>
+    <groupId>org.wildfly</groupId>
+    <artifactId>wildfly-server</artifactId>
 
-    <name>JBoss Application Server: Server</name>
-
-    <build>
-        <plugins>
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-compiler-plugin</artifactId>
-                <configuration>
-                    <compilerArgument>
-                        -AgeneratedTranslationFilesPath=${project.build.directory}/generated-translation-files
-                    </compilerArgument>
-                </configuration>
-            </plugin>
-        </plugins>
-    </build>
-
+    <name>WildFly: Server</name>
 
     <dependencies>
         <dependency>
-            <groupId>org.jboss.as</groupId>
-            <artifactId>jboss-as-controller</artifactId>
+            <groupId>org.wildfly</groupId>
+            <artifactId>wildfly-controller</artifactId>
         </dependency>
         <dependency>
-            <groupId>org.jboss.as</groupId>
-            <artifactId>jboss-as-domain-http-interface</artifactId>
+            <groupId>org.wildfly</groupId>
+            <artifactId>wildfly-domain-http-interface</artifactId>
         </dependency>
         <dependency>
-            <groupId>org.jboss.as</groupId>
-            <artifactId>jboss-as-deployment-repository</artifactId>
+            <groupId>org.wildfly</groupId>
+            <artifactId>wildfly-deployment-repository</artifactId>
         </dependency>
         <dependency>
-            <groupId>org.jboss.as</groupId>
-            <artifactId>jboss-as-embedded</artifactId>
+            <groupId>org.wildfly</groupId>
+            <artifactId>wildfly-platform-mbean</artifactId>
         </dependency>
         <dependency>
-            <groupId>org.jboss.as</groupId>
-            <artifactId>jboss-as-platform-mbean</artifactId>
+            <groupId>org.wildfly</groupId>
+            <artifactId>wildfly-process-controller</artifactId>
         </dependency>
         <dependency>
-            <groupId>org.jboss.as</groupId>
-            <artifactId>jboss-as-process-controller</artifactId>
+            <groupId>org.wildfly</groupId>
+            <artifactId>wildfly-remoting</artifactId>
         </dependency>
         <dependency>
-            <groupId>org.jboss.as</groupId>
-            <artifactId>jboss-as-remoting</artifactId>
+            <groupId>org.wildfly</groupId>
+            <artifactId>wildfly-security-manager</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.wildfly</groupId>
+            <artifactId>wildfly-version</artifactId>
         </dependency>
         <dependency>
             <groupId>org.jboss</groupId>
@@ -126,7 +115,7 @@
             <artifactId>jboss-msc</artifactId>
         </dependency>
         <dependency>
-            <groupId>org.jboss.remoting3</groupId>
+            <groupId>org.jboss.remoting</groupId>
             <artifactId>jboss-remoting</artifactId>
         </dependency>
         <dependency>

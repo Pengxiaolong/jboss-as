@@ -21,16 +21,12 @@
  */
 package org.jboss.as.threads;
 
-import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.NAME;
-import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.OP_ADDR;
-
 import java.util.List;
 
 import org.jboss.as.controller.AbstractAddStepHandler;
 import org.jboss.as.controller.AttributeDefinition;
 import org.jboss.as.controller.OperationContext;
 import org.jboss.as.controller.OperationFailedException;
-import org.jboss.as.controller.PathAddress;
 import org.jboss.as.controller.ServiceVerificationHandler;
 import org.jboss.as.threads.ThreadPoolManagementUtils.BoundedThreadPoolParameters;
 import org.jboss.dmr.ModelNode;
@@ -77,9 +73,6 @@ public class BoundedQueueThreadPoolAdd extends AbstractAddStepHandler {
 
     @Override
     protected void populateModel(final ModelNode operation, final ModelNode model) throws OperationFailedException {
-        final PathAddress address = PathAddress.pathAddress(operation.require(OP_ADDR));
-        final String name = address.getLastElement().getValue();
-        model.get(NAME).set(name);
 
         AttributeDefinition[] attributes = blocking ? BLOCKING_ATTRIBUTES : NON_BLOCKING_ATTRIBUTES;
         for(final AttributeDefinition attribute : attributes) {

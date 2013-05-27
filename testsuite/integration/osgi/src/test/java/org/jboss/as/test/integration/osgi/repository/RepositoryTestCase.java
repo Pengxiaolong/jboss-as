@@ -22,17 +22,17 @@ import static org.junit.Assert.assertNotNull;
 import java.io.InputStream;
 import java.util.Collection;
 
-import javax.inject.Inject;
-
 import org.jboss.arquillian.container.test.api.Deployment;
 import org.jboss.arquillian.junit.Arquillian;
+import org.jboss.arquillian.test.api.ArquillianResource;
+import org.jboss.as.test.osgi.FrameworkUtils;
+import org.jboss.osgi.metadata.OSGiManifestBuilder;
 import org.jboss.osgi.repository.XRepository;
 import org.jboss.osgi.repository.XRequirementBuilder;
 import org.jboss.osgi.resolver.MavenCoordinates;
 import org.jboss.osgi.resolver.XIdentityCapability;
 import org.jboss.osgi.resolver.XRequirement;
 import org.jboss.osgi.resolver.XResource;
-import org.jboss.osgi.spi.OSGiManifestBuilder;
 import org.jboss.shrinkwrap.api.ShrinkWrap;
 import org.jboss.shrinkwrap.api.asset.Asset;
 import org.jboss.shrinkwrap.api.spec.JavaArchive;
@@ -47,6 +47,7 @@ import org.osgi.resource.Capability;
 import org.osgi.resource.Resource;
 import org.osgi.service.repository.Repository;
 import org.osgi.service.repository.RepositoryContent;
+import org.osgi.util.tracker.ServiceTracker;
 
 /**
  * Test that the EventAdmin can be installed through the Repository bundle.
@@ -57,12 +58,13 @@ import org.osgi.service.repository.RepositoryContent;
 @RunWith(Arquillian.class)
 public class RepositoryTestCase {
 
-    @Inject
-    public BundleContext context;
+    @ArquillianResource
+    BundleContext context;
 
     @Deployment
     public static JavaArchive createdeployment() {
         final JavaArchive archive = ShrinkWrap.create(JavaArchive.class, "osgi-repository-bundle");
+        archive.addClasses(FrameworkUtils.class);
         archive.setManifest(new Asset() {
             @Override
             public InputStream openStream() {
@@ -71,6 +73,7 @@ public class RepositoryTestCase {
                 builder.addBundleManifestVersion(2);
                 builder.addImportPackages(BundleActivator.class, Repository.class, Resource.class);
                 builder.addImportPackages(XRequirementBuilder.class, XRequirement.class);
+                builder.addImportPackages(ServiceTracker.class);
                 return builder.openStream();
             }
         });
@@ -80,7 +83,7 @@ public class RepositoryTestCase {
     @Test
     public void testRepositoryService() throws Exception {
 
-        XRepository repo = getRepository();
+        XRepository repo = FrameworkUtils.waitForService(context, XRepository.class);
         MavenCoordinates coordinates = MavenCoordinates.parse("org.apache.felix:org.apache.felix.eventadmin:1.2.6");
         XRequirement req = XRequirementBuilder.create(coordinates).getRequirement();
         assertNotNull("Requirement not null", req);
@@ -98,7 +101,7 @@ public class RepositoryTestCase {
             try {
                 bundle.start();
                 Assert.assertEquals(Bundle.ACTIVE, bundle.getState());
-                ServiceReference sref = context.getServiceReference("org.osgi.service.event.EventAdmin");
+                ServiceReference<?> sref = context.getServiceReference("org.osgi.service.event.EventAdmin");
                 assertNotNull("EventAdmin service not null", sref);
             } finally {
                 bundle.uninstall();
@@ -106,10 +109,5 @@ public class RepositoryTestCase {
         } finally {
             content.close();
         }
-    }
-
-    private XRepository getRepository() {
-        ServiceReference sref = context.getServiceReference(XRepository.class.getName());
-        return (XRepository) context.getService(sref);
     }
 }

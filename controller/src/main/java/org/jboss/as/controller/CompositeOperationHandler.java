@@ -26,18 +26,21 @@ import static org.jboss.as.controller.ControllerMessages.MESSAGES;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.FAILURE_DESCRIPTION;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.OP;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.OP_ADDR;
-import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.STEPS;
 
 import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
+import org.jboss.as.controller.descriptions.DefaultOperationDescriptionProvider;
 import org.jboss.as.controller.descriptions.DescriptionProvider;
 import org.jboss.as.controller.descriptions.ModelDescriptionConstants;
-import org.jboss.as.controller.descriptions.common.CommonDescriptions;
+import org.jboss.as.controller.descriptions.ResourceDescriptionResolver;
+import org.jboss.as.controller.descriptions.common.ControllerResolver;
 import org.jboss.as.controller.registry.ImmutableManagementResourceRegistration;
+import org.jboss.as.controller.registry.OperationEntry;
 import org.jboss.dmr.ModelNode;
+import org.jboss.dmr.ModelType;
 
 /**
  * Handler for the "composite" operation; i.e. one that includes one or more child operations
@@ -46,16 +49,31 @@ import org.jboss.dmr.ModelNode;
  * @author <a href="mailto:david.lloyd@redhat.com">David M. Lloyd</a>
  * @author Brian Stansberry (c) 2011 Red Hat Inc.
  */
-public final class CompositeOperationHandler implements OperationStepHandler, DescriptionProvider {
+public final class CompositeOperationHandler implements OperationStepHandler {
+
+    @Deprecated
+    public static final OperationContext.AttachmentKey<Boolean> DOMAIN_EXECUTION_KEY = OperationContext.AttachmentKey.create(Boolean.class);
+
     public static final CompositeOperationHandler INSTANCE = new CompositeOperationHandler();
     public static final String NAME = ModelDescriptionConstants.COMPOSITE;
+
+    private static final AttributeDefinition STEPS = new PrimitiveListAttributeDefinition.Builder(ModelDescriptionConstants.STEPS, ModelType.OBJECT)
+            .build();
+
+    public static final OperationDefinition DEFINITION = new WFLY1316HackOperationDefinitionBuilder(NAME, ControllerResolver.getResolver("root"))
+        .addParameter(STEPS)
+        .setReplyType(ModelType.OBJECT)
+        .setPrivateEntry()
+        .build();
 
     private CompositeOperationHandler() {
     }
 
-    public void execute(final OperationContext context, final ModelNode operation) {
+    public void execute(final OperationContext context, final ModelNode operation) throws OperationFailedException {
+        STEPS.validateOperation(operation);
+
         ImmutableManagementResourceRegistration registry = context.getResourceRegistration();
-        final List<ModelNode> list = operation.get(STEPS).asList();
+        final List<ModelNode> list = operation.get(ModelDescriptionConstants.STEPS).asList();
         final ModelNode responseMap = context.getResult().setEmptyObject();
         Map<String, OperationStepHandler> stepHandlerMap = new HashMap<String, OperationStepHandler>();
         final int size = list.size();
@@ -69,7 +87,12 @@ public final class CompositeOperationHandler implements OperationStepHandler, De
             String stepOpName = subOperation.require(OP).asString();
             OperationStepHandler stepHandler = registry.getOperationHandler(stepAddress, stepOpName);
             if (stepHandler == null) {
-                context.getFailureDescription().set(MESSAGES.noHandler(stepOpName, stepAddress));
+                ImmutableManagementResourceRegistration child = registry.getSubModel(stepAddress);
+                if (child == null) {
+                   context.getFailureDescription().set(MESSAGES.noSuchResourceType(stepAddress));
+                } else {
+                    context.getFailureDescription().set(MESSAGES.noHandlerForOperation(stepOpName, stepAddress));
+                }
                 context.completeStep(OperationContext.RollbackHandler.NOOP_ROLLBACK_HANDLER);
                 return;
             }
@@ -79,12 +102,17 @@ public final class CompositeOperationHandler implements OperationStepHandler, De
         for (int i = size - 1; i >= 0; i --) {
             final ModelNode subOperation = list.get(i);
             String stepName = "step-" + (i+1);
-            context.addStep(responseMap.get(stepName).setEmptyObject(), subOperation, stepHandlerMap.get(stepName), OperationContext.Stage.IMMEDIATE);
+            context.addStep(responseMap.get(stepName).setEmptyObject(), subOperation, stepHandlerMap.get(stepName), OperationContext.Stage.MODEL, true);
         }
 
         context.completeStep(new OperationContext.RollbackHandler() {
             @Override
             public void handleRollback(OperationContext context, ModelNode operation) {
+                // don't override useful failure information in the domain
+                if (context.getAttachment(DOMAIN_EXECUTION_KEY) != null) {
+                    return;
+                }
+
                 final ModelNode failureMsg = new ModelNode();
                 for (int i = 0; i < size; i++) {
                     String stepName = "step-" + (i+1);
@@ -101,10 +129,35 @@ public final class CompositeOperationHandler implements OperationStepHandler, De
         });
     }
 
-    @Override
-    public ModelNode getModelDescription(Locale locale) {
-        //Since this instance should have EntryType.PRIVATE, there is no need for a description
-        //return new ModelNode();
-        return CommonDescriptions.getCompositeOperation(locale);
+    private static class WFLY1316HackOperationDefinitionBuilder extends SimpleOperationDefinitionBuilder {
+
+        public WFLY1316HackOperationDefinitionBuilder(String name, ResourceDescriptionResolver resolver) {
+            super(name, resolver);
+        }
+
+        @Override
+        protected SimpleOperationDefinition internalBuild(final ResourceDescriptionResolver resolver, final ResourceDescriptionResolver attributeResolver) {
+            // Make this a bit more robust in case WFLY-1315 is fixed but this hack gets left around
+            if (entryType != OperationEntry.EntryType.PRIVATE) {
+                return super.internalBuild(resolver, attributeResolver);
+            }
+
+            return new SimpleOperationDefinition(name, resolver, attributeResolver, entryType, flags, replyType, replyValueType, replyAllowNull, deprecationData, replyParameters, parameters) {
+                /**
+                 * Override the superclass behavior to go ahead and provide a description even though we are EntryType.PRIVATE
+                 *
+                 * {@inheritDoc}
+                 */
+                @Override
+                public DescriptionProvider getDescriptionProvider() {
+                    return new DescriptionProvider() {
+                        @Override
+                        public ModelNode getModelDescription(Locale locale) {
+                            return new DefaultOperationDescriptionProvider(getName(), resolver, attributeResolver, replyType, replyValueType, deprecationData, replyParameters, parameters).getModelDescription(locale);
+                        }
+                    };
+                }
+            };
+        }
     }
 }

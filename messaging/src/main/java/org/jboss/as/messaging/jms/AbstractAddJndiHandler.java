@@ -22,6 +22,7 @@
 
 package org.jboss.as.messaging.jms;
 
+import static org.jboss.as.messaging.HornetQActivationService.rollbackOperationIfServerNotActive;
 import static org.jboss.as.messaging.MessagingMessages.MESSAGES;
 
 import org.hornetq.core.server.HornetQServer;
@@ -70,6 +71,10 @@ public abstract class AbstractAddJndiHandler implements OperationStepHandler {
 
 
         if (context.isNormalServer()) {
+            if (rollbackOperationIfServerNotActive(context, operation)) {
+                return;
+            }
+
             context.addStep(new OperationStepHandler() {
                 @Override
                 public void execute(OperationContext context, ModelNode operation) throws OperationFailedException {
@@ -88,13 +93,16 @@ public abstract class AbstractAddJndiHandler implements OperationStepHandler {
                         context.getResult();
                     }
 
-                    if (context.completeStep() != OperationContext.ResultAction.KEEP) {
-                        // TODO is it possible to revert?
-                    }
+                    context.completeStep(new OperationContext.RollbackHandler() {
+                        @Override
+                        public void handleRollback(OperationContext context, ModelNode operation) {
+                            // TODO is it possible to revert?
+                        }
+                    });
                 }
             }, OperationContext.Stage.RUNTIME);
         }
-        context.completeStep();
+        context.stepCompleted();
     }
 
     protected abstract void addJndiNameToControl(String toAdd, String resourceName, HornetQServer server, OperationContext context);

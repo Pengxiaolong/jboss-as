@@ -31,15 +31,15 @@
      -->
 
     <parent>
-        <groupId>org.jboss.as</groupId>
-        <artifactId>jboss-as-arquillian</artifactId>
-        <version>7.2.0.Alpha1-SNAPSHOT</version>
+        <groupId>org.wildfly</groupId>
+        <artifactId>wildfly-arquillian</artifactId>
+        <version>8.0.0.Alpha2-SNAPSHOT</version>
     </parent>
 
-    <groupId>org.jboss.as</groupId>
-    <artifactId>jboss-as-arquillian-protocol-servlet</artifactId>
+    <groupId>org.wildfly</groupId>
+    <artifactId>wildfly-arquillian-protocol-servlet</artifactId>
 
-    <name>JBoss Application Server: Arquillian Protocol Servlet</name>
+    <name>WildFly: Arquillian Protocol Servlet</name>
 
     <packaging>jar</packaging>
     
@@ -62,7 +62,7 @@
         </dependency>
         <dependency>
             <groupId>org.jboss.spec.javax.servlet</groupId>
-            <artifactId>jboss-servlet-api_3.0_spec</artifactId>
+            <artifactId>jboss-servlet-api_3.1_spec</artifactId>
         </dependency>
     </dependencies>
     

@@ -27,16 +27,16 @@
     <modelVersion>4.0.0</modelVersion>
 
     <parent>
-        <groupId>org.jboss.as</groupId>
-        <artifactId>jboss-as-parent</artifactId>
-        <version>7.2.0.Alpha1-SNAPSHOT</version>
+        <groupId>org.wildfly</groupId>
+        <artifactId>wildfly-parent</artifactId>
+        <version>8.0.0.Alpha2-SNAPSHOT</version>
     </parent>
 
-    <groupId>org.jboss.as</groupId>
-    <artifactId>jboss-as-jmx</artifactId>
-    <version>7.2.0.Alpha1-SNAPSHOT</version>
+    <groupId>org.wildfly</groupId>
+    <artifactId>wildfly-jmx</artifactId>
+    <version>8.0.0.Alpha2-SNAPSHOT</version>
 
-    <name>JBoss Application Server: JMX Subsystem</name>
+    <name>WildFly: JMX Subsystem</name>
 
     <build>
         <plugins>
@@ -49,15 +49,11 @@
                         <include>**/*TestCase.java</include>
                     </includes>
                     <enableAssertions>false</enableAssertions>
-                </configuration>
-            </plugin>
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-compiler-plugin</artifactId>
-                <configuration>
-                    <compilerArgument>
-                        -AgeneratedTranslationFilesPath=${project.build.directory}/generated-translation-files
-                    </compilerArgument>
+                    <systemPropertyVariables>
+                        <org.jboss.model.test.cache.root>${org.jboss.model.test.cache.root}</org.jboss.model.test.cache.root>
+                        <org.jboss.model.test.classpath.cache>${org.jboss.model.test.classpath.cache}</org.jboss.model.test.classpath.cache>
+                        <org.jboss.model.test.maven.repository.urls>${org.jboss.model.test.maven.repository.urls}</org.jboss.model.test.maven.repository.urls>
+                    </systemPropertyVariables>
                 </configuration>
             </plugin>
         </plugins>
@@ -73,8 +69,8 @@
             <artifactId>jboss-msc</artifactId>
         </dependency>
         <dependency>
-            <groupId>org.jboss.as</groupId>
-            <artifactId>jboss-as-server</artifactId>
+            <groupId>org.wildfly</groupId>
+            <artifactId>wildfly-server</artifactId>
         </dependency>
         <dependency>
             <groupId>org.jboss.remotingjmx</groupId>
@@ -89,8 +85,17 @@
             <artifactId>jboss-marshalling-river</artifactId>
         </dependency>
         <dependency>
-            <groupId>org.jboss.as</groupId>
-            <artifactId>jboss-as-subsystem-test</artifactId>
+            <groupId>org.wildfly</groupId>
+            <artifactId>wildfly-naming</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.wildfly</groupId>
+            <artifactId>wildfly-security-manager</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.wildfly</groupId>
+            <artifactId>wildfly-subsystem-test</artifactId>
+						<type>pom</type>
             <scope>test</scope>
         </dependency>
         <dependency>

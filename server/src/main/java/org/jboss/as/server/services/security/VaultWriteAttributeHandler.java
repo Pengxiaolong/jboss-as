@@ -23,10 +23,7 @@
 package org.jboss.as.server.services.security;
 
 import org.jboss.as.controller.AttributeDefinition;
-import org.jboss.as.controller.OperationContext;
-import org.jboss.as.controller.OperationFailedException;
 import org.jboss.as.controller.ReloadRequiredWriteAttributeHandler;
-import org.jboss.dmr.ModelNode;
 
 /**
  * Write attribute handler for attributes that update the core security vault resource.
@@ -36,21 +33,6 @@ import org.jboss.dmr.ModelNode;
 public class VaultWriteAttributeHandler extends ReloadRequiredWriteAttributeHandler {
     public VaultWriteAttributeHandler(AttributeDefinition...attributes) {
         super(attributes);
-    }
-
-
-
-    @Override
-    public void execute(OperationContext context, ModelNode operation) throws OperationFailedException {
-        super.execute(context, operation);
-    }
-
-
-
-    @Override
-    protected void validateResolvedValue(String name, ModelNode value) throws OperationFailedException {
-        // no-op, as we are not going to apply this value until the server is reloaded, so allow
-        // any system property to be set between now and then
     }
 
 }

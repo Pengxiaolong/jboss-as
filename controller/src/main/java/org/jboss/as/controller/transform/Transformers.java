@@ -25,6 +25,7 @@ package org.jboss.as.controller.transform;
 import org.jboss.as.controller.ExpressionResolver;
 import org.jboss.as.controller.OperationContext;
 import org.jboss.as.controller.OperationFailedException;
+import org.jboss.as.controller.PathAddress;
 import org.jboss.as.controller.ProcessType;
 import org.jboss.as.controller.RunningMode;
 import org.jboss.as.controller.registry.ImmutableManagementResourceRegistration;
@@ -50,11 +51,22 @@ public interface Transformers {
     /**
      * Transform an operation.
      *
+     * @param context the transformation context
      * @param operation the operation to transform
      * @return the transformed operation
      * @throws OperationFailedException
      */
     OperationTransformer.TransformedOperation transformOperation(TransformationContext context, ModelNode operation) throws OperationFailedException;
+
+    /**
+     * Transform an operation.
+     *
+     * @param operationContext the operation context
+     * @param operation the operation to transform
+     * @return the transformed operation
+     * @throws OperationFailedException
+     */
+    OperationTransformer.TransformedOperation transformOperation(OperationContext operationContext, ModelNode operation) throws OperationFailedException;
 
     /**
      * Transform given resource at given context
@@ -66,6 +78,28 @@ public interface Transformers {
      */
     Resource transformResource(ResourceTransformationContext context, Resource resource) throws OperationFailedException;
 
+    /**
+     * Transform a given root resource.
+     *
+     * @param operationContext the operation context
+     * @param resource the root resource
+     * @return the transformed resource
+     * @throws OperationFailedException
+     */
+    Resource transformRootResource(OperationContext operationContext, Resource resource) throws OperationFailedException;
+
+    /**
+     * Transform a given resource.
+     *
+     * @param operationContext the operation context
+     * @param original the address of the resource to transform
+     * @param resource the resource
+     * @param skipRuntimeIgnoreCheck
+     * @return the transformed resource
+     * @throws OperationFailedException
+     */
+    Resource transformResource(final OperationContext operationContext, PathAddress original, Resource resource, boolean skipRuntimeIgnoreCheck) throws OperationFailedException;
+
     public static class Factory {
         private Factory() {
         }
@@ -74,17 +108,8 @@ public interface Transformers {
             return new TransformersImpl(target);
         }
 
-        public static ResourceTransformationContext getTransformationContext(final Transformers transformers, final OperationContext context) {
-            return getTransformationContext(transformers.getTarget(), context);
-        }
-
-        public static ResourceTransformationContext getTransformationContext(final TransformationTarget target, final OperationContext context) {
-            // TODO differentiate between operation / resource transformation
-            return ResourceTransformationContextImpl.create(context, target);
-        }
-
         public static ResourceTransformationContext create(TransformationTarget target, Resource model, ImmutableManagementResourceRegistration registration, ExpressionResolver resolver, RunningMode runningMode, ProcessType type) {
-            return ResourceTransformationContextImpl.create(target, model, registration, resolver, runningMode, type);
+            return ResourceTransformationContextImpl.create(target, model, registration, resolver, runningMode, type, false);
         }
     }
 

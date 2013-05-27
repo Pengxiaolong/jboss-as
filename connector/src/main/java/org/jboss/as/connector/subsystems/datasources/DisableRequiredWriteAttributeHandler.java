@@ -26,33 +26,20 @@ import org.jboss.as.controller.AbstractWriteAttributeHandler;
 import org.jboss.as.controller.AttributeDefinition;
 import org.jboss.as.controller.OperationContext;
 import org.jboss.as.controller.PathAddress;
-import org.jboss.as.controller.operations.validation.ParameterValidator;
 import org.jboss.dmr.ModelNode;
 
 
 public class DisableRequiredWriteAttributeHandler extends AbstractWriteAttributeHandler<Void> {
 
-    public DisableRequiredWriteAttributeHandler() {
-        super();
-    }
-
-    public DisableRequiredWriteAttributeHandler(final ParameterValidator validator) {
-        super(validator);
-    }
-
     public DisableRequiredWriteAttributeHandler(final AttributeDefinition... definitions) {
         super(definitions);
-    }
-
-    public DisableRequiredWriteAttributeHandler(final ParameterValidator unresolvedValidator, final ParameterValidator resolvedValidator) {
-        super(unresolvedValidator, resolvedValidator);
     }
 
     @Override
     protected boolean applyUpdateToRuntime(OperationContext context, ModelNode operation, String attributeName, ModelNode resolvedValue, ModelNode currentValue, HandbackHolder<Void> voidHandback) {
         ModelNode submodel = context.readResource(PathAddress.EMPTY_ADDRESS).getModel();
         if ((submodel.hasDefined(Constants.ENABLED.getName()) && submodel.get(Constants.ENABLED.getName()).asBoolean()) ||
-                Constants.JNDINAME.getName().equals(attributeName)) {
+                Constants.JNDI_NAME.getName().equals(attributeName)) {
            return true;
         } else {
             //do the job

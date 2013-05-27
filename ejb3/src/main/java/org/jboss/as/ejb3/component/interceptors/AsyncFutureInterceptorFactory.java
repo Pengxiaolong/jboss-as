@@ -24,7 +24,6 @@ package org.jboss.as.ejb3.component.interceptors;
 
 import java.security.AccessController;
 import java.security.PrivilegedAction;
-import java.util.concurrent.Future;
 
 import org.jboss.as.ee.component.Component;
 import org.jboss.as.ee.component.interceptors.InvocationType;
@@ -35,9 +34,10 @@ import org.jboss.invocation.InterceptorFactory;
 import org.jboss.invocation.InterceptorFactoryContext;
 import org.jboss.security.SecurityContext;
 import org.jboss.security.SecurityContextAssociation;
+import org.wildfly.security.manager.WildFlySecurityManager;
 
 /**
- * An asynchronous execution interceptor for methods returning {@link Future}.  Because asynchronous invocations
+ * An asynchronous execution interceptor for methods returning {@link java.util.concurrent.Future}.  Because asynchronous invocations
  * necessarily run in a concurrent thread, any thread context setup interceptors should run <b>after</b> this
  * interceptor to prevent that context from becoming lost.  This interceptor should be associated with the client
  * interceptor stack.
@@ -69,7 +69,7 @@ public final class AsyncFutureInterceptorFactory implements InterceptorFactory {
                 asyncInterceptorContext.putPrivateData(InvocationType.class, InvocationType.ASYNC);
                 final CancellationFlag flag = new CancellationFlag();
                 final SecurityContext securityContext = SecurityContextAssociation.getSecurityContext();
-                final AsyncInvocationTask task = new AsyncInvocationTask( flag) {
+                final AsyncInvocationTask task = new AsyncInvocationTask(flag) {
                     @Override
                     protected Object runInvocation() throws Exception {
                         setSecurityContextOnAssociation(securityContext);
@@ -81,7 +81,17 @@ public final class AsyncFutureInterceptorFactory implements InterceptorFactory {
                     }
                 };
                 asyncInterceptorContext.putPrivateData(CancellationFlag.class, flag);
-                component.getAsynchronousExecutor().execute(task);
+                // This interceptor runs in user application's context classloader. Triggering an execute via a executor service from here can potentially lead to
+                // new thread creation which will assign themselves the context classloader of the parent thread (i.e. this thread). This effectively can lead to
+                // deployment's classloader leak. See https://issues.jboss.org/browse/WFLY-1375
+                // To prevent this, we set the TCCL of this thread to null and then trigger the "execute" before "finally" setting the TCCL back to the original one.
+                final ClassLoader oldClassLoader = WildFlySecurityManager.setCurrentContextClassLoaderPrivileged((ClassLoader) null);
+                try {
+                    component.getAsynchronousExecutor().execute(task);
+                } finally {
+                    // reset to the original TCCL
+                    WildFlySecurityManager.setCurrentContextClassLoaderPrivileged(oldClassLoader);
+                }
                 return task;
             }
         };
@@ -97,6 +107,7 @@ public final class AsyncFutureInterceptorFactory implements InterceptorFactory {
             }
         });
     }
+
     private static void clearSecurityContextOnAssociation() {
         AccessController.doPrivileged(new PrivilegedAction<Void>() {
 

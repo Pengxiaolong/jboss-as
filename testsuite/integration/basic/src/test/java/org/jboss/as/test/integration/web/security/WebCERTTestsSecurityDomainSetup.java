@@ -29,19 +29,17 @@ import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.OP;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.OPERATION_HEADERS;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.OP_ADDR;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.REMOVE;
-import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.ROLLBACK_ON_RUNTIME_FAILURE;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.STEPS;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.SUBSYSTEM;
-import static org.jboss.as.security.Constants.AUTHENTICATION;
 import static org.jboss.as.security.Constants.CODE;
 import static org.jboss.as.security.Constants.FLAG;
 import static org.jboss.as.security.Constants.JSSE;
+import static org.jboss.as.security.Constants.LOGIN_MODULE;
 import static org.jboss.as.security.Constants.MODULE_OPTIONS;
 import static org.jboss.as.security.Constants.PASSWORD;
 import static org.jboss.as.security.Constants.SECURITY_DOMAIN;
 import static org.jboss.as.security.Constants.TRUSTSTORE;
 import static org.jboss.as.security.Constants.URL;
-import static org.jboss.as.test.integration.management.util.ModelUtil.createOpNode;
 
 import java.net.URL;
 import java.util.ArrayList;
@@ -49,10 +47,17 @@ import java.util.List;
 
 import org.jboss.as.arquillian.api.ServerSetupTask;
 import org.jboss.as.arquillian.container.ManagementClient;
+import org.jboss.as.controller.PathAddress;
 import org.jboss.as.controller.client.ModelControllerClient;
 import org.jboss.as.controller.client.OperationBuilder;
+import org.jboss.as.controller.descriptions.ModelDescriptionConstants;
 import org.jboss.as.controller.operations.common.Util;
 import org.jboss.as.security.Constants;
+import org.jboss.as.test.integration.security.common.AbstractSecurityRealmsServerSetupTask;
+import org.jboss.as.test.integration.security.common.config.realm.Authentication;
+import org.jboss.as.test.integration.security.common.config.realm.RealmKeystore;
+import org.jboss.as.test.integration.security.common.config.realm.SecurityRealm;
+import org.jboss.as.test.integration.security.common.config.realm.ServerIdentity;
 import org.jboss.dmr.ModelNode;
 import org.jboss.logging.Logger;
 
@@ -61,12 +66,10 @@ import org.jboss.logging.Logger;
  *
  * @author <a href="mailto:sguilhen@redhat.com">Stefan Guilhen</a>
  */
-public class WebCERTTestsSecurityDomainSetup implements ServerSetupTask {
+public class WebCERTTestsSecurityDomainSetup extends AbstractSecurityRealmsServerSetupTask implements ServerSetupTask {
 
     private static final Logger log = Logger.getLogger(WebCERTTestsSecurityDomainSetup.class);
-    
     private static final String APP_SECURITY_DOMAIN = "cert-test";
-    
     private static final String JSSE_SECURITY_DOMAIN = "cert";
 
     protected static void applyUpdates(final ModelControllerClient client, final List<ModelNode> updates) {
@@ -94,47 +97,41 @@ public class WebCERTTestsSecurityDomainSetup implements ServerSetupTask {
 
     @Override
     public void setup(ManagementClient managementClient, String containerId) throws Exception {
+        super.setup(managementClient, containerId);
         log.debug("start of the domain creation");
 
+        ClassLoader tccl = Thread.currentThread().getContextClassLoader();
+        URL keystore = tccl.getResource("security/jsse.keystore");
+        URL roles = getClass().getResource("cert/roles.properties");
+
         final List<ModelNode> updates = new ArrayList<ModelNode>();
-        ModelNode op = new ModelNode();
+        PathAddress address = PathAddress.pathAddress()
+                .append(SUBSYSTEM, "security")
+                .append(SECURITY_DOMAIN, APP_SECURITY_DOMAIN);
 
-        // Add the cert-test security domain.
-        op.get(OP).set(ADD);
-        op.get(OP_ADDR).add(SUBSYSTEM, "security");
-        op.get(OP_ADDR).add(SECURITY_DOMAIN, APP_SECURITY_DOMAIN);
-        updates.add(op);
+        updates.add(Util.createAddOperation(address));
+        address = address.append(Constants.AUTHENTICATION, Constants.CLASSIC);
+        updates.add(Util.createAddOperation(address));
 
-        op = new ModelNode();
-        op.get(OP).set(ADD);
-        op.get(OP_ADDR).add(SUBSYSTEM, "security");
-        op.get(OP_ADDR).add(SECURITY_DOMAIN, APP_SECURITY_DOMAIN);
-        op.get(OP_ADDR).add(AUTHENTICATION, Constants.CLASSIC);
-
-        ModelNode loginModule = op.get(Constants.LOGIN_MODULES).add();
+        ModelNode loginModule = Util.createAddOperation(address.append(LOGIN_MODULE, "CertificateRoles"));
         loginModule.get(CODE).set("CertificateRoles");
         loginModule.get(FLAG).set("required");
         ModelNode moduleOptions = loginModule.get(MODULE_OPTIONS);
-        moduleOptions.add("securityDomain", JSSE_SECURITY_DOMAIN);
-        op.get(OPERATION_HEADERS).get(ALLOW_RESOURCE_SERVICE_RESTART).set(true);
-        updates.add(op);
+        moduleOptions.add("securityDomain", APP_SECURITY_DOMAIN);
+        moduleOptions.add("rolesProperties", roles.getPath());
+        loginModule.get(OPERATION_HEADERS).get(ALLOW_RESOURCE_SERVICE_RESTART).set(true);
+
+        updates.add(loginModule);
 
         // Add the JSSE security domain.
-        op = new ModelNode();
-        op.get(OP).set(ADD);
-        op.get(OP_ADDR).add(SUBSYSTEM, "security");
-        op.get(OP_ADDR).add(SECURITY_DOMAIN, JSSE_SECURITY_DOMAIN);
-        updates.add(op);
+        address = PathAddress.pathAddress()
+                .append(SUBSYSTEM, "security")
+                .append(SECURITY_DOMAIN, APP_SECURITY_DOMAIN);
 
-        op = new ModelNode();
-        op.get(OP).set(ADD);
-        op.get(OP_ADDR).add(SUBSYSTEM, "security");
-        op.get(OP_ADDR).add(SECURITY_DOMAIN, JSSE_SECURITY_DOMAIN);
-        op.get(OP_ADDR).add(JSSE, Constants.CLASSIC);
+        ModelNode op = Util.createAddOperation(address.append(JSSE, Constants.CLASSIC));
 
         op.get(TRUSTSTORE, PASSWORD).set("changeit");
-        ClassLoader tccl = Thread.currentThread().getContextClassLoader();
-        URL keystore = tccl.getResource("security/jsse.keystore");
+
         op.get(TRUSTSTORE, URL).set(keystore.getPath());
         op.get(OPERATION_HEADERS).get(ALLOW_RESOURCE_SERVICE_RESTART).set(true);
         updates.add(op);
@@ -153,23 +150,17 @@ public class WebCERTTestsSecurityDomainSetup implements ServerSetupTask {
         final ModelNode steps = composite.get(STEPS);
         op = new ModelNode();
         op.get(OP).set(ADD);
-        op.get(OP_ADDR).add(SUBSYSTEM, "web");
-        op.get(OP_ADDR).add("connector", "testConnector");
+        op.get(OP_ADDR).add(SUBSYSTEM, "undertow");
+        op.get(OP_ADDR).add("server", "default-server");
+        op.get(OP_ADDR).add("https-listener", "testConnector");
         op.get("socket-binding").set("https-test");
         op.get("enabled").set(true);
-        op.get("protocol").set("HTTP/1.1");
-        op.get("scheme").set("https");
-        op.get("secure").set(true);
+        /*op.get("protocol").set("HTTP/1.1");
+        op.get("scheme").set("https");*/
+        /*op.get("secure").set(true);*/
+        op.get("security-realm").set("ssl-cert-realm");
         steps.add(op);
-        ModelNode ssl = createOpNode("subsystem=web/connector=testConnector/ssl=configuration", "add");
-        ssl.get("name").set("https-test");
-        ssl.get("key-alias").set("test");
-        ssl.get("password").set("changeit");
-        keystore = tccl.getResource("security/server.keystore");
-        ssl.get("certificate-key-file").set(keystore.getPath());
-        ssl.get("ca-certificate-file").set(keystore.getPath());
-        ssl.get("verify-client").set("want");
-        steps.add(ssl);
+
         updates.add(composite);
 
         applyUpdates(managementClient.getControllerClient(), updates);
@@ -178,7 +169,7 @@ public class WebCERTTestsSecurityDomainSetup implements ServerSetupTask {
     }
 
     @Override
-    public void tearDown(ManagementClient managementClient, String containerId) {
+    public void tearDown(ManagementClient managementClient, String containerId) throws Exception {
         final List<ModelNode> updates = new ArrayList<ModelNode>();
 
         // remove the security domains.
@@ -187,30 +178,56 @@ public class WebCERTTestsSecurityDomainSetup implements ServerSetupTask {
         op.get(OP_ADDR).add(SUBSYSTEM, "security");
         op.get(OP_ADDR).add(Constants.SECURITY_DOMAIN, APP_SECURITY_DOMAIN);
         // Don't rollback when the AS detects the war needs the module
-        op.get(OPERATION_HEADERS, ROLLBACK_ON_RUNTIME_FAILURE).set(false);
+        op.get(OPERATION_HEADERS, ModelDescriptionConstants.ROLLBACK_ON_RUNTIME_FAILURE).set(false);
+        op.get(OPERATION_HEADERS, ALLOW_RESOURCE_SERVICE_RESTART).set(true);
         updates.add(op);
 
-        op = new ModelNode();
-        op.get(OP).set(REMOVE);
-        op.get(OP_ADDR).add(SUBSYSTEM, "security");
-        op.get(OP_ADDR).add(Constants.SECURITY_DOMAIN, JSSE_SECURITY_DOMAIN);
-        // Don't rollback when the AS detects the war needs the module
-        op.get(OPERATION_HEADERS, ROLLBACK_ON_RUNTIME_FAILURE).set(false);
-        updates.add(op);
 
         // remove the HTTPS connector and the socket binding.
         op = new ModelNode();
         op.get(OP).set(REMOVE);
-        op.get(OP_ADDR).add(SUBSYSTEM, "web");
-        op.get(OP_ADDR).add("connector", "testConnector");
+        op.get(OP_ADDR).add(SUBSYSTEM, "undertow");
+        op.get(OP_ADDR).add("server", "default-server");
+        op.get(OP_ADDR).add("https-listener", "testConnector");
+        op.get(OPERATION_HEADERS, ALLOW_RESOURCE_SERVICE_RESTART).set(true);
         updates.add(op);
 
         op = new ModelNode();
         op.get(OP).set(REMOVE);
         op.get(OP_ADDR).add("socket-binding-group", "standard-sockets");
         op.get(OP_ADDR).add("socket-binding", "https-test");
+        op.get(OPERATION_HEADERS, ALLOW_RESOURCE_SERVICE_RESTART).set(true);
         updates.add(op);
 
         applyUpdates(managementClient.getControllerClient(), updates);
+        super.tearDown(managementClient, containerId);
+    }
+
+    @Override
+    protected SecurityRealm[] getSecurityRealms() throws Exception {
+        URL keystoreResource = Thread.currentThread().getContextClassLoader().getResource("security/server.keystore");
+        URL truststoreResource = Thread.currentThread().getContextClassLoader().getResource("security/jsse.keystore");
+
+        RealmKeystore keystore = new RealmKeystore.Builder()
+                .keystorePassword("changeit")
+                .keystorePath(keystoreResource.getPath())
+                .build();
+
+        RealmKeystore truststore = new RealmKeystore.Builder()
+                .keystorePassword("changeit")
+                .keystorePath(truststoreResource.getPath())
+                .build();
+        return new SecurityRealm[]{new SecurityRealm.Builder()
+                .name("ssl-cert-realm")
+                .serverIdentity(
+                        new ServerIdentity.Builder()
+                                .ssl(keystore)
+                                .build())
+                .authentication(
+                        new Authentication.Builder()
+                                .truststore(truststore)
+                                .build()
+                )
+                .build()};
     }
 }

@@ -35,11 +35,10 @@ import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.USE
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.USERS;
 import static org.jboss.as.domain.management.ModelDescriptionConstants.KEYSTORE_PATH;
 import static org.jboss.as.domain.management.ModelDescriptionConstants.PASSWORD;
-import static org.jboss.as.domain.management.ModelDescriptionConstants.PROPERTY;
 import static org.jboss.as.domain.management.ModelDescriptionConstants.PLUG_IN;
+import static org.jboss.as.domain.management.ModelDescriptionConstants.PROPERTY;
 import static org.jboss.msc.service.ServiceController.Mode.ON_DEMAND;
 
-import java.security.KeyStore;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -53,11 +52,13 @@ import org.jboss.as.controller.PathAddress;
 import org.jboss.as.controller.ServiceVerificationHandler;
 import org.jboss.as.controller.registry.Resource;
 import org.jboss.as.controller.security.ServerSecurityManager;
-import org.jboss.as.domain.management.AuthenticationMechanism;
+import org.jboss.as.domain.management.AuthMechanism;
 import org.jboss.as.domain.management.CallbackHandlerFactory;
+import org.jboss.as.domain.management.SSLIdentity;
 import org.jboss.as.domain.management.connections.ConnectionManager;
 import org.jboss.as.domain.management.connections.ldap.LdapConnectionManagerService;
 import org.jboss.dmr.ModelNode;
+import org.jboss.dmr.ModelType;
 import org.jboss.dmr.Property;
 import org.jboss.msc.service.ServiceBuilder;
 import org.jboss.msc.service.ServiceController;
@@ -178,7 +179,7 @@ public class SecurityRealmAddHandler implements OperationStepHandler {
 
         if (ssl != null || authTruststore != null) {
             ServiceName sslServiceName = addSSLService(context, ssl, authTruststore, realmServiceName, serviceTarget, newControllers);
-            realmBuilder.addDependency(sslServiceName, SSLIdentityService.class, securityRealmService.getSSLIdentityInjector());
+            realmBuilder.addDependency(sslServiceName, SSLIdentity.class, securityRealmService.getSSLIdentityInjector());
         }
 
         realmBuilder.setInitialMode(Mode.ACTIVE);
@@ -199,7 +200,10 @@ public class SecurityRealmAddHandler implements OperationStepHandler {
         }
         PlugInLoaderService loaderService = new PlugInLoaderService(Collections.unmodifiableList(knownNames));
         ServiceBuilder<PlugInLoaderService> builder = serviceTarget.addService(plugInLoaderName, loaderService);
-        newControllers.add(builder.setInitialMode(Mode.ON_DEMAND).install());
+        final ServiceController<PlugInLoaderService> sc = builder.setInitialMode(Mode.ON_DEMAND).install();
+        if(newControllers != null) {
+            newControllers.add(sc);
+        }
 
         return plugInLoaderName;
     }
@@ -210,8 +214,10 @@ public class SecurityRealmAddHandler implements OperationStepHandler {
         ClientCertCallbackHandler clientCertCallbackHandler = new ClientCertCallbackHandler();
 
         ServiceBuilder<?> ccBuilder = serviceTarget.addService(clientCertServiceName, clientCertCallbackHandler);
-
-        newControllers.add(ccBuilder.setInitialMode(ON_DEMAND).install());
+        final ServiceController<?> sc = ccBuilder.setInitialMode(ON_DEMAND).install();
+        if(newControllers != null) {
+            newControllers.add(sc);
+        }
 
         return clientCertServiceName;
     }
@@ -228,7 +234,10 @@ public class SecurityRealmAddHandler implements OperationStepHandler {
                     ServerSecurityManager.class, jaasCallbackHandler.getSecurityManagerValue());
         }
 
-        newControllers.add(jaasBuilder.setInitialMode(ON_DEMAND).install());
+        final ServiceController<?> sc = jaasBuilder.setInitialMode(ON_DEMAND).install();
+        if(newControllers != null) {
+            newControllers.add(sc);
+        }
 
         return jaasServiceName;
     }
@@ -242,8 +251,9 @@ public class SecurityRealmAddHandler implements OperationStepHandler {
         node = LdapAuthenticationResourceDefinition.ADVANCED_FILTER.resolveModelAttribute(context, ldap);
         final String advancedFilter = node.isDefined() ? node.asString() : null;
         final boolean recursive = LdapAuthenticationResourceDefinition.RECURSIVE.resolveModelAttribute(context, ldap).asBoolean();
+        final boolean allowEmptyPasswords = LdapAuthenticationResourceDefinition.ALLOW_EMPTY_PASSWORDS.resolveModelAttribute(context, ldap).asBoolean();
         final String userDn = LdapAuthenticationResourceDefinition.USER_DN.resolveModelAttribute(context, ldap).asString();
-        UserLdapCallbackHandler ldapCallbackHandler = new UserLdapCallbackHandler(baseDn, usernameAttribute, advancedFilter, recursive, userDn);
+        UserLdapCallbackHandler ldapCallbackHandler = new UserLdapCallbackHandler(baseDn, usernameAttribute, advancedFilter, recursive, userDn, allowEmptyPasswords);
 
         ServiceBuilder<?> ldapBuilder = serviceTarget.addService(ldapServiceName, ldapCallbackHandler);
         String connectionManager = LdapAuthenticationResourceDefinition.CONNECTION.resolveModelAttribute(context, ldap).asString();
@@ -269,8 +279,10 @@ public class SecurityRealmAddHandler implements OperationStepHandler {
         LocalCallbackHandlerService localCallbackHandler = new LocalCallbackHandlerService(defaultUser, allowedUsers);
 
         ServiceBuilder<?> jaasBuilder = serviceTarget.addService(localServiceName, localCallbackHandler);
-
-        newControllers.add(jaasBuilder.setInitialMode(ON_DEMAND).install());
+        final ServiceController<?> serviceController = jaasBuilder.setInitialMode(ON_DEMAND).install();
+        if(newControllers != null) {
+            newControllers.add(serviceController);
+        }
 
         return localServiceName;
     }
@@ -283,14 +295,17 @@ public class SecurityRealmAddHandler implements OperationStepHandler {
         final String pluginName = PlugInAuthorizationResourceDefinition.NAME.resolveModelAttribute(context, model).asString();
         final Map<String, String> properties = resolveProperties(context, model);
         String mechanismName = PlugInAuthenticationResourceDefinition.MECHANISM.resolveModelAttribute(context, model).asString();
-        AuthenticationMechanism mechanism = AuthenticationMechanism.valueOf(mechanismName);
+        AuthMechanism mechanism = AuthMechanism.valueOf(mechanismName);
         PlugInAuthenticationCallbackHandler plugInService = new PlugInAuthenticationCallbackHandler(registry.getName(),
                 pluginName, properties, mechanism);
 
         ServiceBuilder<CallbackHandlerService> plugInBuilder = serviceTarget.addService(plugInServiceName, plugInService);
         plugInBuilder.addDependency(plugInLoaderName, PlugInLoaderService.class, plugInService.getPlugInLoaderServiceValue());
 
-        newControllers.add(plugInBuilder.setInitialMode(ON_DEMAND).install());
+        final ServiceController<CallbackHandlerService> sc = plugInBuilder.setInitialMode(ON_DEMAND).install();
+        if(newControllers != null) {
+            newControllers.add(sc);
+        }
 
         return plugInServiceName;
     }
@@ -392,10 +407,10 @@ public class SecurityRealmAddHandler implements OperationStepHandler {
         ServiceBuilder<?> sslBuilder = serviceTarget.addService(sslServiceName, sslIdentityService);
 
         if (keystoreServiceName != null) {
-            sslBuilder.addDependency(keystoreServiceName, KeyStore.class, sslIdentityService.getKeyStoreInjector());
+            sslBuilder.addDependency(keystoreServiceName, FileKeystore.class, sslIdentityService.getKeyStoreInjector());
         }
         if (truststoreServiceName != null) {
-            sslBuilder.addDependency(truststoreServiceName, KeyStore.class, sslIdentityService.getTrustStoreInjector());
+            sslBuilder.addDependency(truststoreServiceName, FileKeystore.class, sslIdentityService.getTrustStoreInjector());
         }
 
         final ServiceController<?> serviceController = sslBuilder.setInitialMode(ON_DEMAND).install();
@@ -446,10 +461,10 @@ public class SecurityRealmAddHandler implements OperationStepHandler {
     private ServiceName addSecretService(OperationContext context, ModelNode secret, ServiceName realmServiceName, ServiceTarget serviceTarget, List<ServiceController<?>> newControllers) throws OperationFailedException {
         ServiceName secretServiceName = realmServiceName.append(SecretIdentityService.SERVICE_SUFFIX);
 
-        ModelNode secretValueNode = SecretServerIdentityResourceDefinition.VALUE.resolveModelAttribute(context, secret);
-        String resolvedValue = context.resolveExpressions(secretValueNode).asString();
+        ModelNode resolvedValueNode = SecretServerIdentityResourceDefinition.VALUE.resolveModelAttribute(context, secret);
+        boolean base64 = secret.get(SecretServerIdentityResourceDefinition.VALUE.getName()).getType() != ModelType.EXPRESSION;
 
-        SecretIdentityService sis = new SecretIdentityService(resolvedValue, secretValueNode.asString().equals(resolvedValue));
+        SecretIdentityService sis = new SecretIdentityService(resolvedValueNode.asString(), base64);
         final ServiceController<CallbackHandlerFactory> serviceController = serviceTarget.addService(secretServiceName, sis)
                 .setInitialMode(ON_DEMAND)
                 .install();
@@ -476,6 +491,8 @@ public class SecurityRealmAddHandler implements OperationStepHandler {
 
         return usersServiceName;
     }
+
+
 
     private static ServiceName pathName(String relativeTo) {
         return ServiceName.JBOSS.append("server", "path", relativeTo);

@@ -32,8 +32,8 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Set;
 
-import org.jboss.as.connector.services.resourceadapters.deployment.AbstractResourceAdapterDeploymentService;
 import org.jboss.as.connector.metadata.deployment.ResourceAdapterDeployment;
+import org.jboss.as.connector.services.resourceadapters.deployment.AbstractResourceAdapterDeploymentService;
 import org.jboss.as.connector.util.ConnectorServices;
 import org.jboss.jca.common.api.metadata.ironjacamar.IronJacamar;
 import org.jboss.jca.common.api.metadata.ra.AdminObject;
@@ -100,12 +100,12 @@ public final class ResourceAdapterActivatorService extends AbstractResourceAdapt
             throw MESSAGES.failedToStartRaDeployment(e, deploymentName);
         }
 
-        value = new ResourceAdapterDeployment(deploymentMD);
+        String raName = deploymentMD.getDeploymentName();
+        ServiceName raServiceName = ConnectorServices.registerResourceAdapter(raName);
+
+        value = new ResourceAdapterDeployment(deploymentMD, raName, raServiceName);
         registry.getValue().registerResourceAdapterDeployment(value);
         managementRepository.getValue().getConnectors().add(value.getDeployment().getConnector());
-
-        String raName = value.getDeployment().getDeploymentName();
-        ServiceName raServiceName = ConnectorServices.registerResourceAdapter(raName);
 
         context.getChildTarget()
                 .addService(raServiceName,

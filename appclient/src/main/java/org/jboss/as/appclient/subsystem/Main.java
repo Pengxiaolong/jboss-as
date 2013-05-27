@@ -46,11 +46,14 @@ import org.jboss.as.server.Bootstrap;
 import org.jboss.as.server.ServerEnvironment;
 import org.jboss.as.server.SystemExiter;
 import org.jboss.as.version.ProductConfig;
-import org.jboss.logmanager.handlers.ConsoleHandler;
 import org.jboss.modules.Module;
 import org.jboss.modules.ModuleIdentifier;
 import org.jboss.msc.service.ServiceActivator;
+import org.jboss.stdio.LoggingOutputStream;
+import org.jboss.stdio.NullInputStream;
+import org.jboss.stdio.SimpleStdioContextSelector;
 import org.jboss.stdio.StdioContext;
+import org.wildfly.security.manager.WildFlySecurityManager;
 
 /**
  * The application client entry point
@@ -60,7 +63,7 @@ import org.jboss.stdio.StdioContext;
 public final class Main {
 
 
-    public static void usage() {
+    private static void usage() {
         CommandLineArgumentUsageImpl.printUsage(System.out);
     }
 
@@ -74,19 +77,26 @@ public final class Main {
      */
     public static void main(String[] args) {
 
-        // Make sure our original stdio is properly captured.
-        try {
-            Class.forName(ConsoleHandler.class.getName(), true, ConsoleHandler.class.getClassLoader());
-        } catch (Throwable ignored) {
+        if (java.util.logging.LogManager.getLogManager().getClass().getName().equals("org.jboss.logmanager.LogManager")) {
+            // Make sure our original stdio is properly captured.
+            try {
+                Class.forName(org.jboss.logmanager.handlers.ConsoleHandler.class.getName(), true, org.jboss.logmanager.handlers.ConsoleHandler.class.getClassLoader());
+            } catch (Throwable ignored) {
+            }
+            // Install JBoss Stdio to avoid any nasty crosstalk, after command line arguments are processed.
+            StdioContext.install();
+            final StdioContext context = StdioContext.create(
+                    new NullInputStream(),
+                    new LoggingOutputStream(org.jboss.logmanager.Logger.getLogger("stdout"), org.jboss.logmanager.Level.INFO),
+                    new LoggingOutputStream(org.jboss.logmanager.Logger.getLogger("stderr"), org.jboss.logmanager.Level.ERROR)
+            );
+            StdioContext.setStdioContextSelector(new SimpleStdioContextSelector(context));
         }
-
-        // Install JBoss Stdio to avoid any nasty crosstalk.
-        StdioContext.install();
 
         try {
             Module.registerURLStreamHandlerFactoryModule(Module.getBootModuleLoader().loadModule(ModuleIdentifier.create("org.jboss.vfs")));
 
-            final ParsedOptions options = determineEnvironment(args, new Properties(SecurityActions.getSystemProperties()), SecurityActions.getSystemEnvironment(), ServerEnvironment.LaunchType.APPCLIENT);
+            final ParsedOptions options = determineEnvironment(args, new Properties(WildFlySecurityManager.getSystemPropertiesPrivileged()), WildFlySecurityManager.getSystemEnvironmentPrivileged(), ServerEnvironment.LaunchType.APPCLIENT);
             if(options == null) {
                 //this happens if --version was specified
                 return;
@@ -176,7 +186,7 @@ public final class Main {
                     clientArguments.add(arg);
                 } else if (CommandLineConstants.VERSION.equals(arg) || CommandLineConstants.SHORT_VERSION.equals(arg)
                         || CommandLineConstants.OLD_VERSION.equals(arg) || CommandLineConstants.OLD_SHORT_VERSION.equals(arg)) {
-                    productConfig = new ProductConfig(Module.getBootModuleLoader(), SecurityActions.getSystemProperty(ServerEnvironment.HOME_DIR));
+                    productConfig = new ProductConfig(Module.getBootModuleLoader(), WildFlySecurityManager.getPropertyPrivileged(ServerEnvironment.HOME_DIR, null), null);
                     System.out.println(productConfig.getPrettyVersionString());
                     return null;
                 } else if (CommandLineConstants.HELP.equals(arg) || CommandLineConstants.SHORT_HELP.equals(arg) || CommandLineConstants.OLD_HELP.equals(arg)) {
@@ -243,7 +253,7 @@ public final class Main {
                         value = arg.substring(idx + 1, arg.length());
                     }
                     systemProperties.setProperty(name, value);
-                    SecurityActions.setSystemProperty(name, value);
+                    WildFlySecurityManager.setPropertyPrivileged(name, value);
                 } else if (arg.startsWith(CommandLineConstants.APPCLIENT_CONFIG)) {
                     appClientConfig = parseValue(arg, CommandLineConstants.APPCLIENT_CONFIG);
                 } else {
@@ -264,7 +274,7 @@ public final class Main {
         }
 
         String hostControllerName = null; // No host controller unless in domain mode.
-        productConfig = new ProductConfig(Module.getBootModuleLoader(), SecurityActions.getSystemProperty(ServerEnvironment.HOME_DIR));
+        productConfig = new ProductConfig(Module.getBootModuleLoader(), WildFlySecurityManager.getPropertyPrivileged(ServerEnvironment.HOME_DIR, null), systemProperties);
         ret.environment = new ServerEnvironment(hostControllerName, systemProperties, systemEnvironment, appClientConfig, null, launchType, null, productConfig);
         return ret;
     }

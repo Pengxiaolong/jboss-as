@@ -21,9 +21,11 @@
  */
 package org.jboss.as.security;
 
+
 import org.jboss.as.controller.ListAttributeDefinition;
+import org.jboss.as.controller.OperationContext;
 import org.jboss.as.controller.OperationFailedException;
-import org.jboss.as.controller.PathElement;
+import org.jboss.as.controller.OperationStepHandler;
 import org.jboss.as.controller.SimpleResourceDefinition;
 import org.jboss.as.controller.registry.ManagementResourceRegistration;
 import org.jboss.dmr.ModelNode;
@@ -35,26 +37,39 @@ public class MappingResourceDefinition extends SimpleResourceDefinition {
 
     public static final MappingResourceDefinition INSTANCE = new MappingResourceDefinition();
 
-    public static final ListAttributeDefinition MAPPING_MODULES = new MappingModulesAttributeDefinition();
+    public static final ListAttributeDefinition MAPPING_MODULES = new LegacySupport.MappingModulesAttributeDefinition();
+    private static final OperationStepHandler LEGACY_ADD_HANDLER = new LegacySupport.LegacyModulesConverter(Constants.MAPPING_MODULE, MAPPING_MODULES);
 
     private MappingResourceDefinition() {
-        super(PathElement.pathElement(Constants.MAPPING, Constants.CLASSIC),
-              SecurityExtension.getResourceDescriptionResolver(Constants.MAPPING),
-              LoginModuleStackResourceDefinitionAdd.INSTANCE, new SecurityDomainReloadRemoveHandler());
+        super(SecurityExtension.PATH_MAPPING_CLASSIC,
+                SecurityExtension.getResourceDescriptionResolver(Constants.MAPPING),
+                LoginModuleStackResourceDefinitionAdd.INSTANCE, new SecurityDomainReloadRemoveHandler());
     }
 
     public void registerAttributes(final ManagementResourceRegistration resourceRegistration) {
-        resourceRegistration.registerReadWriteAttribute(MAPPING_MODULES, null, new SecurityDomainReloadWriteHandler(MAPPING_MODULES));
+        resourceRegistration.registerReadWriteAttribute(MAPPING_MODULES, new LegacySupport.LegacyModulesAttributeReader(Constants.MAPPING_MODULE), new LegacySupport.LegacyModulesAttributeWriter(Constants.MAPPING_MODULE));
     }
 
-     static class LoginModuleStackResourceDefinitionAdd extends SecurityDomainReloadAddHandler {
+    static class LoginModuleStackResourceDefinitionAdd extends SecurityDomainReloadAddHandler {
         static final LoginModuleStackResourceDefinitionAdd INSTANCE = new LoginModuleStackResourceDefinitionAdd();
 
         @Override
         protected void populateModel(ModelNode operation, ModelNode model) throws OperationFailedException {
-            MAPPING_MODULES.validateAndSet(operation, model);
         }
 
+        @Override
+        protected void updateModel(OperationContext context, ModelNode operation) throws OperationFailedException {
+            super.updateModel(context, operation);
+            if (operation.hasDefined(MAPPING_MODULES.getName())) {
+                context.addStep(new ModelNode(), operation, LEGACY_ADD_HANDLER, OperationContext.Stage.MODEL, true);
+            }
+        }
+    }
+
+    @Override
+    public void registerChildren(ManagementResourceRegistration resourceRegistration) {
+        super.registerChildren(resourceRegistration);
+        resourceRegistration.registerSubModel(new MappingModuleDefinition(Constants.MAPPING_MODULE));
     }
 
 }

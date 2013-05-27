@@ -41,7 +41,6 @@ import org.jboss.as.clustering.infinispan.invoker.RetryingCacheInvoker;
 import org.jboss.as.clustering.infinispan.subsystem.AbstractCacheConfigurationService;
 import org.jboss.as.clustering.infinispan.subsystem.CacheService;
 import org.jboss.as.clustering.infinispan.subsystem.EmbeddedCacheManagerService;
-import org.jboss.as.clustering.jgroups.subsystem.ChannelService;
 import org.jboss.as.clustering.lock.SharedLocalYieldingClusterLockManager;
 import org.jboss.as.clustering.lock.impl.SharedLocalYieldingClusterLockManagerService;
 import org.jboss.as.clustering.msc.AsynchronousService;
@@ -63,7 +62,6 @@ import org.jboss.msc.service.ServiceController;
 import org.jboss.msc.service.ServiceName;
 import org.jboss.msc.service.ServiceRegistry;
 import org.jboss.msc.service.ServiceTarget;
-import org.jboss.msc.service.ServiceBuilder.DependencyType;
 import org.jboss.msc.value.InjectedValue;
 import org.jboss.tm.XAResourceRecoveryRegistry;
 
@@ -114,7 +112,13 @@ public class DistributedCacheManagerFactory implements org.jboss.as.clustering.w
         ServiceName containerServiceName = templateCacheServiceName.getParent();
         String containerName = containerServiceName.getSimpleName();
         ServiceName templateCacheConfigurationServiceName = AbstractCacheConfigurationService.getServiceName(containerName, templateCacheName);
-        String cacheName = deploymentServiceName.getParent().getSimpleName() + deploymentServiceName.getSimpleName();
+        String host = deploymentServiceName.getParent().getSimpleName();
+        String contextPath = deploymentServiceName.getSimpleName();
+        StringBuilder cacheNameBuilder = new StringBuilder(host).append(contextPath);
+        if (contextPath.equals("/")) {
+            cacheNameBuilder.append("ROOT");
+        }
+        String cacheName = cacheNameBuilder.toString();
         ServiceName cacheConfigurationServiceName = AbstractCacheConfigurationService.getServiceName(containerName, cacheName);
         ServiceName cacheServiceName = CacheService.getServiceName(containerName, cacheName);
 
@@ -141,13 +145,12 @@ public class DistributedCacheManagerFactory implements org.jboss.as.clustering.w
         AsynchronousService.addService(target, cacheServiceName, new CacheService<Object, Object>(cacheName, dependencies))
                 .addDependency(cacheConfigurationServiceName)
                 .addDependency(containerServiceName, EmbeddedCacheManager.class, cacheContainer)
-                .addDependency(DependencyType.OPTIONAL, ChannelService.getServiceName(containerName))
                 .setInitialMode(ServiceController.Mode.ON_DEMAND)
                 .install()
         ;
         builder.addDependency(cacheServiceName, Cache.class, this.cache);
         builder.addDependency(JVM_ROUTE_REGISTRY_SERVICE_NAME, Registry.class, this.registry);
-        builder.addDependency(DependencyType.OPTIONAL, SharedLocalYieldingClusterLockManagerService.getServiceName(containerName), SharedLocalYieldingClusterLockManager.class, this.lockManager);
+        builder.addDependency(ServiceBuilder.DependencyType.OPTIONAL, SharedLocalYieldingClusterLockManagerService.getServiceName(containerName), SharedLocalYieldingClusterLockManager.class, this.lockManager);
         builder.addDependency(KeyAffinityServiceFactoryService.getServiceName(containerName), KeyAffinityServiceFactory.class, this.affinityFactory);
         return true;
     }

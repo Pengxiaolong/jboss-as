@@ -29,6 +29,7 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.CancellationException;
+
 import javax.xml.namespace.QName;
 import javax.xml.stream.Location;
 import javax.xml.stream.XMLStreamException;
@@ -42,16 +43,25 @@ import org.jboss.as.controller.registry.OperationEntry.Flag;
 import org.jboss.as.protocol.mgmt.RequestProcessingException;
 import org.jboss.dmr.ModelNode;
 import org.jboss.dmr.ModelType;
+import org.jboss.logging.Messages;
 import org.jboss.logging.annotations.Cause;
 import org.jboss.logging.annotations.Message;
 import org.jboss.logging.annotations.MessageBundle;
-import org.jboss.logging.Messages;
 import org.jboss.logging.annotations.Param;
 import org.jboss.modules.ModuleIdentifier;
+import org.jboss.modules.ModuleLoadException;
+import org.jboss.modules.ModuleNotFoundException;
 import org.jboss.msc.service.ServiceName;
 import org.jboss.msc.service.StartException;
 
 /**
+ * This module is using message IDs in the ranges 14600-14899 and 13400-13499.
+ * <p/>
+ * This file is using the subsets 14630-14899 and 13450-13499 for non-logger messages.
+ * <p/>
+ * See <a href="http://community.jboss.org/docs/DOC-16810">http://community.jboss.org/docs/DOC-16810</a> for the full
+ * list of currently reserved JBAS message id blocks.
+ * <p/>
  * Date: 02.11.2011
  *
  * Reserved logging id ranges from: http://community.jboss.org/wiki/LoggingIds: 14600 - 14899
@@ -1301,10 +1311,12 @@ public interface ControllerMessages {
      * @param stepOpName the step operation name.
      * @param address    the address.
      *
-     * @return the message.
+     * @return the message
+     *
+     * @deprecated use {@link #noSuchResourceType(PathAddress)} or {@link #noHandlerForOperation(String, PathAddress)}
      */
-    @Message(id = 14739, value = "No handler for %s at address %s")
-    String noHandler(String stepOpName, PathAddress address);
+//    @Message(id = 14739, value = "No handler for %s at address %s")
+//    String noHandler(String stepOpName, PathAddress address);
 
     /**
      * A message indicating that no interface criteria was provided.
@@ -1494,8 +1506,9 @@ public interface ControllerMessages {
      *
      * @return a {@link XMLStreamException} for the error.
      */
-    @Message(id = 14758, value = "Profile has no subsystem configurations")
-    XMLStreamException profileHasNoSubsystems(@Param Location location);
+    //No longer used
+    //@Message(id = 14758, value = "Profile has no subsystem configurations")
+    //XMLStreamException profileHasNoSubsystems(@Param Location location);
 
     /**
      * Creates an exception indicating no profile found for inclusion.
@@ -1635,7 +1648,7 @@ public interface ControllerMessages {
      *
      * @return the message.
      */
-    @Message(id = Message.NONE, value = "Missing[%s]")
+    @Message(id = Message.NONE, value = "is missing [%s]")
     String servicesMissing(StringBuilder sb);
 
     /**
@@ -2520,5 +2533,127 @@ public interface ControllerMessages {
     @Message(id = 14875, value = "Could not marshal attribute as attribute: %s")
     UnsupportedOperationException couldNotMarshalAttributeAsAttribute(String attributeName);
 
+    @Message(id = 14876, value = "Operation %s invoked against multiple target addresses failed at address %s with failure description %s")
+    String wildcardOperationFailedAtSingleAddress(String operation, PathAddress address, String failureMessage);
 
+    @Message(id = 14877, value = "Operation %s invoked against multiple target addresses failed at address %s. See the operation result for details.")
+    String wildcardOperationFailedAtSingleAddressWithComplexFailure(String operation, PathAddress address);
+
+    @Message(id = 14878, value = "Operation %s invoked against multiple target addresses failed at addresses %s. See the operation result for details.")
+    String wildcardOperationFailedAtMultipleAddresses(String operation, Set<PathAddress> addresses);
+
+    @Message(id = 14879, value = "One or more services were unable to start due to one or more indirect dependencies not being available.")
+    String missingTransitiveDependencyProblem();
+
+    @Message(id = Message.NONE, value = "Services that were unable to start:")
+    String missingTransitiveDependendents();
+
+    @Message(id = Message.NONE, value = "Services that may be the cause:")
+    String missingTransitiveDependencies();
+
+    @Message(id = 14880, value = "No operation entry called '%s' registered at '%s'")
+    String noOperationEntry(String op, PathAddress pathAddress);
+
+
+    @Message(id = 14881, value = "No operation handler called '%s' registered at '%s'")
+    String noOperationHandler(String op, PathAddress pathAddress);
+
+    @Message(id = 14882, value = "There is no registered path to resolve with path attribute '%s' and/or relative-to attribute '%s on: %s")
+    IllegalStateException noPathToResolve(String pathAttributeName, String relativeToAttributeName, ModelNode model);
+
+    /**
+     * Logs an error message indicating the given {@code address} does not match any known
+     * resource registration.
+     *
+     * @param address    the address.
+     */
+    @Message(id = 14883, value = "No resource definition is registered for address %s")
+    String noSuchResourceType(PathAddress address);
+
+    /**
+     * Logs an error message indicating no handler is registered for an operation, represented by the {@code operationName}
+     * parameter, at {@code address}.
+     *
+     * @param operationName the operation name.
+     * @param address    the address.
+     */
+    @Message(id = 14884, value = "No operation named '%s' exists at address %s")
+    String noHandlerForOperation(String operationName, PathAddress address);
+
+    @Message(id = 14885, value = "Attributes do not support expressions in the target model version and this resource will need to be ignored on the target host.")
+    String attributesDontSupportExpressions();
+
+    @Message(id = 14886, value = "Attributes are not understood in the target model version and this resource will need to be ignored on the target host.")
+    String attributesAreNotUnderstoodAndMustBeIgnored();
+
+    @Message(id = 14887, value = "Transforming resource %s to core model version '%s' -- %s %s")
+    String transformerLoggerCoreModelResourceTransformerAttributes(PathAddress pathAddress, ModelVersion modelVersion, String attributeNames, String message);
+
+    @Message(id = 14888, value = "Transforming operation %s at resource %s to core model version '%s' -- %s %s")
+    String transformerLoggerCoreModelOperationTransformerAttributes(ModelNode op, PathAddress pathAddress, ModelVersion modelVersion, String attributeNames, String message);
+
+    @Message(id = 14889, value = "Transforming resource %s to subsystem '%s' model version '%s' -- %s %s")
+    String transformerLoggerSubsystemModelResourceTransformerAttributes(PathAddress pathAddress, String subsystem, ModelVersion modelVersion, String attributeNames, String message);
+
+    @Message(id = 14890, value = "Transforming operation %s at resource %s to subsystem '%s' model version '%s' -- %s %s")
+    String transformerLoggerSubsystemModelOperationTransformerAttributes(ModelNode op, PathAddress pathAddress, String subsystem, ModelVersion modelVersion, String attributeNames, String message);
+
+    @Message(id = 14891, value="Node contains an unresolved expression %s -- a resolved model is required")
+    OperationFailedException illegalUnresolvedModel(String expression);
+
+    //The 'details' attribute needs to list the rejected attributes and what was wrong with them, an example is message id 14898
+    @Message(id = 14892, value = "Transforming resource %s for host controller '%s' to core model version '%s' -- there were problems with some of the attributes and this resource will need to be ignored on that host. Details of the problems: %s")
+    OperationFailedException rejectAttributesCoreModelResourceTransformer(PathAddress pathAddress, String legacyHostName, ModelVersion modelVersion, List<String> details);
+
+    @Message(id = 14893, value = "Transforming resource %s for host controller '%s' to subsystem '%s' model version '%s' --there were problems with some of the attributes and this resource will need to be ignored on that host. Details of problems: %s")
+    OperationFailedException rejectAttributesSubsystemModelResourceTransformer(PathAddress pathAddress, String legacyHostName, String subsystem, ModelVersion modelVersion, List<String> details);
+
+    @Message(id = 14894, value = "The following attributes do not support expressions: %s")
+    String attributesDoNotSupportExpressions(Set<String> attributeNames);
+
+    /** The attribute name list fragment to include in the transformation logging messages */
+    @Message(id = Message.NONE, value = "attributes %s")
+    String attributeNames(Set<String> attributes);
+
+    @Message(id = 14895, value = "The following attributes are not understood in the target model version and this resource will need to be ignored on the target host: %s")
+    String attributesAreNotUnderstoodAndMustBeIgnored(Set<String> attributeNames);
+
+    @Message(id = 14896, value = "Resource %s is rejected on the target host, and will need to be ignored on the host")
+    String rejectedResourceResourceTransformation(PathAddress address);
+
+    @Message(id = 14897, value = "Resource %s is rejected on the target host and will need to be ignored on the host: %s")
+    String rejectResourceOperationTransformation(PathAddress address, ModelNode operation);
+
+    /**
+     * Creates an exception indicating that {@code discoveryOptionsName} must be declared
+     * or the {@code hostName} and {@code portName} need to be provided.
+     *
+     * @param discoveryOptionsName the discovery-options element name.
+     * @param hostName the host attribute name.
+     * @param portName the port attribute name.
+     * @param location the location of the error.
+     *
+     * @return a {@link XMLStreamException} for the error.
+     */
+    @Message(id = 14898, value = "%s must be declared or the %s and the %s need to be provided.")
+    XMLStreamException discoveryOptionsMustBeDeclared(String discoveryOptionsName, String hostName, String portName, @Param Location location);
+
+    @Message(id = 14899, value = "read only context")
+    IllegalStateException readOnlyContext();
+
+    @Message(id = 13450, value = "We are trying to read data from the master host controller, which is currently busy executing another set of operations. This is a temporary situation, please retry")
+    String cannotGetControllerLock();
+
+    @Message(id = 13451, value = "Cannot configure an interface to use 'any-ipv6-address' when system property java.net.preferIPv4Stack is true")
+    String invalidAnyIPv6();
+
+    @Message(id = 13452, value = "Legacy extension '%s' is not supported on servers running this version. The extension " +
+            "is only supported for use by hosts running a previous release in a mixed-version managed domain")
+    String unsupportedLegacyExtension(String extensionName);
+
+    @Message(id = 13453, value = "Extension module %s not found")
+    OperationFailedException extensionModuleNotFound(@Cause ModuleNotFoundException cause, String module);
+
+    @Message(id = 13454, value = "Failed to load Extension module %s")
+    RuntimeException extensionModuleLoadingFailure(@Cause ModuleLoadException cause, String module);
 }

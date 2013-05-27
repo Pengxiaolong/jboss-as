@@ -27,6 +27,7 @@ import javax.naming.InitialContext;
 import org.jboss.arquillian.container.test.api.Deployment;
 import org.jboss.arquillian.junit.Arquillian;
 import org.jboss.as.arquillian.api.ServerSetup;
+import org.jboss.as.test.categories.CommonCriteria;
 import org.jboss.as.test.integration.ejb.security.runasprincipal.Caller;
 import org.jboss.as.test.integration.ejb.security.runasprincipal.CallerWithIdentity;
 import org.jboss.as.test.integration.ejb.security.runasprincipal.WhoAmI;
@@ -43,6 +44,7 @@ import org.jboss.util.Base64;
 import org.junit.Assert;
 import org.junit.Ignore;
 import org.junit.Test;
+import org.junit.experimental.categories.Category;
 import org.junit.runner.RunWith;
 
 /**
@@ -52,6 +54,7 @@ import org.junit.runner.RunWith;
  */
 @RunWith(Arquillian.class)
 @ServerSetup({EjbSecurityDomainSetup.class})
+@Category(CommonCriteria.class)
 public class RunAsPrincipalTestCase  {
 
     private static final Logger log = Logger.getLogger(RunAsPrincipalTestCase.class);
@@ -66,7 +69,9 @@ public class RunAsPrincipalTestCase  {
                 .addClass(RunAsPrincipalTestCase.class)
                 .addClass(Base64.class)
                 .addClasses(AbstractSecurityDomainSetup.class, EjbSecurityDomainSetup.class)
+                .addAsWebInfResource(RunAsPrincipalTestCase.class.getPackage(), "jboss-ejb3.xml", "jboss-ejb3.xml")
                 .addAsManifestResource(new StringAsset("Dependencies: org.jboss.as.controller-client,org.jboss.dmr\n"),"MANIFEST.MF");
+        war.addPackage(CommonCriteria.class.getPackage());
         log.info(war.toString(true));
         return war;
     }

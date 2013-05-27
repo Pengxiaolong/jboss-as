@@ -41,14 +41,14 @@ public class ModClusterAddMetric implements OperationStepHandler {
     public void execute(OperationContext context, ModelNode operation) throws OperationFailedException {
 
         PathAddress opAddress = PathAddress.pathAddress(operation.get(ModelDescriptionConstants.OP_ADDR));
-        PathAddress parent = opAddress.append(ModClusterExtension.DYNAMIC_LOAD_PROVIDER);
+        PathAddress parent = opAddress.append(ModClusterExtension.DYNAMIC_LOAD_PROVIDER_PATH);
         String name = LoadMetricDefinition.TYPE.resolveModelAttribute(context, operation).asString();
-        ModelNode targetOperation = Util.createAddOperation(parent.append(PathElement.pathElement(ModClusterExtension.LOAD_METRIC.getKey(), name)));
+        ModelNode targetOperation = Util.createAddOperation(parent.append(PathElement.pathElement(ModClusterExtension.LOAD_METRIC_PATH.getKey(), name)));
 
         for (AttributeDefinition def : LoadMetricDefinition.ATTRIBUTES) {
             def.validateAndSet(operation, targetOperation);
         }
-        context.addStep(targetOperation, LoadMetricAdd.INSTANCE, OperationContext.Stage.IMMEDIATE);
+        context.addStep(targetOperation, LoadMetricAdd.INSTANCE, OperationContext.Stage.MODEL,  true);
         context.completeStep(OperationContext.RollbackHandler.NOOP_ROLLBACK_HANDLER);
     }
 

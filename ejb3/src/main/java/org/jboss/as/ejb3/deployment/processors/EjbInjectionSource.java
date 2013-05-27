@@ -22,6 +22,8 @@
 
 package org.jboss.as.ejb3.deployment.processors;
 
+import static org.jboss.as.ee.component.Attachments.EE_APPLICATION_DESCRIPTION;
+
 import java.util.HashSet;
 import java.util.Set;
 
@@ -42,11 +44,11 @@ import org.jboss.as.server.deployment.DeploymentPhaseContext;
 import org.jboss.as.server.deployment.DeploymentUnit;
 import org.jboss.as.server.deployment.DeploymentUnitProcessingException;
 import org.jboss.as.server.deployment.module.ResourceRoot;
+import org.jboss.modules.Module;
 import org.jboss.msc.inject.Injector;
 import org.jboss.msc.service.ServiceBuilder;
 import org.jboss.msc.service.ServiceName;
-
-import static org.jboss.as.ee.component.Attachments.EE_APPLICATION_DESCRIPTION;
+import org.jboss.msc.value.Value;
 
 /**
  * Implementation of {@link InjectionSource} responsible for finding a specific bean instance with a bean name and interface.
@@ -133,7 +135,6 @@ public class EjbInjectionSource extends InjectionSource {
                         } else {
                             error = EjbMessages.MESSAGES.moreThanOneEjbFound(typeName, beanName, bindingName, ejbsForViewName);
                         }
-                        error = "More than 1 component found for type '" + typeName + "' and bean name " + beanName + " for binding " + bindingName;
                     } else {
                         final EJBViewDescription description = ejbsForViewName.iterator().next();
                         final EJBViewDescription ejbViewDescription = (EJBViewDescription) description;
@@ -144,7 +145,14 @@ public class EjbInjectionSource extends InjectionSource {
                             final EJBComponentDescription componentDescription = (EJBComponentDescription) description.getComponentDescription();
                             final EEModuleDescription moduleDescription = componentDescription.getModuleDescription();
                             final String earApplicationName = moduleDescription.getEarApplicationName();
-                            remoteFactory = new RemoteViewManagedReferenceFactory(earApplicationName, moduleDescription.getModuleName(), moduleDescription.getDistinctName(), componentDescription.getComponentName(), description.getViewClassName(), componentDescription.isStateful());
+                            final Value<ClassLoader> viewClassLoader = new Value<ClassLoader>() {
+                                @Override
+                                public ClassLoader getValue() throws IllegalStateException, IllegalArgumentException {
+                                    final Module module = deploymentUnit.getAttachment(Attachments.MODULE);
+                                    return module != null ? module.getClassLoader() : null;
+                                }
+                            };
+                            remoteFactory = new RemoteViewManagedReferenceFactory(earApplicationName, moduleDescription.getModuleName(), moduleDescription.getDistinctName(), componentDescription.getComponentName(), description.getViewClassName(), componentDescription.isStateful(), viewClassLoader);
                         }
                         final ServiceName serviceName = description.getServiceName();
                         resolvedViewName = serviceName;
@@ -168,11 +176,9 @@ public class EjbInjectionSource extends InjectionSource {
     }
 
     public boolean equals(Object o) {
-        if (this == o)
-            return true;
+        if (this == o) { return true; }
 
-        if (!(o instanceof EjbInjectionSource))
-            return false;
+        if (!(o instanceof EjbInjectionSource)) { return false; }
 
         resolve();
 

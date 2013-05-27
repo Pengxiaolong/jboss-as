@@ -1,3 +1,25 @@
+/*
+ * JBoss, Home of Professional Open Source.
+ * Copyright 2012, Red Hat, Inc., and individual contributors
+ * as indicated by the @author tags. See the copyright.txt file in the
+ * distribution for a full listing of individual contributors.
+ *
+ * This is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU Lesser General Public License as
+ * published by the Free Software Foundation; either version 2.1 of
+ * the License, or (at your option) any later version.
+ *
+ * This software is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with this software; if not, write to the Free
+ * Software Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA
+ * 02110-1301 USA, or see the FSF site: http://www.fsf.org.
+ */
+
 package org.jboss.as.arquillian.container;
 
 import java.lang.reflect.Constructor;
@@ -105,8 +127,8 @@ public class ServerSetupObserver {
             if (container.getValue() == 0) {
                 if (active.containsKey(container.getKey())) {
                     ManagementClient client = active.get(container.getKey());
-                    for (final ServerSetupTask instance : current) {
-                        instance.tearDown(client, container.getKey());
+                    for (int i = current.size() - 1; i >= 0; i--) {
+                        current.get(i).tearDown(client, container.getKey());
                     }
                     active.remove(container.getKey());
                     it.remove();
@@ -128,8 +150,8 @@ public class ServerSetupObserver {
         int count = deployed.get(container.getName());
         deployed.put(container.getName(), --count);
         if (count == 0 && afterClassRun) {
-            for (final ServerSetupTask instance : current) {
-                instance.tearDown(managementClient.get(), container.getName());
+            for (int i = current.size() - 1; i >= 0; i--) {
+                current.get(i).tearDown(managementClient.get(), container.getName());
             }
             active.remove(container.getName());
             deployed.remove(container.getName());

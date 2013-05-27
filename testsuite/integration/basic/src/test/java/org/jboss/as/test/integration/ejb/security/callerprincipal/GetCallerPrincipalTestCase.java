@@ -22,36 +22,6 @@
 
 package org.jboss.as.test.integration.ejb.security.callerprincipal;
 
-import junit.framework.Assert;
-import org.jboss.arquillian.container.test.api.Deployer;
-import org.jboss.arquillian.container.test.api.Deployment;
-import org.jboss.arquillian.container.test.api.OperateOnDeployment;
-import org.jboss.arquillian.junit.Arquillian;
-import org.jboss.arquillian.test.api.ArquillianResource;
-import org.jboss.as.arquillian.api.ServerSetup;
-import org.jboss.as.arquillian.container.ManagementClient;
-import org.jboss.as.controller.client.helpers.ClientConstants;
-import org.jboss.as.test.integration.ejb.security.EjbSecurityDomainSetup;
-import org.jboss.as.test.integration.management.base.AbstractMgmtServerSetupTask;
-import org.jboss.as.test.integration.management.base.AbstractMgmtTestBase;
-import org.jboss.as.test.integration.management.util.MgmtOperationException;
-import org.jboss.as.test.integration.security.common.AbstractSecurityDomainSetup;
-import org.jboss.dmr.ModelNode;
-import org.jboss.ejb.client.EJBClient;
-import org.jboss.ejb.client.EJBHomeLocator;
-import org.jboss.logging.Logger;
-import org.jboss.security.client.SecurityClient;
-import org.jboss.security.client.SecurityClientFactory;
-import org.jboss.shrinkwrap.api.Archive;
-import org.jboss.shrinkwrap.api.ShrinkWrap;
-import org.jboss.shrinkwrap.api.spec.JavaArchive;
-import org.jboss.staxmapper.XMLElementReader;
-import org.jboss.staxmapper.XMLElementWriter;
-import org.jboss.util.Base64;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-
-import javax.ejb.EJBHome;
 import javax.jms.DeliveryMode;
 import javax.jms.Message;
 import javax.jms.MessageConsumer;
@@ -66,6 +36,36 @@ import javax.jms.TemporaryQueue;
 import javax.jms.TextMessage;
 import javax.naming.InitialContext;
 import javax.naming.NamingException;
+
+import junit.framework.Assert;
+
+import org.jboss.arquillian.container.test.api.Deployer;
+import org.jboss.arquillian.container.test.api.Deployment;
+import org.jboss.arquillian.container.test.api.OperateOnDeployment;
+import org.jboss.arquillian.junit.Arquillian;
+import org.jboss.arquillian.test.api.ArquillianResource;
+import org.jboss.as.arquillian.api.ServerSetup;
+import org.jboss.as.arquillian.container.ManagementClient;
+import org.jboss.as.controller.client.helpers.ClientConstants;
+import org.jboss.as.test.categories.CommonCriteria;
+import org.jboss.as.test.integration.ejb.security.EjbSecurityDomainSetup;
+import org.jboss.as.test.integration.management.base.AbstractMgmtServerSetupTask;
+import org.jboss.as.test.integration.management.base.AbstractMgmtTestBase;
+import org.jboss.as.test.integration.management.util.MgmtOperationException;
+import org.jboss.as.test.integration.security.common.AbstractSecurityDomainSetup;
+import org.jboss.dmr.ModelNode;
+import org.jboss.logging.Logger;
+import org.jboss.security.client.SecurityClient;
+import org.jboss.security.client.SecurityClientFactory;
+import org.jboss.shrinkwrap.api.Archive;
+import org.jboss.shrinkwrap.api.ShrinkWrap;
+import org.jboss.shrinkwrap.api.spec.JavaArchive;
+import org.jboss.staxmapper.XMLElementReader;
+import org.jboss.staxmapper.XMLElementWriter;
+import org.jboss.util.Base64;
+import org.junit.Test;
+import org.junit.experimental.categories.Category;
+import org.junit.runner.RunWith;
 
 /**
  * The Bean Provider can invoke the getCallerPrincipal and isCallerInRole methods only
@@ -83,6 +83,7 @@ import javax.naming.NamingException;
  */
 @RunWith(Arquillian.class)
 @ServerSetup({EjbSecurityDomainSetup.class, GetCallerPrincipalTestCase.JmsQueueSetup.class})
+@Category(CommonCriteria.class)
 public class GetCallerPrincipalTestCase {
 
     private static final String QUEUE_NAME = "queue/callerPrincipal";
@@ -132,7 +133,9 @@ public class GetCallerPrincipalTestCase {
         final JavaArchive jar = ShrinkWrap.create(JavaArchive.class, "single.jar")
                 .addClass(TestResultsSingleton.class)
                 .addClass(ITestResultsSingleton.class)
+                .addAsManifestResource(GetCallerPrincipalTestCase.class.getPackage(), "jboss-ejb3.xml", "jboss-ejb3.xml")
                 .addAsManifestResource(GetCallerPrincipalTestCase.class.getPackage(), "MANIFEST.MF-single", "MANIFEST.MF");
+        jar.addPackage(CommonCriteria.class.getPackage());
         log.info(jar.toString(true));
         return jar;
     }
@@ -144,7 +147,9 @@ public class GetCallerPrincipalTestCase {
                 .addClass(IBeanLifecycleCallback.class)
                 .addAsResource(GetCallerPrincipalTestCase.class.getPackage(), "users.properties", "users.properties")
                 .addAsResource(GetCallerPrincipalTestCase.class.getPackage(), "roles.properties", "roles.properties")
-                .addAsManifestResource(GetCallerPrincipalTestCase.class.getPackage(), "MANIFEST.MF-bean", "MANIFEST.MF")                ;
+                .addAsManifestResource(GetCallerPrincipalTestCase.class.getPackage(), "jboss-ejb3.xml", "jboss-ejb3.xml")
+                .addAsManifestResource(GetCallerPrincipalTestCase.class.getPackage(), "MANIFEST.MF-bean", "MANIFEST.MF");
+        jar.addPackage(CommonCriteria.class.getPackage());
         log.info(jar.toString(true));
         return jar;
     }
@@ -156,7 +161,9 @@ public class GetCallerPrincipalTestCase {
                 .addClass(IBeanLifecycleCallback.class)
                 .addAsResource(GetCallerPrincipalTestCase.class.getPackage(), "users.properties", "users.properties")
                 .addAsResource(GetCallerPrincipalTestCase.class.getPackage(), "roles.properties", "roles.properties")
+                .addAsManifestResource(GetCallerPrincipalTestCase.class.getPackage(), "jboss-ejb3.xml", "jboss-ejb3.xml")
                 .addAsManifestResource(GetCallerPrincipalTestCase.class.getPackage(), "MANIFEST.MF-bean", "MANIFEST.MF");
+        jar.addPackage(CommonCriteria.class.getPackage());
         log.info(jar.toString(true));
         return jar;
     }
@@ -167,19 +174,9 @@ public class GetCallerPrincipalTestCase {
                 .addClass(MDBLifecycleCallback.class)
                 .addAsResource(GetCallerPrincipalTestCase.class.getPackage(), "users.properties", "users.properties")
                 .addAsResource(GetCallerPrincipalTestCase.class.getPackage(), "roles.properties", "roles.properties")
+                .addAsManifestResource(GetCallerPrincipalTestCase.class.getPackage(), "jboss-ejb3.xml", "jboss-ejb3.xml")
                 .addAsManifestResource(GetCallerPrincipalTestCase.class.getPackage(), "MANIFEST.MF-bean", "MANIFEST.MF")                ;
-        log.info(jar.toString(true));
-        return jar;
-    }
-
-    @Deployment(managed=false, testable = false, name = "eb", order = 103)
-    public static Archive<?> deploymentEntityBean()  {
-        final JavaArchive jar = ShrinkWrap.create(JavaArchive.class, "eb.jar")
-                .addClass(EntityBeanBean.class)
-                .addClass(EntityBeanHome.class)
-                .addClass(EntityBean.class)
-                .addAsManifestResource(GetCallerPrincipalTestCase.class.getPackage(), "MANIFEST.MF-bean", "MANIFEST.MF")
-                .addAsManifestResource(GetCallerPrincipalTestCase.class.getPackage(), "ejb-jar.xml", "ejb-jar.xml");
+        jar.addPackage(CommonCriteria.class.getPackage());
         log.info(jar.toString(true));
         return jar;
     }
@@ -192,12 +189,13 @@ public class GetCallerPrincipalTestCase {
                 .addClass(SLSBWithoutSecurityDomain.class)
                 .addClass(ISLSBWithoutSecurityDomain.class)
                 .addClass(PollingUtils.class)
-                .addClass(EntityBean.class)
                 .addClasses(JmsQueueSetup.class, EjbSecurityDomainSetup.class, AbstractSecurityDomainSetup.class, AbstractMgmtTestBase.class)
                 .addPackage(AbstractMgmtTestBase.class.getPackage()).addClasses(MgmtOperationException.class, XMLElementReader.class, XMLElementWriter.class)
                 .addAsResource(GetCallerPrincipalTestCase.class.getPackage(), "users.properties", "users.properties")
                 .addAsResource(GetCallerPrincipalTestCase.class.getPackage(), "roles.properties", "roles.properties")
+                .addAsManifestResource(GetCallerPrincipalTestCase.class.getPackage(), "jboss-ejb3.xml", "jboss-ejb3.xml")
                 .addAsManifestResource(GetCallerPrincipalTestCase.class.getPackage(), "MANIFEST.MF-test", "MANIFEST.MF");
+        jar.addPackage(CommonCriteria.class.getPackage());
         log.info(jar.toString(true));
         return jar;
     }
@@ -320,49 +318,4 @@ public class GetCallerPrincipalTestCase {
         }
     }
 
-    @Test
-    public void testEBActivate() throws Exception {
-        deployer.deploy("eb");
-        EntityBean eb = setUpEB();
-        SecurityClient client = this.login();
-        ITestResultsSingleton results = this.getResultsSingleton();
-
-        try {
-            Assert.assertEquals(OK, results.getEb("ejbactivate"));
-        } finally {
-            tearDownEB(eb);
-            client.logout();
-        }
-        deployer.undeploy("eb");
-    }
-
-    // app name: simple jar - empty app name
-    // module name: name of jar = eb
-    private <T extends EJBHome> T getHome(final Class<T> homeClass, final String beanName) {
-        final EJBHomeLocator<T> locator = new EJBHomeLocator<T>(homeClass, "", "eb", beanName, "");
-        return EJBClient.createProxy(locator);
-    }
-
-    private EntityBean setUpEB() throws Exception {
-        EntityBeanHome ebHome = getHome(EntityBeanHome.class, "EntityBeanCallerPrincipal");
-        EntityBean entityBean = null;
-
-        try {
-            entityBean = ebHome.findByPrimaryKey("test");
-        } catch (Exception e) {
-        }
-
-        if (entityBean == null) {
-            entityBean = ebHome.create("test");
-        }
-        return entityBean;
-    }
-
-    private void tearDownEB(EntityBean eb) throws Exception {
-        try {
-            eb.remove();
-        } catch(Exception e) {
-            // ;)
-        }
-    }
 }

@@ -27,8 +27,6 @@ import java.net.Inet6Address;
 import java.net.InetAddress;
 import java.net.NetworkInterface;
 import java.net.SocketException;
-import java.security.AccessController;
-import java.security.PrivilegedAction;
 import java.util.Collections;
 import java.util.Enumeration;
 import java.util.HashMap;
@@ -37,6 +35,7 @@ import java.util.Map;
 import java.util.Set;
 
 import org.jboss.as.controller.ControllerLogger;
+import org.wildfly.security.manager.WildFlySecurityManager;
 
 /**
  * Overall interface criteria. Encapsulates a set of individual criteria and selects interfaces and addresses
@@ -156,18 +155,8 @@ public final class OverallInterfaceCriteria implements InterfaceCriteria {
     }
 
     private static Boolean getBoolean(final String property) {
-
-        return AccessController.doPrivileged(new PrivilegedAction<Boolean>() {
-            @Override
-            public Boolean run() {
-                try {
-                    String value = System.getProperty(property);
-                    return value == null ? null : value.equalsIgnoreCase("true");
-                } catch (Exception e) {
-                    return null;
-                }
-            }
-        });
+        final String value = WildFlySecurityManager.getPropertyPrivileged(property, null);
+        return value == null ? null : value.equalsIgnoreCase("true");
     }
 
     private static Map<NetworkInterface, Set<InetAddress>> selectInterfaceAndAddress(Map<NetworkInterface, Set<InetAddress>> acceptable) throws SocketException {

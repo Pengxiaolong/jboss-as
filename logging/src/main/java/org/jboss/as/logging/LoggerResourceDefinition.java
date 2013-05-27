@@ -22,72 +22,176 @@
 
 package org.jboss.as.logging;
 
-import static org.jboss.as.logging.CommonAttributes.CATEGORY;
+import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.ADD;
+import static org.jboss.as.logging.CommonAttributes.ADD_HANDLER_OPERATION_NAME;
 import static org.jboss.as.logging.CommonAttributes.FILTER;
+import static org.jboss.as.logging.CommonAttributes.FILTER_SPEC;
 import static org.jboss.as.logging.CommonAttributes.HANDLERS;
 import static org.jboss.as.logging.CommonAttributes.LEVEL;
-import static org.jboss.as.logging.CommonAttributes.USE_PARENT_HANDLERS;
+import static org.jboss.as.logging.CommonAttributes.REMOVE_HANDLER_OPERATION_NAME;
+import static org.jboss.as.logging.Logging.join;
 
 import org.jboss.as.controller.AttributeDefinition;
-import org.jboss.as.controller.SimpleOperationDefinition;
+import org.jboss.as.controller.ModelVersion;
+import org.jboss.as.controller.OperationDefinition;
+import org.jboss.as.controller.OperationStepHandler;
+import org.jboss.as.controller.PathElement;
+import org.jboss.as.controller.ReadResourceNameOperationStepHandler;
+import org.jboss.as.controller.SimpleAttributeDefinition;
+import org.jboss.as.controller.SimpleAttributeDefinitionBuilder;
+import org.jboss.as.controller.SimpleOperationDefinitionBuilder;
 import org.jboss.as.controller.SimpleResourceDefinition;
 import org.jboss.as.controller.descriptions.ResourceDescriptionResolver;
 import org.jboss.as.controller.registry.ManagementResourceRegistration;
+import org.jboss.as.controller.transform.description.DiscardAttributeChecker;
+import org.jboss.as.controller.transform.description.RejectAttributeChecker;
+import org.jboss.as.controller.transform.description.ResourceTransformationDescriptionBuilder;
+import org.jboss.as.logging.LoggingOperations.ReadFilterOperationStepHandler;
+import org.jboss.dmr.ModelNode;
+import org.jboss.dmr.ModelType;
 
 /**
  * @author <a href="mailto:tomaz.cerar@redhat.com">Tomaz Cerar</a>
+ * @author <a href="mailto:jperkins@redhat.com">James R. Perkins</a>
  */
 public class LoggerResourceDefinition extends SimpleResourceDefinition {
-    public static final String CHANGE_LEVEL_OPERATION_NAME = "change-log-level";
-    public static final String ADD_HANDLER_OPERATION_NAME = "assign-handler";
-    public static final String REMOVE_HANDLER_OPERATION_NAME = "unassign-handler";
 
-    static final AttributeDefinition[] ATTRIBUTES = {
-            CATEGORY,
-            FILTER,
-            LEVEL,
-            HANDLERS,
-            USE_PARENT_HANDLERS
-    };
+    public static final String CHANGE_LEVEL_OPERATION_NAME = "change-log-level";
+    public static final String LEGACY_ADD_HANDLER_OPERATION_NAME = "assign-handler";
+    public static final String LEGACY_REMOVE_HANDLER_OPERATION_NAME = "unassign-handler";
+    public static final String LOGGER = "logger";
+    static final PathElement LOGGER_PATH = PathElement.pathElement(LOGGER);
+
+    static final ResourceDescriptionResolver LOGGER_RESOLVER = LoggingExtension.getResourceDescriptionResolver(LOGGER);
+
+    static final OperationDefinition CHANGE_LEVEL_OPERATION = new SimpleOperationDefinitionBuilder(CHANGE_LEVEL_OPERATION_NAME, LOGGER_RESOLVER)
+            .setDeprecated(ModelVersion.create(1, 2, 0))
+            .setParameters(CommonAttributes.LEVEL)
+            .build();
+
+    static final OperationDefinition LEGACY_ADD_HANDLER_OPERATION = new SimpleOperationDefinitionBuilder(LEGACY_ADD_HANDLER_OPERATION_NAME, LOGGER_RESOLVER)
+            .setParameters(CommonAttributes.HANDLER_NAME)
+            .setDeprecated(ModelVersion.create(1, 2, 0))
+            .build();
+
+    static final OperationDefinition LEGACY_REMOVE_HANDLER_OPERATION = new SimpleOperationDefinitionBuilder(LEGACY_REMOVE_HANDLER_OPERATION_NAME, LOGGER_RESOLVER)
+            .setParameters(CommonAttributes.HANDLER_NAME)
+            .setDeprecated(ModelVersion.create(1, 2, 0))
+            .build();
+
+    static final OperationDefinition ADD_HANDLER_OPERATION = new SimpleOperationDefinitionBuilder(ADD_HANDLER_OPERATION_NAME, LOGGER_RESOLVER)
+            .setParameters(CommonAttributes.HANDLER_NAME)
+            .build();
+
+    static final OperationDefinition REMOVE_HANDLER_OPERATION = new SimpleOperationDefinitionBuilder(REMOVE_HANDLER_OPERATION_NAME, LOGGER_RESOLVER)
+            .setParameters(CommonAttributes.HANDLER_NAME)
+            .build();
+
+    public static final PropertyAttributeDefinition USE_PARENT_HANDLERS = PropertyAttributeDefinition.Builder.of("use-parent-handlers", ModelType.BOOLEAN, true)
+            .setAllowExpression(true)
+            .setDefaultValue(new ModelNode(true))
+            .setPropertyName("useParentHandlers")
+            .build();
+
+    // Be careful with this attribute. It needs to show up in the "add" operation param list so ops from legacy
+    // scripts will validate. It does because it's registered as an attribute but is not setResourceOnly(true)
+    // so DefaultResourceAddDescriptionProvider adds it to the param list
+    public static final SimpleAttributeDefinition CATEGORY = SimpleAttributeDefinitionBuilder.create("category", ModelType.STRING, true).build();
 
     static final AttributeDefinition[] WRITABLE_ATTRIBUTES = {
-            FILTER,
+            FILTER_SPEC,
             LEVEL,
             HANDLERS,
             USE_PARENT_HANDLERS
     };
 
-    static LoggerOperations.LoggerWriteAttributeHandler LOGGER_WRITE_HANDLER = new LoggerOperations.LoggerWriteAttributeHandler(WRITABLE_ATTRIBUTES);
-    /**
-     * A step handler to add a logger.
-     */
-    static LoggerOperations.LoggerAddOperationStepHandler ADD_LOGGER = new LoggerOperations.LoggerAddOperationStepHandler(ATTRIBUTES);
+    static final AttributeDefinition[] LEGACY_ATTRIBUTES = {
+            FILTER,
+    };
 
-    static final LoggerResourceDefinition INSTANCE = new LoggerResourceDefinition();
+    static final AttributeDefinition[] EXPRESSION_ATTRIBUTES = {
+            FILTER,
+            FILTER_SPEC,
+            LEVEL,
+            HANDLERS,
+            USE_PARENT_HANDLERS
+    };
 
-    private LoggerResourceDefinition() {
-        super(LoggingExtension.LOGGER_PATH,
-                LoggingExtension.getResourceDescriptionResolver(CommonAttributes.LOGGER),
-                ADD_LOGGER,
+    private final AttributeDefinition[] writableAttributes;
+    private final OperationStepHandler writeHandler;
+
+    public LoggerResourceDefinition(final boolean includeLegacy) {
+        super(LOGGER_PATH,
+                LoggingExtension.getResourceDescriptionResolver(LOGGER),
+                (includeLegacy ? new LoggerOperations.LoggerAddOperationStepHandler(join(WRITABLE_ATTRIBUTES, LEGACY_ATTRIBUTES))
+                               : new LoggerOperations.LoggerAddOperationStepHandler(WRITABLE_ATTRIBUTES)),
                 LoggerOperations.REMOVE_LOGGER);
+        writableAttributes = (includeLegacy ? join(WRITABLE_ATTRIBUTES, LEGACY_ATTRIBUTES) : WRITABLE_ATTRIBUTES);
+        this.writeHandler = new LoggerOperations.LoggerWriteAttributeHandler(writableAttributes);
     }
 
     @Override
     public void registerAttributes(ManagementResourceRegistration resourceRegistration) {
-        for (AttributeDefinition def : WRITABLE_ATTRIBUTES) {
-            resourceRegistration.registerReadWriteAttribute(def, null, LOGGER_WRITE_HANDLER);
+        for (AttributeDefinition def : writableAttributes) {
+            // Filter requires a special reader
+            if (def.getName().equals(FILTER.getName())) {
+                resourceRegistration.registerReadWriteAttribute(def, ReadFilterOperationStepHandler.INSTANCE, writeHandler);
+            } else {
+                resourceRegistration.registerReadWriteAttribute(def, null, writeHandler);
+            }
         }
-        resourceRegistration.registerReadOnlyAttribute(CATEGORY, null);
+        resourceRegistration.registerReadOnlyAttribute(CATEGORY, ReadResourceNameOperationStepHandler.INSTANCE);
     }
 
     @Override
     public void registerOperations(ManagementResourceRegistration registration) {
         super.registerOperations(registration);
-        final ResourceDescriptionResolver resolver = getResourceDescriptionResolver();
 
-        registration.registerOperationHandler(new SimpleOperationDefinition(CHANGE_LEVEL_OPERATION_NAME, resolver, CommonAttributes.LEVEL), LoggerOperations.CHANGE_LEVEL);
-        registration.registerOperationHandler(new SimpleOperationDefinition(ADD_HANDLER_OPERATION_NAME, resolver, CommonAttributes.HANDLER_NAME), LoggerOperations.ADD_HANDLER);
-        registration.registerOperationHandler(new SimpleOperationDefinition(REMOVE_HANDLER_OPERATION_NAME, resolver, CommonAttributes.HANDLER_NAME), LoggerOperations.REMOVE_HANDLER);
+        registration.registerOperationHandler(CHANGE_LEVEL_OPERATION, LoggerOperations.CHANGE_LEVEL);
+        registration.registerOperationHandler(ADD_HANDLER_OPERATION, LoggerOperations.ADD_HANDLER);
+        registration.registerOperationHandler(REMOVE_HANDLER_OPERATION, LoggerOperations.REMOVE_HANDLER);
+        registration.registerOperationHandler(LEGACY_ADD_HANDLER_OPERATION, LoggerOperations.ADD_HANDLER);
+        registration.registerOperationHandler(LEGACY_REMOVE_HANDLER_OPERATION, LoggerOperations.REMOVE_HANDLER);
+    }
 
+    /**
+     * Add the transformers for the logger.
+     *
+     * @param subsystemBuilder      the default subsystem builder
+     * @param loggingProfileBuilder the logging profile builder
+     *
+     * @return the builder created for the resource
+     */
+    static ResourceTransformationDescriptionBuilder addTransformers(final ResourceTransformationDescriptionBuilder subsystemBuilder,
+                                                                    final ResourceTransformationDescriptionBuilder loggingProfileBuilder) {
+
+        // Reject logging profile resources
+        loggingProfileBuilder.rejectChildResource(LOGGER_PATH);
+
+        // Register the logger resource
+        return subsystemBuilder.addChildResource(LOGGER_PATH)
+                .getAttributeBuilder()
+                    // discard level="ALL"
+                    .setDiscard(Transformers1_1_0.LEVEL_ALL_DISCARD_CHECKER, LEVEL)
+                    .addRejectCheck(RejectAttributeChecker.SIMPLE_EXPRESSIONS, EXPRESSION_ATTRIBUTES)
+                    // Discard undefined filter-spec, else convert the value and rename to "filter"
+                    .setDiscard(DiscardAttributeChecker.UNDEFINED, FILTER_SPEC)
+                    .setValueConverter(Transformers1_1_0.FILTER_SPEC_CONVERTER, FILTER_SPEC)
+                    .addRename(FILTER_SPEC, FILTER.getName())
+                    .end()
+                // Register operation transformers
+                .addOperationTransformationOverride(ADD)
+                    .setCustomOperationTransformer(LoggingOperationTransformer.INSTANCE)
+                    .inheritResourceAttributeDefinitions()
+                    .end()
+                .addOperationTransformationOverride(ADD_HANDLER_OPERATION_NAME)
+                    .setCustomOperationTransformer(LoggingOperationTransformer.INSTANCE)
+                    .inheritResourceAttributeDefinitions()
+                    .end()
+                .addOperationTransformationOverride(REMOVE_HANDLER_OPERATION_NAME)
+                    .setCustomOperationTransformer(LoggingOperationTransformer.INSTANCE)
+                    .inheritResourceAttributeDefinitions()
+                    .end()
+                .setCustomResourceTransformer(new LoggingResourceTransformer(CATEGORY));
     }
 }

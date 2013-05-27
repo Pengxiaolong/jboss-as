@@ -35,7 +35,7 @@ import org.jboss.arquillian.test.api.ArquillianResource;
 import org.jboss.as.arquillian.container.ManagementClient;
 import org.jboss.as.test.integration.common.HttpRequest;
 import org.jboss.as.test.integration.osgi.api.Echo;
-import org.jboss.osgi.spi.OSGiManifestBuilder;
+import org.jboss.osgi.metadata.OSGiManifestBuilder;
 import org.jboss.shrinkwrap.api.Archive;
 import org.jboss.shrinkwrap.api.ShrinkWrap;
 import org.jboss.shrinkwrap.api.asset.Asset;
@@ -77,10 +77,28 @@ public class EnterpriseArchiveTestCase {
                 OSGiManifestBuilder builder = OSGiManifestBuilder.newInstance();
                 builder.addBundleSymbolicName(jar.getName());
                 builder.addBundleManifestVersion(2);
+                builder.addImportPackages(ManagementClient.class);
                 return builder.openStream();
             }
         });
         return jar;
+    }
+
+    @Test
+    public void testSimpleEar() throws Exception {
+        String result = performCall("/simple/servlet?input=Hello");
+        Assert.assertEquals("Simple Servlet called with input=Hello", result);
+    }
+
+    @Test
+    public void testWarStructureEar() throws Exception {
+        String result = performCall("/war-structure-bundle/servlet?input=Hello");
+        Assert.assertEquals("Simple Servlet called with input=Hello", result);
+    }
+
+    private String performCall(String path) throws Exception {
+        String urlspec = managementClient.getWebUri() + path;
+        return HttpRequest.get(urlspec, 10, TimeUnit.SECONDS);
     }
 
     @Deployment(name = SIMPLE_EAR, testable = false)
@@ -127,22 +145,5 @@ public class EnterpriseArchiveTestCase {
         ear.add(jar, "/", ZipExporter.class);
         ear.addAsModule(war);
         return ear;
-    }
-
-    @Test
-    public void testSimpleEar() throws Exception {
-        String result = performCall("/simple/servlet?input=Hello");
-        Assert.assertEquals("Simple Servlet called with input=Hello", result);
-    }
-
-    @Test
-    public void testWarStructureEar() throws Exception {
-        String result = performCall("/war-structure-bundle/servlet?input=Hello");
-        Assert.assertEquals("Simple Servlet called with input=Hello", result);
-    }
-
-    private String performCall(String path) throws Exception {
-        String urlspec = managementClient.getWebUri() + path;
-        return HttpRequest.get(urlspec, 10, TimeUnit.SECONDS);
     }
 }

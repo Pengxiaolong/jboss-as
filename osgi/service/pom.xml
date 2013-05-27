@@ -34,22 +34,26 @@
     <modelVersion>4.0.0</modelVersion>
 
     <parent>
-        <groupId>org.jboss.as</groupId>
-        <artifactId>jboss-as-osgi</artifactId>
-        <version>7.2.0.Alpha1-SNAPSHOT</version>
+        <groupId>org.wildfly</groupId>
+        <artifactId>wildfly-osgi</artifactId>
+        <version>8.0.0.Alpha2-SNAPSHOT</version>
     </parent>
 
-    <artifactId>jboss-as-osgi-service</artifactId>
-    <name>JBoss Application Server: OSGi Subsystem</name>
+    <artifactId>wildfly-osgi-service</artifactId>
+    <name>WildFly: OSGi Subsystem</name>
 
     <dependencies>
         <dependency>
-            <groupId>org.jboss.as</groupId>
-            <artifactId>jboss-as-ee</artifactId>
+            <groupId>org.wildfly</groupId>
+            <artifactId>wildfly-ee</artifactId>
         </dependency>
         <dependency>
-            <groupId>org.jboss.as</groupId>
-            <artifactId>jboss-as-server</artifactId>
+            <groupId>org.wildfly</groupId>
+            <artifactId>wildfly-security-manager</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.wildfly</groupId>
+            <artifactId>wildfly-server</artifactId>
         </dependency>
         <dependency>
             <groupId>org.jboss.modules</groupId>
@@ -93,10 +97,6 @@
             <groupId>org.osgi</groupId>
             <artifactId>org.osgi.core</artifactId>
         </dependency>
-        <dependency>
-            <groupId>org.osgi</groupId>
-            <artifactId>org.osgi.enterprise</artifactId>
-        </dependency>
 
         <!-- Test Dependencies -->
         <dependency>
@@ -115,8 +115,9 @@
             <scope>test</scope>
         </dependency>
         <dependency>
-            <groupId>org.jboss.as</groupId>
-            <artifactId>jboss-as-subsystem-test</artifactId>
+            <groupId>org.wildfly</groupId>
+            <artifactId>wildfly-subsystem-test</artifactId>
+            <type>pom</type>
             <scope>test</scope>
         </dependency>
         <dependency>
@@ -139,15 +140,11 @@
                             <value>org.jboss.logmanager.LogManager</value>
                         </property>
                     </systemProperties>
-                </configuration>
-            </plugin>
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-compiler-plugin</artifactId>
-                <configuration>
-                    <compilerArgument>
-                        -AgeneratedTranslationFilesPath=${project.build.directory}/generated-translation-files
-                    </compilerArgument>
+                    <systemPropertyVariables>
+                      <org.jboss.model.test.cache.root>${org.jboss.model.test.cache.root}</org.jboss.model.test.cache.root>
+                      <org.jboss.model.test.classpath.cache>${org.jboss.model.test.classpath.cache}</org.jboss.model.test.classpath.cache>
+                      <org.jboss.model.test.maven.repository.urls>${org.jboss.model.test.maven.repository.urls}</org.jboss.model.test.maven.repository.urls>
+                    </systemPropertyVariables>
                 </configuration>
             </plugin>
         </plugins>

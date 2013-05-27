@@ -72,24 +72,27 @@ public class DomainFinalResultHandler implements OperationStepHandler {
     @Override
     public void execute(OperationContext context, ModelNode operation) throws OperationFailedException {
 
-        context.completeStep();
-
-        // On the way out, fix up the response
-        final boolean isDomain = isDomainOperation(operation);
-        boolean shouldContinue = collectDomainFailure(context, isDomain);
-        shouldContinue = shouldContinue && collectContextFailure(context, isDomain);
-        shouldContinue = shouldContinue && collectHostFailures(context, isDomain);
-        if(shouldContinue){
-            ModelNode contextResult = context.getResult();
-            contextResult.setEmptyObject(); // clear out any old data
-            contextResult.set(getDomainResults(operation));
-            if (domainOperationContext.getServerResults().size() > 0) {
-                populateServerGroupResults(context);
-            } else {
-                // Just make sure there's an 'undefined' server-groups node
-                context.getServerResults();
+        context.completeStep(new OperationContext.ResultHandler() {
+            @Override
+            public void handleResult(OperationContext.ResultAction resultAction, OperationContext context, ModelNode operation) {
+                // On the way out, fix up the response
+                final boolean isDomain = isDomainOperation(operation);
+                boolean shouldContinue = collectDomainFailure(context, isDomain);
+                shouldContinue = shouldContinue && collectContextFailure(context, isDomain);
+                shouldContinue = shouldContinue && collectHostFailures(context, isDomain);
+                if(shouldContinue){
+                    ModelNode contextResult = context.getResult();
+                    contextResult.setEmptyObject(); // clear out any old data
+                    contextResult.set(getDomainResults(operation));
+                    if (domainOperationContext.getServerResults().size() > 0) {
+                        populateServerGroupResults(context);
+                    } else {
+                        // Just make sure there's an 'undefined' server-groups node
+                        context.getServerResults();
+                    }
+                }
             }
-        }
+        });
     }
 
     private boolean collectDomainFailure(OperationContext context, final boolean isDomain) {
@@ -125,7 +128,6 @@ public class DomainFinalResultHandler implements OperationStepHandler {
 
                 formattedFailure.get(HOST_FAILURE_DESCRIPTIONS).set(hostFailureProperty);
             }
-
             context.getFailureDescription().set(formattedFailure);
 
             return false;
@@ -142,7 +144,7 @@ public class DomainFinalResultHandler implements OperationStepHandler {
                     hostFailureResults = new ModelNode();
                 }
                 final ModelNode desc = hostResult.hasDefined(FAILURE_DESCRIPTION) ? hostResult.get(FAILURE_DESCRIPTION) : new ModelNode().set(MESSAGES.unexplainedFailure());
-                hostFailureResults.add(entry.getKey(), desc);
+                hostFailureResults.get(entry.getKey()).set(desc);
             }
         }
 
@@ -152,7 +154,7 @@ public class DomainFinalResultHandler implements OperationStepHandler {
                 hostFailureResults = new ModelNode();
             }
             final ModelNode desc = coordinator.hasDefined(FAILURE_DESCRIPTION) ? coordinator.get(FAILURE_DESCRIPTION) : new ModelNode().set(MESSAGES.unexplainedFailure());
-            hostFailureResults.add(domainOperationContext.getLocalHostInfo().getLocalHostName(), desc);
+            hostFailureResults.get(domainOperationContext.getLocalHostInfo().getLocalHostName()).set(desc);
         }
 
         if (hostFailureResults != null) {
@@ -179,6 +181,7 @@ public class DomainFinalResultHandler implements OperationStepHandler {
             String[] nextStepLabels = new String[stepLabels.length + 1];
             System.arraycopy(stepLabels, 0, nextStepLabels, 0, stepLabels.length);
             int i = 1;
+
             for (ModelNode step : provider.getChildren()) {
                 String childStepLabel = "step-" + i++;
                 nextStepLabels[stepLabels.length] = childStepLabel;

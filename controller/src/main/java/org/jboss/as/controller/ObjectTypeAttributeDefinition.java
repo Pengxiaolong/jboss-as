@@ -24,10 +24,8 @@ package org.jboss.as.controller;
 
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.List;
 import java.util.Locale;
 import java.util.ResourceBundle;
-
 import javax.xml.stream.XMLStreamException;
 import javax.xml.stream.XMLStreamReader;
 import javax.xml.stream.XMLStreamWriter;
@@ -35,30 +33,36 @@ import javax.xml.stream.XMLStreamWriter;
 import org.jboss.as.controller.client.helpers.MeasurementUnit;
 import org.jboss.as.controller.descriptions.ModelDescriptionConstants;
 import org.jboss.as.controller.descriptions.ResourceDescriptionResolver;
-import org.jboss.as.controller.operations.validation.AllowedValuesValidator;
 import org.jboss.as.controller.operations.validation.MinMaxValidator;
+import org.jboss.as.controller.operations.validation.ObjectTypeValidator;
 import org.jboss.as.controller.operations.validation.ParameterValidator;
 import org.jboss.as.controller.registry.AttributeAccess;
 import org.jboss.dmr.ModelNode;
 import org.jboss.dmr.ModelType;
 
 /**
- * Date: 15.11.2011
+ * {@link AttributeDefinition} for attributes of type {@link ModelType#OBJECT} that aren't simple maps, but
+ * rather a set fixed keys where each key may be associated with a value of a different type.
  *
  * @author <a href="mailto:jperkins@redhat.com">James R. Perkins</a>
  * @author Richard Achmatowicz (c) 2012 RedHat Inc.
+ *
+ * @see MapAttributeDefinition
  */
 public class ObjectTypeAttributeDefinition extends SimpleAttributeDefinition {
     private final AttributeDefinition[] valueTypes;
     private final String suffix;
 
-    /*
-     * Constructor which allows specifying a custom ParameterValidator. Disabled by default.
-     */
+    protected ObjectTypeAttributeDefinition(final String name, final AttributeDefinition[] valueTypes, final boolean allowNull,
+                                            final ParameterCorrector corrector) {
+        this(name, name, null, valueTypes, allowNull, new ObjectTypeValidator(allowNull, valueTypes), corrector, null, null, null, false, null);
+    }
+
     protected ObjectTypeAttributeDefinition(final String name, final String xmlName, final String suffix, final AttributeDefinition[] valueTypes, final boolean allowNull,
                                             final ParameterValidator validator, final ParameterCorrector corrector, final String[] alternatives, final String[] requires,
                                             final AttributeMarshaller attributeMarshaller, final boolean resourceOnly, final DeprecationData deprecated, final AttributeAccess.Flag... flags) {
-        super(name, xmlName, null, ModelType.OBJECT, allowNull, false, null, corrector, validator, false, alternatives, requires, attributeMarshaller, resourceOnly, deprecated, flags);
+        super(name, xmlName, null, ModelType.OBJECT, allowNull, false, null, corrector, validator, false, alternatives,
+                requires, getAttributeMarshaller(attributeMarshaller, valueTypes), resourceOnly, deprecated, flags);
         this.valueTypes = valueTypes;
         if (suffix == null) {
             this.suffix = "";
@@ -67,6 +71,49 @@ public class ObjectTypeAttributeDefinition extends SimpleAttributeDefinition {
         }
     }
 
+    private static AttributeMarshaller getAttributeMarshaller(final AttributeMarshaller provided, final AttributeDefinition[] valueTypes) {
+        return provided != null ? provided : new AttributeMarshaller() {
+            @Override
+            public void marshallAsElement(AttributeDefinition attribute, ModelNode resourceModel, boolean marshallDefault, XMLStreamWriter writer) throws XMLStreamException {
+                if (resourceModel.hasDefined(attribute.getName())) {
+                    writer.writeStartElement(attribute.getXmlName());
+                    for (AttributeDefinition valueType : valueTypes) {
+                        for (ModelNode handler : resourceModel.get(attribute.getName()).asList()) {
+                            valueType.marshallAsElement(handler, writer);
+                        }
+                    }
+                    writer.writeEndElement();
+                }
+            }
+        };
+    }
+
+    @Override
+    protected ModelNode convertParameterExpressions(ModelNode parameter) {
+        ModelNode result = parameter;
+        if (parameter.isDefined()) {
+            boolean changeMade = false;
+            ModelNode updated = new ModelNode().setEmptyObject();
+            for (AttributeDefinition ad : valueTypes) {
+                String fieldName = ad.getName();
+                if (parameter.has(fieldName)) {
+                    ModelNode orig = parameter.get(fieldName);
+                    if (!orig.isDefined()) {
+                        updated.get(fieldName); // establish undefined
+                    } else {
+                        ModelNode converted = ad.convertParameterExpressions(orig);
+                        changeMade |= !orig.equals(converted);
+                        updated.get(fieldName).set(converted);
+                    }
+                }
+            }
+
+            if (changeMade) {
+                result = updated;
+            }
+        }
+        return result;
+    }
 
     @Override
     public ModelNode parse(final String value, final XMLStreamReader reader) throws XMLStreamException {
@@ -111,9 +158,12 @@ public class ObjectTypeAttributeDefinition extends SimpleAttributeDefinition {
             // get the value type description of the attribute
             final ModelNode valueTypeDesc = getValueTypeDescription(valueType, false);
             final String p;
-            if ((prefix == null || prefix.isEmpty()) && (suffix != null && suffix.isEmpty())) {
+            boolean prefixUnuseable = prefix == null || prefix.isEmpty() ;
+            boolean suffixUnuseable = suffix == null || suffix.isEmpty() ;
+
+            if (prefixUnuseable && !suffixUnuseable) {
                 p = suffix;
-            } else if (suffix == null || suffix.isEmpty()) {
+            } else if (!prefixUnuseable && suffixUnuseable) {
                 p = prefix;
             } else {
                 p = String.format("%s.%s", prefix, suffix);
@@ -138,19 +188,6 @@ public class ObjectTypeAttributeDefinition extends SimpleAttributeDefinition {
             if (valueType instanceof SimpleListAttributeDefinition) {
                 SimpleListAttributeDefinition.class.cast(valueType).addValueTypeDescription(childType, p, bundle);
             }
-        }
-    }
-
-    @Override
-    public void marshallAsElement(final ModelNode resourceModel, final boolean marshalDefault, final XMLStreamWriter writer) throws XMLStreamException {
-        if (resourceModel.hasDefined(getName())) {
-            writer.writeStartElement(getXmlName());
-            for (AttributeDefinition valueType : valueTypes) {
-                for (ModelNode handler : resourceModel.get(getName()).asList()) {
-                    valueType.marshallAsElement(handler, writer);
-                }
-            }
-            writer.writeEndElement();
         }
     }
 
@@ -213,17 +250,12 @@ public class ObjectTypeAttributeDefinition extends SimpleAttributeDefinition {
                 }
             }
         }
-
-        if (validator instanceof AllowedValuesValidator) {
-            AllowedValuesValidator avv = (AllowedValuesValidator) validator;
-            List<ModelNode> allowed = avv.getAllowedValues();
-            if (allowed != null) {
-                for (ModelNode ok : allowed) {
-                    result.get(ModelDescriptionConstants.ALLOWED).add(ok);
-                }
-            }
-        }
         return result;
+    }
+
+    @Override
+    protected void addAllowedValuesToDescription(ModelNode result, ParameterValidator validator) {
+        //Don't add allowed values for object types, since they simply enumerate the fields given in the value type
     }
 
     public static final class Builder extends AbstractAttributeDefinitionBuilder<Builder, ObjectTypeAttributeDefinition> {
@@ -251,6 +283,7 @@ public class ObjectTypeAttributeDefinition extends SimpleAttributeDefinition {
 
         public ObjectTypeAttributeDefinition build() {
             if (xmlName == null) { xmlName = name; }
+            if (validator == null) { validator = new ObjectTypeValidator(allowNull, valueTypes); }
             return new ObjectTypeAttributeDefinition(name, xmlName, suffix, valueTypes, allowNull, validator, corrector, alternatives, requires, attributeMarshaller, resourceOnly, deprecated, flags);
         }
 
@@ -268,4 +301,5 @@ public class ObjectTypeAttributeDefinition extends SimpleAttributeDefinition {
             return super.setAllowNull(allowNull);
         }
     }
+
 }

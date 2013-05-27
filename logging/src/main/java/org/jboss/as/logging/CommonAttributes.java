@@ -22,28 +22,30 @@
 
 package org.jboss.as.logging;
 
+import static org.jboss.as.controller.services.path.PathResourceDefinition.PATH;
+import static org.jboss.as.controller.services.path.PathResourceDefinition.RELATIVE_TO;
+
+import javax.xml.stream.XMLStreamException;
+import javax.xml.stream.XMLStreamWriter;
+
+import org.jboss.as.controller.AttributeDefinition;
 import org.jboss.as.controller.CaseParameterCorrector;
+import org.jboss.as.controller.DefaultAttributeMarshaller;
 import org.jboss.as.controller.ModelVersion;
+import org.jboss.as.controller.ObjectTypeAttributeDefinition;
+import org.jboss.as.controller.OperationFailedException;
 import org.jboss.as.controller.SimpleAttributeDefinition;
 import org.jboss.as.controller.SimpleAttributeDefinitionBuilder;
-import org.jboss.as.controller.SimpleMapAttributeDefinition;
-import org.jboss.as.controller.operations.validation.EnumValidator;
-import org.jboss.as.controller.operations.validation.IntRangeValidator;
+import org.jboss.as.controller.operations.validation.ObjectTypeValidator;
 import org.jboss.as.controller.registry.AttributeAccess;
 import org.jboss.as.logging.correctors.FileCorrector;
 import org.jboss.as.logging.resolvers.FileResolver;
 import org.jboss.as.logging.resolvers.LevelResolver;
-import org.jboss.as.logging.resolvers.OverflowActionResolver;
-import org.jboss.as.logging.resolvers.SizeResolver;
-import org.jboss.as.logging.resolvers.TargetResolver;
 import org.jboss.as.logging.validators.FileValidator;
 import org.jboss.as.logging.validators.LogLevelValidator;
-import org.jboss.as.logging.validators.SizeValidator;
-import org.jboss.as.logging.validators.SuffixValidator;
 import org.jboss.dmr.ModelNode;
 import org.jboss.dmr.ModelType;
 import org.jboss.logmanager.Level;
-import org.jboss.logmanager.handlers.AsyncHandler.OverflowAction;
 
 
 /**
@@ -51,207 +53,251 @@ import org.jboss.logmanager.handlers.AsyncHandler.OverflowAction;
  */
 public interface CommonAttributes {
 
-    SimpleAttributeDefinition ACCEPT = SimpleAttributeDefinitionBuilder.create("accept", ModelType.BOOLEAN, true).
-            setDefaultValue(new ModelNode(true)).
-            build();
+    // Attributes
+    PropertyAttributeDefinition APPEND = PropertyAttributeDefinition.Builder.of("append", ModelType.BOOLEAN, true)
+            .setAllowExpression(true)
+            .setAttributeMarshaller(ElementAttributeMarshaller.VALUE_ATTRIBUTE_MARSHALLER)
+            .setDefaultValue(new ModelNode(true))
+            .setFlags(AttributeAccess.Flag.RESTART_RESOURCE_SERVICES)
+            .build();
 
-    PropertyAttributeDefinition APPEND = PropertyAttributeDefinition.Builder.of("append", ModelType.BOOLEAN, true).
-            setDefaultValue(new ModelNode(true)).
-            setFlags(AttributeAccess.Flag.RESTART_RESOURCE_SERVICES).
-            build();
+    PropertyAttributeDefinition AUTOFLUSH = PropertyAttributeDefinition.Builder.of("autoflush", ModelType.BOOLEAN, true)
+            .setAllowExpression(true)
+            .setDefaultValue(new ModelNode(true))
+            .setPropertyName("autoFlush")
+            .build();
 
-    String ASYNC_HANDLER = "async-handler";
+    PropertyAttributeDefinition ENABLED = PropertyAttributeDefinition.Builder.of("enabled", ModelType.BOOLEAN, true)
+            .setAllowExpression(true)
+            .setDefaultValue(new ModelNode(true))
+            .build();
 
-    PropertyAttributeDefinition AUTOFLUSH = PropertyAttributeDefinition.Builder.of("autoflush", ModelType.BOOLEAN, true).
-            setDefaultValue(new ModelNode(true)).
-            setPropertyName("autoFlush").
-            build();
+    PropertyAttributeDefinition ENCODING = PropertyAttributeDefinition.Builder.of("encoding", ModelType.STRING, true)
+            .setAllowExpression(true)
+            .setAttributeMarshaller(ElementAttributeMarshaller.VALUE_ATTRIBUTE_MARSHALLER)
+            .build();
 
-    SimpleAttributeDefinition CATEGORY = SimpleAttributeDefinitionBuilder.create("category", ModelType.STRING, true).build();
+    PropertyAttributeDefinition FILTER_SPEC = PropertyAttributeDefinition.Builder.of("filter-spec", ModelType.STRING, true)
+            .addAlternatives("filter")
+            .setAllowExpression(true)
+            .setAttributeMarshaller(ElementAttributeMarshaller.VALUE_ATTRIBUTE_MARSHALLER)
+            .build();
 
-    SimpleAttributeDefinition CHANGE_LEVEL = SimpleAttributeDefinitionBuilder.create("change-level", ModelType.STRING, true).
-            setCorrector(CaseParameterCorrector.TO_UPPER).
-            setValidator(new LogLevelValidator(true)).
-            build();
+    PropertyAttributeDefinition FORMATTER = PropertyAttributeDefinition.Builder.of("formatter", ModelType.STRING, true)
+            .setAllowExpression(true)
+            .setAttributeMarshaller(new DefaultAttributeMarshaller() {
+                @Override
+                public void marshallAsElement(final AttributeDefinition attribute, final ModelNode resourceModel, final boolean marshallDefault, final XMLStreamWriter writer) throws XMLStreamException {
+                    if (isMarshallable(attribute, resourceModel, marshallDefault)) {
+                        writer.writeStartElement(attribute.getXmlName());
+                        writer.writeStartElement(PATTERN_FORMATTER);
+                        final String content = resourceModel.get(attribute.getName()).asString();
+                        writer.writeAttribute(PATTERN.getXmlName(), content);
+                        writer.writeEndElement();
+                        writer.writeEndElement();
+                    }
+                }
+            })
+            .setDefaultValue(new ModelNode("%d{HH:mm:ss,SSS} %-5p [%c] (%t) %s%E%n"))
+            .build();
 
-    SimpleAttributeDefinition CLASS = SimpleAttributeDefinitionBuilder.create("class", ModelType.STRING).
-            setAllowExpression(false).
-            build();
+    SimpleAttributeDefinition HANDLER = SimpleAttributeDefinitionBuilder.create("handler", ModelType.STRING)
+            .setAllowExpression(false)
+            .setAttributeMarshaller(ElementAttributeMarshaller.NAME_ATTRIBUTE_MARSHALLER)
+            .build();
 
-    String CONSOLE_HANDLER = "console-handler";
-
-    String CUSTOM_HANDLER = "custom-handler";
-
-    SimpleAttributeDefinition DENY = SimpleAttributeDefinitionBuilder.create("deny", ModelType.BOOLEAN, true).
-            setDefaultValue(new ModelNode(true)).
-            build();
-
-    PropertyAttributeDefinition ENCODING = PropertyAttributeDefinition.Builder.of("encoding", ModelType.STRING, true).build();
-
-    String FILE_HANDLER = "file-handler";
-
-    PropertyAttributeDefinition FORMATTER = PropertyAttributeDefinition.Builder.of("formatter", ModelType.STRING, true).
-            setDefaultValue(new ModelNode("%d{HH:mm:ss,SSS} %-5p [%c] (%t) %s%E%n")).
-            build();
-
-    SimpleAttributeDefinition HANDLER = SimpleAttributeDefinitionBuilder.create("handler", ModelType.STRING).build();
-
-    LogHandlerListAttributeDefinition HANDLERS = LogHandlerListAttributeDefinition.Builder.of("handlers", HANDLER).
-            setAllowNull(true).
-            build();
+    LogHandlerListAttributeDefinition HANDLERS = LogHandlerListAttributeDefinition.Builder.of("handlers")
+            .setAllowExpression(false)
+            .setAllowNull(true)
+            .build();
 
     SimpleAttributeDefinition HANDLER_NAME = SimpleAttributeDefinitionBuilder.create("name", ModelType.STRING, true).build();
 
     // JUL doesn't allow for null levels. Use ALL as the default
-    PropertyAttributeDefinition LEVEL = PropertyAttributeDefinition.Builder.of("level", ModelType.STRING, true).
-            setCorrector(CaseParameterCorrector.TO_UPPER).
-            setDefaultValue(new ModelNode(Level.ALL.getName())).
-            setResolver(LevelResolver.INSTANCE).
-            setValidator(new LogLevelValidator(true)).
-            build();
+    PropertyAttributeDefinition LEVEL = PropertyAttributeDefinition.Builder.of("level", ModelType.STRING, true)
+            .setAllowExpression(true)
+            .setAttributeMarshaller(ElementAttributeMarshaller.NAME_ATTRIBUTE_MARSHALLER)
+            .setCorrector(CaseParameterCorrector.TO_UPPER)
+            .setDefaultValue(new ModelNode(Level.ALL.getName()))
+            .setResolver(LevelResolver.INSTANCE)
+            .setValidator(new LogLevelValidator(true))
+            .build();
 
-    String LOGGER = "logger";
+    String LOGGING_PROFILE = "logging-profile";
 
-    SimpleAttributeDefinition MATCH = SimpleAttributeDefinitionBuilder.create("match", ModelType.STRING, true).build();
+    String LOGGING_PROFILES = "logging-profiles";
 
-    PropertyAttributeDefinition MAX_BACKUP_INDEX = PropertyAttributeDefinition.Builder.of("max-backup-index", ModelType.INT, true).
-            setDefaultValue(new ModelNode(1)).
-            setPropertyName("maxBackupIndex").
-            setValidator(new IntRangeValidator(1, true)).
-            build();
-
-    SimpleAttributeDefinition MAX_INCLUSIVE = SimpleAttributeDefinitionBuilder.create("max-inclusive", ModelType.BOOLEAN, true).
-            setDefaultValue(new ModelNode(true)).
-            build();
-
-    SimpleAttributeDefinition MAX_LEVEL = SimpleAttributeDefinitionBuilder.create("max-level", ModelType.STRING, true).
-            setCorrector(CaseParameterCorrector.TO_UPPER).
-            setValidator(new LogLevelValidator(true)).
-            build();
-
-    SimpleAttributeDefinition MIN_INCLUSIVE = SimpleAttributeDefinitionBuilder.create("min-inclusive", ModelType.BOOLEAN, true).
-            setDefaultValue(new ModelNode(true)).
-            build();
-
-    SimpleAttributeDefinition MIN_LEVEL = SimpleAttributeDefinitionBuilder.create("min-level", ModelType.STRING, true).
-            setCorrector(CaseParameterCorrector.TO_UPPER).
-            setValidator(new LogLevelValidator(true)).
-            build();
-
-    SimpleAttributeDefinition MODULE = SimpleAttributeDefinitionBuilder.create("module", ModelType.STRING).
-            setAllowExpression(false).
-            build();
-
-    SimpleAttributeDefinition NAME = SimpleAttributeDefinitionBuilder.create("name", ModelType.STRING, true).
-            setDeprecated(ModelVersion.create(1, 2, 0)).
-            build();
-
-    SimpleAttributeDefinition VALUE = SimpleAttributeDefinitionBuilder.create("value", ModelType.STRING).build();
-
-    SimpleAttributeDefinition NEW_LEVEL = SimpleAttributeDefinitionBuilder.create("new-level", ModelType.STRING, true).
-            setCorrector(CaseParameterCorrector.TO_UPPER).
-            setValidator(new LogLevelValidator(true)).
-            build();
-
-    PropertyAttributeDefinition OVERFLOW_ACTION = PropertyAttributeDefinition.Builder.of("overflow-action", ModelType.STRING).
-            setDefaultValue(new ModelNode(OverflowAction.BLOCK.name())).
-            setPropertyName("overflowAction").
-            setResolver(OverflowActionResolver.INSTANCE).
-            setValidator(EnumValidator.create(OverflowAction.class, false, false)).
-            build();
-
-    SimpleAttributeDefinition PATH = SimpleAttributeDefinitionBuilder.create("path", ModelType.STRING).build();
-
-    SimpleAttributeDefinition PATTERN = SimpleAttributeDefinitionBuilder.create("pattern", ModelType.STRING).build();
+    SimpleAttributeDefinition NAME = SimpleAttributeDefinitionBuilder.create("name", ModelType.STRING, true)
+            .setAllowExpression(false)
+            .setDeprecated(ModelVersion.create(1, 2, 0))
+            .build();
 
     String PATTERN_FORMATTER = "pattern-formatter";
-
-    String PERIODIC_ROTATING_FILE_HANDLER = "periodic-rotating-file-handler";
-
-    SimpleAttributeDefinition PROPERTY = SimpleAttributeDefinitionBuilder.create("property", ModelType.PROPERTY).build();
-
-    SimpleMapAttributeDefinition PROPERTIES = new SimpleMapAttributeDefinition("properties", "properties", true, true);
-
-    PropertyAttributeDefinition QUEUE_LENGTH = PropertyAttributeDefinition.Builder.of("queue-length", ModelType.INT).
-            setFlags(AttributeAccess.Flag.RESTART_RESOURCE_SERVICES).
-            setPropertyName("queueLength").
-            setValidator(new IntRangeValidator(1, false)).
-            build();
-
-    SimpleAttributeDefinition RELATIVE_TO = SimpleAttributeDefinitionBuilder.create("relative-to", ModelType.STRING, true).build();
-
-    SimpleAttributeDefinition REPLACEMENT = SimpleAttributeDefinitionBuilder.create("replacement", ModelType.STRING).build();
-
-    SimpleAttributeDefinition REPLACE_ALL = SimpleAttributeDefinitionBuilder.create("replace-all", ModelType.BOOLEAN).
-            setDefaultValue(new ModelNode(true)).
-            build();
-
-    String ROOT_LOGGER = "root-logger";
-
-    String ROOT_LOGGER_ATTRIBUTE_NAME = "ROOT";
-
-    PropertyAttributeDefinition ROTATE_SIZE = PropertyAttributeDefinition.Builder.of("rotate-size", ModelType.STRING).
-            setDefaultValue(new ModelNode("2m")).
-            setPropertyName("rotateSize").
-            setResolver(SizeResolver.INSTANCE).
-            setValidator(new SizeValidator()).
-            build();
-
-    String SIZE_ROTATING_FILE_HANDLER = "size-rotating-file-handler";
-
-    LogHandlerListAttributeDefinition SUBHANDLERS = LogHandlerListAttributeDefinition.Builder.of("subhandlers", HANDLER).
-            setAllowNull(true).
-            build();
-
-    PropertyAttributeDefinition SUFFIX = PropertyAttributeDefinition.Builder.of("suffix", ModelType.STRING).
-            setValidator(new SuffixValidator()).
-            build();
-
-    PropertyAttributeDefinition TARGET = PropertyAttributeDefinition.Builder.of("target", ModelType.STRING, true).
-            setDefaultValue(new ModelNode(Target.SYSTEM_OUT.toString())).
-            setResolver(TargetResolver.INSTANCE).
-            setValidator(EnumValidator.create(Target.class, true, false)).
-            build();
-
-    PropertyAttributeDefinition USE_PARENT_HANDLERS = PropertyAttributeDefinition.Builder.of("use-parent-handlers", ModelType.BOOLEAN, true).
-            setDefaultValue(new ModelNode(true)).
-            setPropertyName("useParentHandlers").
-            build();
-
-    // Global object types
-    PropertyObjectTypeAttributeDefinition LEVEL_RANGE = PropertyObjectTypeAttributeDefinition.Builder.of("level-range", MIN_LEVEL, MIN_INCLUSIVE, MAX_LEVEL, MAX_INCLUSIVE).
-            setAllowNull(true).
-            build();
-
-    PropertyObjectTypeAttributeDefinition REPLACE = PropertyObjectTypeAttributeDefinition.Builder.of("replace", PATTERN, REPLACEMENT, REPLACE_ALL).
-            setAllowNull(true).
-            build();
-
-    PropertyObjectTypeAttributeDefinition NOT = PropertyObjectTypeAttributeDefinition.Builder.of("not", ACCEPT, CHANGE_LEVEL, DENY, LEVEL, LEVEL_RANGE, MATCH, REPLACE).
-            setAllowNull(true).
-            build();
-
-    PropertyObjectTypeAttributeDefinition ALL = PropertyObjectTypeAttributeDefinition.Builder.of("all", ACCEPT, CHANGE_LEVEL, DENY, LEVEL, LEVEL_RANGE, MATCH, NOT, REPLACE).
-            setAllowNull(true).
-            build();
-
-    PropertyObjectTypeAttributeDefinition ANY = PropertyObjectTypeAttributeDefinition.Builder.of("any", ACCEPT, CHANGE_LEVEL, DENY, LEVEL, LEVEL_RANGE, MATCH, NOT, REPLACE).
-            setAllowNull(true).
-            build();
-
-    PropertyObjectTypeAttributeDefinition FILTER = PropertyObjectTypeAttributeDefinition.Builder.of("filter", ALL, ANY, ACCEPT, CHANGE_LEVEL, DENY, LEVEL, LEVEL_RANGE, MATCH, NOT, REPLACE).
-            setAllowNull(true).
-            build();
-
-    PropertyObjectTypeAttributeDefinition FILE = PropertyObjectTypeAttributeDefinition.Builder.of("file", RELATIVE_TO, PATH).
-            setCorrector(FileCorrector.INSTANCE).
-            setPropertyName("fileName").
-            setResolver(FileResolver.INSTANCE).
-            setValidator(new FileValidator()).
-            build();
 
     /**
      * The name of the root logger.
      */
     String ROOT_LOGGER_NAME = "";
+
+    // Legacy Filter attributes
+    SimpleAttributeDefinition ACCEPT = SimpleAttributeDefinitionBuilder.create("accept", ModelType.BOOLEAN, true)
+            .setAllowExpression(false)
+            .setDefaultValue(new ModelNode(true))
+            .build();
+
+    SimpleAttributeDefinition CHANGE_LEVEL = SimpleAttributeDefinitionBuilder.create("change-level", ModelType.STRING, true)
+            .setAllowExpression(false)
+            .setCorrector(CaseParameterCorrector.TO_UPPER)
+            .setValidator(new LogLevelValidator(true))
+            .build();
+
+    SimpleAttributeDefinition DENY = SimpleAttributeDefinitionBuilder.create("deny", ModelType.BOOLEAN, true)
+            .setAllowExpression(false)
+            .setDefaultValue(new ModelNode(true))
+            .build();
+
+    PropertyObjectTypeAttributeDefinition FILE = PropertyObjectTypeAttributeDefinition.Builder.of("file", RELATIVE_TO, PATH)
+            .setAllowExpression(false)
+            .setAttributeMarshaller(new DefaultAttributeMarshaller() {
+                @Override
+                public void marshallAsElement(final AttributeDefinition attribute, final ModelNode resourceModel, final boolean marshallDefault, final XMLStreamWriter writer) throws XMLStreamException {
+                    if (isMarshallable(attribute, resourceModel, marshallDefault)) {
+                        writer.writeStartElement(attribute.getXmlName());
+                        final ModelNode file = resourceModel.get(attribute.getName());
+                        RELATIVE_TO.marshallAsAttribute(file, marshallDefault, writer);
+                        PATH.marshallAsAttribute(file, marshallDefault, writer);
+                        writer.writeEndElement();
+                    }
+                }
+            })
+            .setCorrector(FileCorrector.INSTANCE)
+            .setPropertyName("fileName")
+            .setResolver(FileResolver.INSTANCE)
+            .setValidator(new FileValidator())
+            .build();
+
+    SimpleAttributeDefinition MATCH = SimpleAttributeDefinitionBuilder.create("match", ModelType.STRING)
+            .setAllowExpression(false)
+            .build();
+
+    SimpleAttributeDefinition MAX_INCLUSIVE = SimpleAttributeDefinitionBuilder.create("max-inclusive", ModelType.BOOLEAN, true)
+            .setAllowExpression(false)
+            .setDefaultValue(new ModelNode(true))
+            .build();
+
+    SimpleAttributeDefinition MAX_LEVEL = SimpleAttributeDefinitionBuilder.create("max-level", ModelType.STRING)
+            .setAllowExpression(false)
+            .setCorrector(CaseParameterCorrector.TO_UPPER)
+            .setValidator(new LogLevelValidator(true))
+            .build();
+
+    SimpleAttributeDefinition MIN_INCLUSIVE = SimpleAttributeDefinitionBuilder.create("min-inclusive", ModelType.BOOLEAN, true)
+            .setAllowExpression(false)
+            .setDefaultValue(new ModelNode(true))
+            .build();
+
+    SimpleAttributeDefinition MIN_LEVEL = SimpleAttributeDefinitionBuilder.create("min-level", ModelType.STRING)
+            .setAllowExpression(false)
+            .setCorrector(CaseParameterCorrector.TO_UPPER)
+            .setValidator(new LogLevelValidator(true))
+            .build();
+
+    SimpleAttributeDefinition NEW_LEVEL = SimpleAttributeDefinitionBuilder.create("new-level", ModelType.STRING)
+            .setAllowExpression(false)
+            .setCorrector(CaseParameterCorrector.TO_UPPER)
+            .setValidator(new LogLevelValidator(true))
+            .build();
+
+    SimpleAttributeDefinition PATTERN = SimpleAttributeDefinitionBuilder.create("pattern", ModelType.STRING)
+            .setAllowExpression(false)
+            .build();
+
+    SimpleAttributeDefinition REPLACEMENT = SimpleAttributeDefinitionBuilder.create("replacement", ModelType.STRING)
+            .setAllowExpression(false)
+            .build();
+
+    SimpleAttributeDefinition REPLACE_ALL = SimpleAttributeDefinitionBuilder.create("replace-all", ModelType.BOOLEAN)
+            .setAllowExpression(false)
+            .setDefaultValue(new ModelNode(true))
+            .build();
+
+    ObjectTypeAttributeDefinition LEVEL_RANGE_LEGACY = ObjectTypeAttributeDefinition.Builder.of("level-range", MIN_LEVEL, MIN_INCLUSIVE, MAX_LEVEL, MAX_INCLUSIVE)
+            .setAllowExpression(false)
+            .setAllowNull(true)
+            .setValidator(new ObjectTypeValidator(false, MIN_LEVEL, MIN_INCLUSIVE, MAX_LEVEL, MAX_INCLUSIVE) {
+                @Override
+                public void validateParameter(final String parameterName, final ModelNode value) throws OperationFailedException {
+                    super.validateParameter(parameterName, value);
+                    final ModelNode clonedValue = value.clone();
+                    final AttributeDefinition[] allowedValues = {MIN_LEVEL, MIN_INCLUSIVE, MAX_LEVEL, MAX_INCLUSIVE};
+                    for (AttributeDefinition valueType : allowedValues) {
+                        final ModelNode syntheticValue;
+                        // Does the value the type
+                        if (clonedValue.has(valueType.getName())) {
+                            syntheticValue = clonedValue.get(valueType.getName());
+                        } else if (valueType.getDefaultValue() != null) {
+                            // Use the default value
+                            syntheticValue = valueType.getDefaultValue();
+                        } else {
+                            // Use an undefined value
+                            syntheticValue = new ModelNode();
+                        }
+                        valueType.getValidator().validateParameter(valueType.getName(), syntheticValue);
+                    }
+                }
+            })
+            .build();
+
+    ObjectTypeAttributeDefinition REPLACE = ObjectTypeAttributeDefinition.Builder.of("replace", PATTERN, REPLACEMENT, REPLACE_ALL)
+            .setAllowExpression(false)
+            .setAllowNull(true)
+            .setValidator(new ObjectTypeValidator(false, PATTERN, REPLACEMENT, REPLACE_ALL) {
+                @Override
+                public void validateParameter(final String parameterName, final ModelNode value) throws OperationFailedException {
+                    super.validateParameter(parameterName, value);
+                    final ModelNode clonedValue = value.clone();
+                    final AttributeDefinition[] allowedValues = {PATTERN, REPLACEMENT, REPLACE_ALL};
+                    for (AttributeDefinition valueType : allowedValues) {
+                        final ModelNode syntheticValue;
+                        // Does the value the type
+                        if (clonedValue.has(valueType.getName())) {
+                            syntheticValue = clonedValue.get(valueType.getName());
+                        } else if (valueType.getDefaultValue() != null) {
+                            // Use the default value
+                            syntheticValue = valueType.getDefaultValue();
+                        } else {
+                            // Use an undefined value
+                            syntheticValue = new ModelNode();
+                        }
+                        valueType.getValidator().validateParameter(valueType.getName(), syntheticValue);
+                    }
+                }
+            })
+            .build();
+
+    ObjectTypeAttributeDefinition NOT = ObjectTypeAttributeDefinition.Builder.of("not", ACCEPT, CHANGE_LEVEL, DENY, LEVEL, LEVEL_RANGE_LEGACY, MATCH, REPLACE)
+            .setAllowExpression(false)
+            .setAllowNull(true)
+            .build();
+
+    ObjectTypeAttributeDefinition ALL = ObjectTypeAttributeDefinition.Builder.of("all", ACCEPT, CHANGE_LEVEL, DENY, LEVEL, LEVEL_RANGE_LEGACY, MATCH, NOT, REPLACE)
+            .setAllowExpression(false)
+            .setAllowNull(true)
+            .build();
+
+    ObjectTypeAttributeDefinition ANY = ObjectTypeAttributeDefinition.Builder.of("any", ACCEPT, CHANGE_LEVEL, DENY, LEVEL, LEVEL_RANGE_LEGACY, MATCH, NOT, REPLACE)
+            .setAllowExpression(false)
+            .setAllowNull(true)
+            .build();
+
+    ObjectTypeAttributeDefinition FILTER = ObjectTypeAttributeDefinition.Builder.of("filter", ALL, ANY, ACCEPT, CHANGE_LEVEL, DENY, LEVEL, LEVEL_RANGE_LEGACY, MATCH, NOT, REPLACE)
+            .setAllowExpression(false)
+            .addAlternatives(FILTER_SPEC.getName())
+            .setDeprecated(ModelVersion.create(1, 2, 0))
+            .setAllowNull(true)
+            .build();
+
+    String ADD_HANDLER_OPERATION_NAME = "add-handler";
+
+    String REMOVE_HANDLER_OPERATION_NAME = "remove-handler";
 }

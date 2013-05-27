@@ -29,7 +29,6 @@ import java.io.FileWriter;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.net.UnknownHostException;
 import java.security.GeneralSecurityException;
 import java.security.KeyStore;
 import java.security.MessageDigest;
@@ -99,6 +98,8 @@ import org.jboss.as.cli.handlers.PrintWorkingNodeHandler;
 import org.jboss.as.cli.handlers.QuitHandler;
 import org.jboss.as.cli.handlers.ReadAttributeHandler;
 import org.jboss.as.cli.handlers.ReadOperationHandler;
+import org.jboss.as.cli.handlers.ReloadHandler;
+import org.jboss.as.cli.handlers.ShutdownHandler;
 import org.jboss.as.cli.handlers.UndeployHandler;
 import org.jboss.as.cli.handlers.VersionHandler;
 import org.jboss.as.cli.handlers.batch.BatchClearHandler;
@@ -140,17 +141,18 @@ import org.jboss.as.cli.parsing.operation.OperationFormat;
 import org.jboss.as.controller.client.ModelControllerClient;
 import org.jboss.as.protocol.StreamUtils;
 import org.jboss.dmr.ModelNode;
-import org.jboss.jreadline.console.settings.Settings;
+import org.jboss.aesh.console.settings.Settings;
 import org.jboss.logging.Logger;
 import org.jboss.logging.Logger.Level;
 import org.jboss.sasl.callback.DigestHashCallback;
 import org.jboss.sasl.util.HexConverter;
+import org.wildfly.security.manager.WildFlySecurityManager;
 
 /**
  *
  * @author Alexey Loubyansky
  */
-class CommandContextImpl implements CommandContext {
+class CommandContextImpl implements CommandContext, ModelControllerClientFactory.ConnectionCloseHandler {
 
     private static final Logger log = Logger.getLogger(CommandContext.class);
 
@@ -173,6 +175,8 @@ class CommandContextImpl implements CommandContext {
     private boolean domainMode;
     /** the controller client */
     private ModelControllerClient client;
+    /** the default controller protocol */
+    private String defaultControllerProtocol;
     /** the default controller host */
     private String defaultControllerHost;
     /** the default controller port */
@@ -185,6 +189,8 @@ class CommandContextImpl implements CommandContext {
     private String username;
     /** the command line specified password */
     private char[] password;
+    /** the time to connect to a controller */
+    private final int connectionTimeout;
     /** The SSLContext when managed by the CLI */
     private SSLContext sslContext;
     /** The TrustManager in use by the SSLContext, a reference is kept to rejected certificates can be captured. */
@@ -217,6 +223,9 @@ class CommandContextImpl implements CommandContext {
     /** whether to resolve system properties passed in as values of operation parameters*/
     private boolean resolveParameterValues;
 
+    /** whether to write messages to the terminal output */
+    private boolean silent;
+
     /**
      * Version mode - only used when --version is called from the command line.
      *
@@ -232,18 +241,20 @@ class CommandContextImpl implements CommandContext {
         defaultControllerHost = config.getDefaultControllerHost();
         defaultControllerPort = config.getDefaultControllerPort();
         resolveParameterValues = config.isResolveParameterValues();
+        this.connectionTimeout = config.getConnectionTimeout();
+        silent = config.isSilent();
         initSSLContext();
     }
 
     CommandContextImpl(String username, char[] password) throws CliInitializationException {
-        this(null, -1, username, password, false);
+        this(null, null, -1, username, password, false, -1);
     }
 
     /**
      * Default constructor used for both interactive and non-interactive mode.
      *
      */
-    CommandContextImpl(String defaultControllerHost, int defaultControllerPort, String username, char[] password, boolean initConsole)
+    CommandContextImpl(String defaultControllerProtocol, String defaultControllerHost, int defaultControllerPort, String username, char[] password, boolean initConsole, final int connectionTimeout)
             throws CliInitializationException {
 
         config = CliConfigImpl.load(this);
@@ -252,6 +263,8 @@ class CommandContextImpl implements CommandContext {
 
         this.username = username;
         this.password = password;
+        this.connectionTimeout = connectionTimeout != -1 ? connectionTimeout : config.getConnectionTimeout();
+
         if (defaultControllerHost != null) {
             this.defaultControllerHost = defaultControllerHost;
         } else {
@@ -262,7 +275,14 @@ class CommandContextImpl implements CommandContext {
         } else {
             this.defaultControllerPort = config.getDefaultControllerPort();
         }
+        if(defaultControllerProtocol != null) {
+            this.defaultControllerProtocol = defaultControllerProtocol;
+        } else {
+            this.defaultControllerProtocol = config.getDefaultControllerProtocol();
+        }
+
         resolveParameterValues = config.isResolveParameterValues();
+        silent = config.isSilent();
         initCommands();
 
         initSSLContext();
@@ -289,6 +309,8 @@ class CommandContextImpl implements CommandContext {
 
         this.username = username;
         this.password = password;
+        this.connectionTimeout = config.getConnectionTimeout();
+
         if (defaultControllerHost != null) {
             this.defaultControllerHost = defaultControllerHost;
         } else {
@@ -299,7 +321,11 @@ class CommandContextImpl implements CommandContext {
         } else {
             this.defaultControllerPort = config.getDefaultControllerPort();
         }
+
+        this.defaultControllerProtocol = config.getDefaultControllerProtocol();
+
         resolveParameterValues = config.isResolveParameterValues();
+        silent = config.isSilent();
         initCommands();
 
         initSSLContext();
@@ -324,6 +350,7 @@ class CommandContextImpl implements CommandContext {
         Settings.getInstance().setHistoryDisabled(!config.isHistoryEnabled());
         Settings.getInstance().setHistoryFile(new File(config.getHistoryFileDir(), config.getHistoryFileName()));
         Settings.getInstance().setHistorySize(config.getHistoryMaxSize());
+        Settings.getInstance().setEnablePipelineAndRedirectionParser(false);
     }
 
     private void initCommands() {
@@ -340,6 +367,8 @@ class CommandContextImpl implements CommandContext {
         cmdRegistry.registerHandler(new QuitHandler(), "quit", "q", "exit");
         cmdRegistry.registerHandler(new ReadAttributeHandler(this), "read-attribute");
         cmdRegistry.registerHandler(new ReadOperationHandler(this), "read-operation");
+        cmdRegistry.registerHandler(new ReloadHandler(this), "reload");
+        cmdRegistry.registerHandler(new ShutdownHandler(this), "shutdown");
         cmdRegistry.registerHandler(new VersionHandler(), "version");
 
         // deployment
@@ -414,8 +443,8 @@ class CommandContextImpl implements CommandContext {
      */
     private void initSSLContext() throws CliInitializationException {
         // If the standard properties have been set don't enable and CLI specific stores.
-        if (SecurityActions.getSystemProperty("javax.net.ssl.keyStore") != null
-                || SecurityActions.getSystemProperty("javax.net.ssl.trustStore") != null) {
+        if (WildFlySecurityManager.getPropertyPrivileged("javax.net.ssl.keyStore", null) != null
+                || WildFlySecurityManager.getPropertyPrivileged("javax.net.ssl.trustStore", null) != null) {
             return;
         }
 
@@ -471,7 +500,7 @@ class CommandContextImpl implements CommandContext {
         }
 
         if (trustStore == null) {
-            final String userHome = SecurityActions.getSystemProperty("user.home");
+            final String userHome = WildFlySecurityManager.getPropertyPrivileged("user.home", null);
             File trustStoreFile = new File(userHome, ".jboss-cli.truststore");
             trustStore = trustStoreFile.getAbsolutePath();
             trustStorePassword = "cli_truststore"; // Risk of modification but no private keys to be stored in the truststore.
@@ -637,11 +666,13 @@ class CommandContextImpl implements CommandContext {
             return;
         }
 
-        if (console != null) {
-            console.print(message);
-            console.printNewLine();
-        } else { // non-interactive mode
-            System.out.println(message);
+        if(!silent) {
+            if (console != null) {
+                console.print(message);
+                console.printNewLine();
+            } else { // non-interactive mode
+                System.out.println(message);
+            }
         }
     }
 
@@ -690,11 +721,13 @@ class CommandContextImpl implements CommandContext {
             return;
         }
 
-        if (console != null) {
-            console.printColumns(col);
-        } else { // non interactive mode
-            for (String item : col) {
-                System.out.println(item);
+        if(!silent) {
+            if (console != null) {
+                console.printColumns(col);
+            } else { // non interactive mode
+                for (String item : col) {
+                    System.out.println(item);
+                }
             }
         }
     }
@@ -742,17 +775,21 @@ class CommandContextImpl implements CommandContext {
 
     @Override
     public void connectController() throws CommandLineException {
-        connectController(null, -1);
+        connectController(null, null, -1);
     }
 
     @Override
-    public void connectController(String host, int port) throws CommandLineException {
+    public void connectController(String protocol, String host, int port) throws CommandLineException {
         if (host == null) {
             host = defaultControllerHost;
         }
 
         if (port < 0) {
             port = defaultControllerPort;
+        }
+
+        if(protocol == null) {
+            protocol = defaultControllerProtocol;
         }
 
         boolean retry;
@@ -764,13 +801,14 @@ class CommandContextImpl implements CommandContext {
                 if(log.isDebugEnabled()) {
                     log.debug("connecting to " + host + ':' + port + " as " + username);
                 }
-                ModelControllerClient tempClient = ModelControllerClient.Factory.create(host, port, cbh, sslContext);
+                ModelControllerClient tempClient = ModelControllerClientFactory.CUSTOM.
+                        getClient(protocol, host, port, cbh, sslContext, connectionTimeout, this);
                 retry = tryConnection(tempClient, host, port);
                 if(!retry) {
                     newClient = tempClient;
                 }
                 initNewClient(newClient, host, port);
-            } catch (UnknownHostException e) {
+            } catch (IOException e) {
                 throw new CommandLineException("Failed to resolve host '" + host + "': " + e.getLocalizedMessage());
             }
         } while (retry);
@@ -1178,6 +1216,55 @@ class CommandContextImpl implements CommandContext {
     @Override
     public void setResolveParameterValues(boolean resolve) {
         this.resolveParameterValues = resolve;
+    }
+
+    @Override
+    public void handleClose() {
+        if(parsedCmd.getFormat().equals(OperationFormat.INSTANCE) && "shutdown".equals(parsedCmd.getOperationName())) {
+            final String restart = parsedCmd.getPropertyValue("restart");
+            if(restart == null || !Util.TRUE.equals(restart)) {
+                disconnectController();
+                printLine("");
+                printLine("The connection to the controller has been closed as the result of the shutdown operation.");
+                printLine("(Although the command prompt will wrongly indicate connection until the next line is entered)");
+            }
+        }
+    }
+
+    @Override
+    public boolean isSilent() {
+        return this.silent;
+    }
+
+    @Override
+    public void setSilent(boolean silent) {
+        this.silent = silent;
+    }
+
+    @Override
+    public int getTerminalWidth() {
+        if(console == null) {
+            try {
+                this.initBasicConsole(null, null);
+            } catch (CliInitializationException e) {
+                this.error("Failed to initialize the console: " + e.getLocalizedMessage());
+                return 80;
+            }
+        }
+        return console.getTerminalWidth();
+    }
+
+    @Override
+    public int getTerminalHeight() {
+        if(console == null) {
+            try {
+                this.initBasicConsole(null, null);
+            } catch (CliInitializationException e) {
+                this.error("Failed to initialize the console: " + e.getLocalizedMessage());
+                return 24;
+            }
+        }
+        return console.getTerminalHeight();
     }
 
     private class AuthenticationCallbackHandler implements CallbackHandler {

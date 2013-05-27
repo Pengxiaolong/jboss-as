@@ -22,6 +22,7 @@
 
 package org.jboss.as.host.controller;
 
+import java.util.Collection;
 import java.util.Map;
 
 import javax.security.auth.callback.CallbackHandler;
@@ -154,14 +155,49 @@ public interface ServerInventory {
     void stopServers(int gracefulTimeout);
 
     /**
+     * Stop all servers. Note that unless {@code blockUntilStopped} is set to {@code true} returning from this method
+     * does not mean the servers are completely stopped;
+     *
+     * @param gracefulTimeout time in ms a server should allow for graceful shutdown (if supported) before terminating all services
+     * @param blockUntilStopped wait until all servers are stopped
+     */
+    void stopServers(int gracefulTimeout, boolean blockUntilStopped);
+
+    /**
      * Re-establishes management communications with a server following a restart of the Host Controller process.
      *
      * @param serverName the name of the server
      * @param domainModel the configuration model for the domain
+     * @param authKey the authentication key
      * @param running whether the process was running. If {@code false}, the existence of the server will be
      *                recorded but no attempt to contact it will be made
+     * @param stopping whether the process is currently stopping
      */
-    void reconnectServer(final String serverName, final ModelNode domainModel, final boolean running);
+    void reconnectServer(String serverName, ModelNode domainModel, byte[] authKey, boolean running, boolean stopping);
+
+    /**
+     * Reload a server with the given name.
+     *
+     * @param serverName the name of the server
+     * @blockign whether to block until the server is started
+     */
+    ServerStatus reloadServer(String serverName, boolean blocking);
+
+    /**
+     * Destroy a stopping server process. In case the the server is not stopping, this will attempt to stop the server
+     * and this method has to be called again.
+     *
+     * @param serverName the server name
+     */
+    void destroyServer(String serverName);
+
+    /**
+     * Try to kill a server process. In case the server is not stopping, this will attempt to stop the server and this
+     * method has to be called again.
+     *
+     * @param serverName the server name
+     */
+    void killServer(String serverName);
 
     /**
      * Gets a callback handler security services can use for handling authentication data provided by
@@ -253,5 +289,14 @@ public interface ServerInventory {
      * @param processInfos map of process name to information about the process
      */
     void processInventory(Map<String, ProcessInfo> processInfos);
+
+    /**
+     * Await for a group of servers to be either started or stopped.
+     *
+     * @param serverNames the server names in the group
+     * @param started whether to wait for the started, or the stopped notification
+     * @throws InterruptedException
+     */
+    void awaitServersState(Collection<String> serverNames, boolean started);
 
 }

@@ -27,17 +27,22 @@
     <modelVersion>4.0.0</modelVersion>
 
     <parent>
-        <groupId>org.jboss.as</groupId>
-        <artifactId>jboss-as-parent</artifactId>
-        <version>7.2.0.Alpha1-SNAPSHOT</version>
+        <groupId>org.wildfly</groupId>
+        <artifactId>wildfly-parent</artifactId>
+        <version>8.0.0.Alpha2-SNAPSHOT</version>
     </parent>
 
-    <groupId>org.jboss.as</groupId>
-    <artifactId>jboss-as-model-test</artifactId>
+    <artifactId>wildfly-model-test</artifactId>
 
-    <name>JBoss Application Server: Common Code for Subsystem and Non-subsystem Test Harness</name>
+    <name>WildFly: Common Code for Subsystem and Non-subsystem Test Harness</name>
 
     <build>
+        <resources>
+            <resource>
+                <directory>src/main/resources</directory>
+                <filtering>true</filtering>
+            </resource>
+        </resources>
         <plugins>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
@@ -75,8 +80,8 @@
         </dependency>
 
         <dependency>
-            <groupId>org.jboss.as</groupId>
-            <artifactId>jboss-as-controller</artifactId>
+            <groupId>org.wildfly</groupId>
+            <artifactId>wildfly-controller</artifactId>
         </dependency>
 
         <dependency>
@@ -117,9 +122,16 @@
 	     </dependency>
 
 	     <dependency>
-	         <groupId>org.sonatype.aether</groupId>
-	         <artifactId>aether-connector-asynchttpclient</artifactId>
-	     </dependency>
+               <groupId>org.sonatype.aether</groupId>
+               <artifactId>aether-connector-asynchttpclient</artifactId>
+               <exclusions>
+                  <!-- use io.netty:netty instead -->
+                   <exclusion>
+                       <groupId>org.jboss.netty</groupId>
+                       <artifactId>netty</artifactId>
+                   </exclusion>
+               </exclusions>
+           </dependency>
 
 	     <dependency>
 	         <groupId>org.sonatype.aether</groupId>

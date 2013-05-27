@@ -33,10 +33,8 @@ import java.util.StringTokenizer;
 
 import org.jboss.as.controller.RunningMode;
 import org.jboss.as.process.CommandLineConstants;
+import org.jboss.as.process.ExitCodes;
 import org.jboss.as.version.ProductConfig;
-import org.jboss.logmanager.Level;
-import org.jboss.logmanager.Logger;
-import org.jboss.logmanager.handlers.ConsoleHandler;
 import org.jboss.modules.Module;
 import org.jboss.modules.ModuleIdentifier;
 import org.jboss.msc.service.ServiceActivator;
@@ -44,6 +42,7 @@ import org.jboss.stdio.LoggingOutputStream;
 import org.jboss.stdio.NullInputStream;
 import org.jboss.stdio.SimpleStdioContextSelector;
 import org.jboss.stdio.StdioContext;
+import org.wildfly.security.manager.WildFlySecurityManager;
 
 /**
  * The main-class entry point for standalone server instances.
@@ -55,7 +54,7 @@ import org.jboss.stdio.StdioContext;
  */
 public final class Main {
 
-    public static void usage() {
+    private static void usage() {
         CommandLineArgumentUsageImpl.printUsage(System.out);
     }
 
@@ -68,24 +67,25 @@ public final class Main {
      * @param args the command-line arguments
      */
     public static void main(String[] args) {
-
-        // Make sure our original stdio is properly captured.
         try {
-            Class.forName(ConsoleHandler.class.getName(), true, ConsoleHandler.class.getClassLoader());
-        } catch (Throwable ignored) {
-        }
+            if (java.util.logging.LogManager.getLogManager().getClass().getName().equals("org.jboss.logmanager.LogManager")) {
+                // Make sure our original stdio is properly captured.
+                try {
+                    Class.forName(org.jboss.logmanager.handlers.ConsoleHandler.class.getName(), true, org.jboss.logmanager.handlers.ConsoleHandler.class.getClassLoader());
+                } catch (Throwable ignored) {
+                }
+                // Install JBoss Stdio to avoid any nasty crosstalk, after command line arguments are processed.
+                StdioContext.install();
+                final StdioContext context = StdioContext.create(
+                        new NullInputStream(),
+                        new LoggingOutputStream(org.jboss.logmanager.Logger.getLogger("stdout"), org.jboss.logmanager.Level.INFO),
+                        new LoggingOutputStream(org.jboss.logmanager.Logger.getLogger("stderr"), org.jboss.logmanager.Level.ERROR)
+                );
+                StdioContext.setStdioContextSelector(new SimpleStdioContextSelector(context));
+            }
 
-        try {
             Module.registerURLStreamHandlerFactoryModule(Module.getBootModuleLoader().loadModule(ModuleIdentifier.create("org.jboss.vfs")));
-            ServerEnvironment serverEnvironment = determineEnvironment(args, SecurityActions.getSystemProperties(), SecurityActions.getSystemEnvironment(), ServerEnvironment.LaunchType.STANDALONE);
-            // Install JBoss Stdio to avoid any nasty crosstalk, after command line arguments are processed.
-            StdioContext.install();
-            final StdioContext context = StdioContext.create(
-                    new NullInputStream(),
-                    new LoggingOutputStream(Logger.getLogger("stdout"), Level.INFO),
-                    new LoggingOutputStream(Logger.getLogger("stderr"), Level.ERROR)
-            );
-            StdioContext.setStdioContextSelector(new SimpleStdioContextSelector(context));
+            ServerEnvironment serverEnvironment = determineEnvironment(args, WildFlySecurityManager.getSystemPropertiesPrivileged(), WildFlySecurityManager.getSystemEnvironmentPrivileged(), ServerEnvironment.LaunchType.STANDALONE);
             if (serverEnvironment == null) {
                 abort(null);
             } else {
@@ -106,7 +106,7 @@ public final class Main {
                 t.printStackTrace(System.err);
             }
         } finally {
-            SystemExiter.exit(1);
+            SystemExiter.exit(ExitCodes.FAILED);
         }
     }
 
@@ -121,7 +121,7 @@ public final class Main {
             try {
                 if (CommandLineConstants.VERSION.equals(arg) || CommandLineConstants.SHORT_VERSION.equals(arg)
                         || CommandLineConstants.OLD_VERSION.equals(arg) || CommandLineConstants.OLD_SHORT_VERSION.equals(arg)) {
-                    productConfig = new ProductConfig(Module.getBootModuleLoader(), SecurityActions.getSystemProperty(ServerEnvironment.HOME_DIR));
+                    productConfig = new ProductConfig(Module.getBootModuleLoader(), WildFlySecurityManager.getPropertyPrivileged(ServerEnvironment.HOME_DIR, null), null);
                     System.out.println(productConfig.getPrettyVersionString());
                     return null;
                 } else if (CommandLineConstants.HELP.equals(arg) || CommandLineConstants.SHORT_HELP.equals(arg) || CommandLineConstants.OLD_HELP.equals(arg)) {
@@ -188,7 +188,7 @@ public final class Main {
 
                     int idx = arg.indexOf('=');
                     if (idx == arg.length() - 1) {
-                        System.err.printf(ServerMessages.MESSAGES.noArgValue(arg));
+                        System.err.println(ServerMessages.MESSAGES.noArgValue(arg));
                         usage();
                         return null;
                     }
@@ -210,8 +210,7 @@ public final class Main {
 
                     int idx = arg.indexOf('=');
                     if (idx == arg.length() - 1) {
-                        System.err.printf(ServerMessages.MESSAGES.valueExpectedForCommandLineOption(arg));
-                        System.err.println();
+                        System.err.println(ServerMessages.MESSAGES.valueExpectedForCommandLineOption(arg));
                         usage();
                         return null;
                     }
@@ -239,12 +238,12 @@ public final class Main {
                         }
                     }
                 } else {
-                    System.err.printf(ServerMessages.MESSAGES.invalidCommandLineOption(arg));
+                    System.err.println(ServerMessages.MESSAGES.invalidCommandLineOption(arg));
                     usage();
                     return null;
                 }
             } catch (IndexOutOfBoundsException e) {
-                System.err.printf(ServerMessages.MESSAGES.valueExpectedForCommandLineOption(arg));
+                System.err.println(ServerMessages.MESSAGES.valueExpectedForCommandLineOption(arg));
                 usage();
                 return null;
             }
@@ -254,7 +253,7 @@ public final class Main {
             throw ServerMessages.MESSAGES.cannotHaveBothInitialServerConfigAndServerConfig();
         }
         String hostControllerName = null; // No host controller unless in domain mode.
-        productConfig = new ProductConfig(Module.getBootModuleLoader(), SecurityActions.getSystemProperty(ServerEnvironment.HOME_DIR));
+        productConfig = new ProductConfig(Module.getBootModuleLoader(), WildFlySecurityManager.getPropertyPrivileged(ServerEnvironment.HOME_DIR, null), systemProperties);
         return new ServerEnvironment(hostControllerName, systemProperties, systemEnvironment, serverConfig, initialServerConfig, launchType, runningMode, productConfig);
     }
 
@@ -276,13 +275,11 @@ public final class Main {
              systemProperties.load(url.openConnection().getInputStream());
              return true;
          } catch (MalformedURLException e) {
-             System.err.printf(ServerMessages.MESSAGES.malformedCommandLineURL(urlSpec, arg));
-             System.err.println();
+             System.err.println(ServerMessages.MESSAGES.malformedCommandLineURL(urlSpec, arg));
              usage();
              return false;
          } catch (IOException e) {
-             System.err.printf(ServerMessages.MESSAGES.unableToLoadProperties(url));
-             System.err.println();
+             System.err.println(ServerMessages.MESSAGES.unableToLoadProperties(url));
              usage();
              return false;
          }
@@ -320,8 +317,7 @@ public final class Main {
 
             int idx = token.indexOf('=');
             if (idx == token.length() - 1) {
-                System.err.printf(ServerMessages.MESSAGES.valueExpectedForCommandLineOption(secProperties));
-                System.err.println();
+                System.err.println(ServerMessages.MESSAGES.valueExpectedForCommandLineOption(secProperties));
                 usage();
                 return;
             }

@@ -23,6 +23,7 @@
 package org.jboss.as.ee;
 
 import java.io.IOException;
+import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.Collection;
 import java.util.Set;
@@ -39,10 +40,10 @@ import org.jboss.invocation.proxy.MethodIdentifier;
 import org.jboss.jandex.AnnotationTarget;
 import org.jboss.jandex.DotName;
 import org.jboss.jandex.MethodInfo;
+import org.jboss.logging.Messages;
 import org.jboss.logging.annotations.Cause;
 import org.jboss.logging.annotations.Message;
 import org.jboss.logging.annotations.MessageBundle;
-import org.jboss.logging.Messages;
 import org.jboss.logging.annotations.Param;
 import org.jboss.vfs.VirtualFile;
 
@@ -885,4 +886,12 @@ public interface EeMessages {
     @Message(id = 16703, value = "Module may not be a child of the EAR's library directory. Library directory: %s, module file name: %s")
     DeploymentUnitProcessingException earModuleChildOfLibraryDirectory(String libraryDirectory, String moduleFileName);
 
+    @Message(id = 16704, value = "ManagedReference was null and injection is not optional for injection into field %s")
+    RuntimeException managedReferenceWasNull(Field field);
+
+    @Message(id = 16705, value = "Only 'true' is allowed for 'jboss-descriptor-property-replacement' due to AS7-4892")
+    String onlyTrueAllowedForJBossDescriptorPropertyReplacement_AS7_4892();
+
+    @Message(id = 16706, value = "Global modules may not specify 'annotations', 'meta-inf' or 'services'.")
+    String propertiesNotAllowedOnGlobalModules();
 }

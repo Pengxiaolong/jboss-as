@@ -25,23 +25,26 @@ package org.jboss.as.domain.controller.operations.coordination;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.OP;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.OPERATION_HEADERS;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.OP_ADDR;
-import static org.jboss.as.domain.controller.DomainControllerMessages.MESSAGES;
 
 import java.util.Map;
 
+import org.jboss.as.controller.ControllerMessages;
 import org.jboss.as.controller.OperationContext;
 import org.jboss.as.controller.OperationFailedException;
 import org.jboss.as.controller.OperationStepHandler;
 import org.jboss.as.controller.PathAddress;
 import org.jboss.as.controller.ProxyController;
+import org.jboss.as.controller.extension.ExtensionRegistry;
 import org.jboss.as.controller.registry.ImmutableManagementResourceRegistration;
 import org.jboss.as.controller.registry.Resource;
 import org.jboss.as.domain.controller.LocalHostControllerInfo;
+import org.jboss.as.domain.controller.operations.ApplyMissingDomainModelResourcesHandler;
 import org.jboss.as.host.controller.ignored.IgnoredDomainResourceRegistry;
+import org.jboss.as.host.controller.mgmt.DomainControllerRuntimeIgnoreTransformationRegistry;
 import org.jboss.dmr.ModelNode;
 
 /**
- * Performs the host specific overall execution of an operation on behalf of the domain.
+ * Performs the host specific overall execution of an operation on a slave, on behalf of the domain controller.
  *
  * @author Brian Stansberry (c) 2011 Red Hat Inc.
  */
@@ -50,36 +53,67 @@ public class OperationSlaveStepHandler {
     private final LocalHostControllerInfo localHostControllerInfo;
     private final Map<String, ProxyController> serverProxies;
     private final IgnoredDomainResourceRegistry ignoredDomainResourceRegistry;
+    private final ExtensionRegistry extensionRegistry;
+    private volatile ApplyMissingDomainModelResourcesHandler applyMissingDomainModelResourcesHandler;
 
     OperationSlaveStepHandler(final LocalHostControllerInfo localHostControllerInfo, Map<String, ProxyController> serverProxies,
-                              IgnoredDomainResourceRegistry ignoredDomainResourceRegistry) {
+                              IgnoredDomainResourceRegistry ignoredDomainResourceRegistry, ExtensionRegistry extensionRegistry) {
         this.localHostControllerInfo = localHostControllerInfo;
         this.serverProxies = serverProxies;
         this.ignoredDomainResourceRegistry = ignoredDomainResourceRegistry;
+        this.extensionRegistry = extensionRegistry;
+    }
+
+    void intialize(ApplyMissingDomainModelResourcesHandler applyMissingDomainModelResourcesHandler) {
+        this.applyMissingDomainModelResourcesHandler = applyMissingDomainModelResourcesHandler;
     }
 
     void execute(OperationContext context, ModelNode operation) throws OperationFailedException {
 
         operation.get(OPERATION_HEADERS).remove(PrepareStepHandler.EXECUTE_FOR_COORDINATOR);
+        final ModelNode missingResources = operation.get(OPERATION_HEADERS).remove(DomainControllerRuntimeIgnoreTransformationRegistry.MISSING_DOMAIN_RESOURCES);
 
-        addSteps(context, operation, null, true);
-        context.completeStep();
-    }
-
-    void addSteps(final OperationContext context, final ModelNode operation, final ModelNode response, final boolean recordResponse) throws OperationFailedException {
-
-        final PathAddress originalAddress = PathAddress.pathAddress(operation.get(OP_ADDR));
-        final ImmutableManagementResourceRegistration originalRegistration = context.getResourceRegistration();
-        if (originalRegistration == null) {
-            String operationName = operation.require(OP).asString();
-            throw new OperationFailedException(new ModelNode().set(MESSAGES.noHandlerForOperation(operationName, originalAddress)));
+        if (operation.hasDefined(DomainControllerLockIdUtils.DOMAIN_CONTROLLER_LOCK_ID)) {
+            int id = operation.remove(DomainControllerLockIdUtils.DOMAIN_CONTROLLER_LOCK_ID).asInt();
+            context.attach(DomainControllerLockIdUtils.DOMAIN_CONTROLLER_LOCK_ID_ATTACHMENT, id);
         }
 
-        HostControllerExecutionSupport hostControllerExecutionSupport =
+        final HostControllerExecutionSupport hostControllerExecutionSupport = addSteps(context, operation, null, true);
+
+        //Add the missing resources step first
+        if (missingResources != null) {
+            ModelNode applyMissingResourcesOp = ApplyMissingDomainModelResourcesHandler.createPiggyBackedMissingDataOperation(missingResources);
+            context.addStep(applyMissingResourcesOp, applyMissingDomainModelResourcesHandler, OperationContext.Stage.MODEL, true);
+        }
+
+
+
+        // In case the actual operation fails make sure the result still gets formatted
+        context.completeStep(new OperationContext.RollbackHandler() {
+            @Override
+            public void handleRollback(OperationContext context, ModelNode operation) {
+                if (hostControllerExecutionSupport.getDomainOperation() != null) {
+                    final ModelNode domainResult = hostControllerExecutionSupport.getFormattedDomainResult(context.getResult());
+                    context.getResult().set(domainResult);
+                }
+            }
+        });
+    }
+
+    HostControllerExecutionSupport addSteps(final OperationContext context, final ModelNode operation, final ModelNode response, final boolean recordResponse) throws OperationFailedException {
+        final PathAddress originalAddress = PathAddress.pathAddress(operation.get(OP_ADDR));
+        final ImmutableManagementResourceRegistration originalRegistration = context.getResourceRegistration();
+
+        final HostControllerExecutionSupport hostControllerExecutionSupport =
                 HostControllerExecutionSupport.Factory.create(operation, localHostControllerInfo.getLocalHostName(),
-                        new LazyDomainModelProvider(context), ignoredDomainResourceRegistry);
+                        new LazyDomainModelProvider(context), ignoredDomainResourceRegistry, !localHostControllerInfo.isMasterDomainController() && localHostControllerInfo.isRemoteDomainControllerIgnoreUnaffectedConfiguration(),
+                        extensionRegistry);
         ModelNode domainOp = hostControllerExecutionSupport.getDomainOperation();
         if (domainOp != null) {
+            // Only require an existing registration if the domain op is not ignored
+            if (originalRegistration == null) {
+                throw new OperationFailedException(new ModelNode(ControllerMessages.MESSAGES.noSuchResourceType(originalAddress)));
+            }
             addBasicStep(context, domainOp);
         }
 
@@ -87,6 +121,8 @@ public class OperationSlaveStepHandler {
         ServerOperationsResolverHandler sorh = new ServerOperationsResolverHandler(
                 resolver, hostControllerExecutionSupport, originalAddress, originalRegistration, response);
         context.addStep(sorh, OperationContext.Stage.DOMAIN);
+
+        return hostControllerExecutionSupport;
     }
 
     /**
@@ -97,28 +133,29 @@ public class OperationSlaveStepHandler {
      */
     private void addBasicStep(OperationContext context, ModelNode operation) throws OperationFailedException {
         final String operationName = operation.require(OP).asString();
+
         final OperationStepHandler stepHandler = context.getResourceRegistration().getOperationHandler(PathAddress.EMPTY_ADDRESS, operationName);
         if(stepHandler != null) {
             context.addStep(operation, stepHandler, OperationContext.Stage.MODEL);
         } else {
-            throw new OperationFailedException(new ModelNode(MESSAGES.noHandlerForOperation(operationName, PathAddress.pathAddress(operation.get(OP_ADDR)))));
+            throw new OperationFailedException(new ModelNode(ControllerMessages.MESSAGES.noHandlerForOperation(operationName, PathAddress.pathAddress(operation.get(OP_ADDR)))));
         }
     }
 
     /** Lazily provides a copy of the domain model */
     private static class LazyDomainModelProvider implements HostControllerExecutionSupport.DomainModelProvider {
         private final OperationContext context;
-        private ModelNode domainModel;
+        private Resource domainModelResource;
 
         private LazyDomainModelProvider(OperationContext context) {
             this.context = context;
         }
 
-        public ModelNode getDomainModel() {
-            if (domainModel == null) {
-                domainModel = Resource.Tools.readModel(context.readResourceFromRoot(PathAddress.EMPTY_ADDRESS, true));
+        public Resource getDomainModel() {
+            if (domainModelResource == null) {
+                domainModelResource = context.readResourceFromRoot(PathAddress.EMPTY_ADDRESS, true);
             }
-            return domainModel;
+            return domainModelResource;
         }
     }
 }

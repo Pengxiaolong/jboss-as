@@ -45,7 +45,6 @@ import org.jboss.msc.service.ServiceActivator;
 import org.jboss.msc.service.ServiceActivatorContext;
 import org.jboss.msc.service.ServiceContainer;
 import org.jboss.msc.service.ServiceController;
-import org.jboss.msc.service.ServiceListener;
 import org.jboss.msc.service.ServiceRegistry;
 import org.jboss.msc.service.ServiceTarget;
 import org.jboss.msc.service.StartContext;
@@ -89,9 +88,6 @@ final class ApplicationServerService implements Service<AsyncFuture<ServiceConta
         final Bootstrap.Configuration configuration = this.configuration;
         final ServerEnvironment serverEnvironment = configuration.getServerEnvironment();
 
-        // Install the environment before doing anything
-        serverEnvironment.install();
-
         String prettyVersion = serverEnvironment.getProductConfig().getPrettyVersionString();
         AS_ROOT_LOGGER.serverStarting(prettyVersion);
         if (CONFIG_LOGGER.isDebugEnabled()) {
@@ -128,7 +124,7 @@ final class ApplicationServerService implements Service<AsyncFuture<ServiceConta
         CurrentServiceContainer.setServiceContainer(context.getController().getServiceContainer());
 
         final BootstrapListener bootstrapListener = new BootstrapListener(container, startTime, serviceTarget, futureContainer, prettyVersion);
-        serviceTarget.addListener(ServiceListener.Inheritance.ALL, bootstrapListener);
+        serviceTarget.addListener(bootstrapListener);
         myController.addListener(bootstrapListener);
         // Install either a local or remote content repository
         if(standalone) {

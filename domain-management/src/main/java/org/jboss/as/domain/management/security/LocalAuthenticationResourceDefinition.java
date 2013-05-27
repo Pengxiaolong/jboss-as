@@ -22,12 +22,11 @@
 
 package org.jboss.as.domain.management.security;
 
-import org.jboss.as.controller.descriptions.common.CommonDescriptions;
+import org.jboss.as.controller.descriptions.common.ControllerResolver;
 import org.jboss.as.domain.management.ModelDescriptionConstants;
 
 import org.jboss.as.controller.AttributeDefinition;
 import org.jboss.as.controller.PathElement;
-import org.jboss.as.controller.ResourceDefinition;
 import org.jboss.as.controller.SimpleAttributeDefinition;
 import org.jboss.as.controller.SimpleAttributeDefinitionBuilder;
 import org.jboss.as.controller.SimpleResourceDefinition;
@@ -38,27 +37,30 @@ import org.jboss.as.controller.registry.OperationEntry;
 import org.jboss.dmr.ModelType;
 
 /**
- * {@link ResourceDefinition} for a security realm's local authentication resource.
+ * {@link org.jboss.as.controller.ResourceDefinition} for a security realm's local authentication resource.
  *
  * @author <a href="mailto:darran.lofthouse@jboss.com">Darran Lofthouse</a>
  */
 public class LocalAuthenticationResourceDefinition extends SimpleResourceDefinition {
 
-    public static final SimpleAttributeDefinition DEFAULT_USER = new SimpleAttributeDefinitionBuilder(
-            ModelDescriptionConstants.DEFAULT_USER, ModelType.STRING, false)
-            .setValidator(new StringLengthValidator(1, Integer.MAX_VALUE, true, false)).setAllowNull(true)
-            .setFlags(AttributeAccess.Flag.RESTART_RESOURCE_SERVICES).build();
+    public static final SimpleAttributeDefinition DEFAULT_USER = new SimpleAttributeDefinitionBuilder(ModelDescriptionConstants.DEFAULT_USER, ModelType.STRING)
+            .setValidator(new StringLengthValidator(1, Integer.MAX_VALUE, true, true))
+            .setAllowNull(true)
+            .setAllowExpression(true)
+            .setFlags(AttributeAccess.Flag.RESTART_RESOURCE_SERVICES)
+            .build();
 
-    public static final SimpleAttributeDefinition ALLOWED_USERS = new SimpleAttributeDefinitionBuilder(
-            ModelDescriptionConstants.ALLOWED_USERS, ModelType.STRING, false)
-            .setValidator(new StringLengthValidator(1, Integer.MAX_VALUE, true, false)).setAllowNull(true)
+    public static final SimpleAttributeDefinition ALLOWED_USERS = new SimpleAttributeDefinitionBuilder(ModelDescriptionConstants.ALLOWED_USERS, ModelType.STRING)
+            .setValidator(new StringLengthValidator(1, Integer.MAX_VALUE, true, true))
+            .setAllowNull(true)
+            .setAllowExpression(true)
             .setFlags(AttributeAccess.Flag.RESTART_RESOURCE_SERVICES).build();
 
     public static final AttributeDefinition[] ATTRIBUTE_DEFINITIONS = { DEFAULT_USER, ALLOWED_USERS };
 
     public LocalAuthenticationResourceDefinition() {
         super(PathElement.pathElement(ModelDescriptionConstants.AUTHENTICATION, ModelDescriptionConstants.LOCAL),
-                CommonDescriptions.getResourceDescriptionResolver("core.management.security-realm.authentication.local"),
+                ControllerResolver.getResolver("core.management.security-realm.authentication.local"),
                 new SecurityRealmChildAddHandler(true, ATTRIBUTE_DEFINITIONS), new SecurityRealmChildRemoveHandler(true),
                 OperationEntry.Flag.RESTART_RESOURCE_SERVICES, OperationEntry.Flag.RESTART_RESOURCE_SERVICES);
     }

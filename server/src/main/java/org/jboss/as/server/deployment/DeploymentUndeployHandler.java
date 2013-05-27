@@ -18,6 +18,7 @@
  */
 package org.jboss.as.server.deployment;
 
+import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.OP_ADDR;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.UNDEPLOY;
 import static org.jboss.as.server.controller.resources.DeploymentAttributes.ENABLED;
 import static org.jboss.as.server.controller.resources.DeploymentAttributes.RUNTIME_NAME;
@@ -26,7 +27,6 @@ import org.jboss.as.controller.OperationContext;
 import org.jboss.as.controller.OperationFailedException;
 import org.jboss.as.controller.OperationStepHandler;
 import org.jboss.as.controller.PathAddress;
-import org.jboss.as.controller.operations.common.Util;
 import org.jboss.as.server.services.security.AbstractVaultReader;
 import org.jboss.dmr.ModelNode;
 /**
@@ -49,7 +49,11 @@ public class DeploymentUndeployHandler implements OperationStepHandler {
         final String deploymentUnitName = RUNTIME_NAME.resolveModelAttribute(context, model).asString();
         model.get(ENABLED.getName()).set(false);
 
-        DeploymentHandlerUtil.undeploy(context, deploymentUnitName, vaultReader);
+        final ModelNode opAddr = operation.get(OP_ADDR);
+        PathAddress address = PathAddress.pathAddress(opAddr);
+        final String managementName = address.getLastElement().getValue();
+
+        DeploymentHandlerUtil.undeploy(context, managementName, deploymentUnitName, vaultReader);
 
         context.stepCompleted();
     }

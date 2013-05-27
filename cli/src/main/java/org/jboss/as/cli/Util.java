@@ -21,6 +21,8 @@
  */
 package org.jboss.as.cli;
 
+import java.io.File;
+import java.io.FileInputStream;
 import java.io.IOException;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -36,8 +38,10 @@ import org.jboss.as.cli.operation.OperationFormatException;
 import org.jboss.as.cli.operation.OperationRequestAddress;
 import org.jboss.as.cli.operation.impl.DefaultOperationRequestBuilder;
 import org.jboss.as.controller.client.ModelControllerClient;
+import org.jboss.as.protocol.StreamUtils;
 import org.jboss.dmr.ModelNode;
 import org.jboss.dmr.Property;
+import org.wildfly.security.manager.WildFlySecurityManager;
 
 /**
  *
@@ -45,7 +49,7 @@ import org.jboss.dmr.Property;
  */
 public class Util {
 
-    public static final String LINE_SEPARATOR = SecurityActions.getSystemProperty("line.separator");
+    public static final String LINE_SEPARATOR = WildFlySecurityManager.getPropertyPrivileged("line.separator", null);
 
     public static final String ACCESS_TYPE = "access-type";
     public static final String ADD = "add";
@@ -110,7 +114,7 @@ public class Util {
     public static final String READ_WRITE = "read-write";
     public static final String READ_RESOURCE = "read-resource";
     public static final String READ_RESOURCE_DESCRIPTION = "read-resource-description";
-    public static final String REGULAR_EXPRESSION = "regular-expression";
+    public static final String REDEPLOY = "redeploy";
     public static final String RELEASE_CODENAME = "release-codename";
     public static final String RELEASE_VERSION = "release-version";
     public static final String REMOVE = "remove";
@@ -144,6 +148,7 @@ public class Util {
     public static final String UNDEFINE_ATTRIBUTE = "undefine-attribute";
     public static final String UNDEPLOY = "undeploy";
     public static final String UPLOAD_DEPLOYMENT_STREAM = "upload-deployment-stream";
+    public static final String URL = "url";
     public static final String VALID = "valid";
     public static final String VALIDATE_ADDRESS = "validate-address";
     public static final String VALUE = "value";
@@ -151,7 +156,7 @@ public class Util {
     public static final String WRITE_ATTRIBUTE = "write-attribute";
 
     public static boolean isWindows() {
-        return SecurityActions.getSystemProperty("os.name").toLowerCase(Locale.ENGLISH).indexOf("windows") >= 0;
+        return WildFlySecurityManager.getPropertyPrivileged("os.name", null).toLowerCase(Locale.ENGLISH).indexOf("windows") >= 0;
     }
 
     public static boolean isSuccess(ModelNode operationResponse) {
@@ -178,7 +183,7 @@ public class Util {
             if(descr.get(Util.ROLLED_BACK).asBoolean()) {
                 buf.append("(The operation was rolled back)");
             } else if(descr.hasDefined(Util.ROLLBACK_FAILURE_DESCRIPTION)){
-                buf.append(descr.get(Util.ROLLBACK_FAILURE_DESCRIPTION).asString());
+                buf.append(descr.get(Util.ROLLBACK_FAILURE_DESCRIPTION).toString());
             } else {
                 buf.append("(The operation also failed to rollback, failure description is not available.)");
             }
@@ -219,21 +224,14 @@ public class Util {
         return list;
     }
 
-    protected static String wildcardToJavaRegex(String expr) {
+    public static String wildcardToJavaRegex(String expr) {
         if(expr == null) {
             throw new IllegalArgumentException("expr is null");
         }
-        final StringBuilder buf = new StringBuilder();
-        for(int i = 0; i < expr.length(); ++i) {
-            final char ch = expr.charAt(i);
-            if(ch == '*') {
-                buf.append('.');
-            } else if(ch == '.') {
-                buf.append('\\');
-            }
-            buf.append(ch);
-        }
-        return buf.toString();
+        String regex = expr.replaceAll("([(){}\\[\\].+^$])", "\\\\$1"); // escape regex characters
+        regex = regex.replaceAll("\\*", ".*"); // replace * with .*
+        regex = regex.replaceAll("\\?", "."); // replace ? with .
+        return regex;
     }
 
     public static boolean listContains(ModelNode operationResult, String item) {
@@ -482,11 +480,34 @@ public class Util {
         return Collections.emptyList();
     }
 
-    public static List<String> getDeployments(ModelControllerClient client, String wildcardExpr) {
+    public static List<String> getDeployments(ModelControllerClient client, String serverGroup) {
+
+        final ModelNode request = new ModelNode();
+        ModelNode address = request.get(ADDRESS);
+        if(serverGroup != null) {
+            address.add(SERVER_GROUP, serverGroup);
+        }
+        request.get(OPERATION).set(READ_CHILDREN_NAMES);
+        request.get(CHILD_TYPE).set(DEPLOYMENT);
+        try {
+            final ModelNode outcome = client.execute(request);
+            if (isSuccess(outcome)) {
+                return getList(outcome);
+            }
+        } catch (Exception e) {
+        }
+
+        return Collections.emptyList();
+    }
+
+    public static List<String> getMatchingDeployments(ModelControllerClient client, String wildcardExpr, String serverGroup) {
 
         final DefaultOperationRequestBuilder builder = new DefaultOperationRequestBuilder();
         final ModelNode request;
         try {
+            if(serverGroup != null) {
+                builder.addNode(Util.SERVER_GROUP, serverGroup);
+            }
             builder.setOperationName(Util.READ_CHILDREN_NAMES);
             builder.addProperty(Util.CHILD_TYPE, Util.DEPLOYMENT);
             request = builder.buildRequest();
@@ -878,5 +899,23 @@ public class Util {
 
     public static String resolveProperties(String s) {
         return StringPropertyReplacer.replaceProperties(s);
+    }
+
+    public static byte[] readBytes(File f) throws OperationFormatException {
+        byte[] bytes;
+        FileInputStream is = null;
+        try {
+            is = new FileInputStream(f);
+            bytes = new byte[(int) f.length()];
+            int read = is.read(bytes);
+            if(read != bytes.length) {
+                throw new OperationFormatException("Failed to read bytes from " + f.getAbsolutePath() + ": " + read + " from " + f.length());
+            }
+        } catch (Exception e) {
+            throw new OperationFormatException("Failed to read file " + f.getAbsolutePath(), e);
+        } finally {
+            StreamUtils.safeClose(is);
+        }
+        return bytes;
     }
 }

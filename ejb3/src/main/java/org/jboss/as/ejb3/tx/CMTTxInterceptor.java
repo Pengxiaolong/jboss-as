@@ -21,6 +21,22 @@
  */
 package org.jboss.as.ejb3.tx;
 
+import java.rmi.RemoteException;
+import java.util.Random;
+
+import javax.ejb.EJBException;
+import javax.ejb.EJBTransactionRolledbackException;
+import javax.ejb.NoSuchEJBException;
+import javax.ejb.NoSuchEntityException;
+import javax.ejb.TransactionAttributeType;
+import javax.transaction.HeuristicMixedException;
+import javax.transaction.HeuristicRollbackException;
+import javax.transaction.RollbackException;
+import javax.transaction.Status;
+import javax.transaction.SystemException;
+import javax.transaction.Transaction;
+import javax.transaction.TransactionManager;
+
 import org.jboss.as.ee.component.Component;
 import org.jboss.as.ejb3.EjbLogger;
 import org.jboss.as.ejb3.EjbMessages;
@@ -33,20 +49,6 @@ import org.jboss.invocation.InterceptorContext;
 import org.jboss.invocation.InterceptorFactory;
 import org.jboss.tm.TransactionTimeoutConfiguration;
 import org.jboss.util.deadlock.ApplicationDeadlockException;
-
-import javax.ejb.EJBException;
-import javax.ejb.EJBTransactionRolledbackException;
-import javax.ejb.NoSuchEJBException;
-import javax.ejb.TransactionAttributeType;
-import javax.transaction.HeuristicMixedException;
-import javax.transaction.HeuristicRollbackException;
-import javax.transaction.RollbackException;
-import javax.transaction.Status;
-import javax.transaction.SystemException;
-import javax.transaction.Transaction;
-import javax.transaction.TransactionManager;
-import java.rmi.RemoteException;
-import java.util.Random;
 
 /**
  * Ensure the correct exceptions are thrown based on both caller
@@ -77,7 +79,7 @@ public class CMTTxInterceptor implements Interceptor {
     protected void endTransaction(TransactionManager tm, Transaction tx) {
         try {
             if (tx != tm.getTransaction()) {
-                throw EjbLogger.EJB3_LOGGER.wrongTxOnThread(tx, tm.getTransaction());
+                throw EjbMessages.MESSAGES.wrongTxOnThread(tx, tm.getTransaction());
             }
 
             if (tx.getStatus() == Status.STATUS_MARKED_ROLLBACK) {
@@ -130,7 +132,7 @@ public class CMTTxInterceptor implements Interceptor {
                 Throwable cause = t;
                 t = new EJBTransactionRolledbackException("Unexpected Error");
                 t.initCause(cause);
-            } else if (t instanceof NoSuchEJBException) {
+            } else if (t instanceof NoSuchEJBException || t instanceof NoSuchEntityException) {
                 // If this is an NoSuchEJBException, pass through to the caller
 
             } else if (t instanceof RuntimeException) {
@@ -216,7 +218,7 @@ public class CMTTxInterceptor implements Interceptor {
             case SUPPORTS:
                 return supports(invocation, component);
             default:
-                throw EjbLogger.EJB3_LOGGER.unknownTxAttributeOnInvocation(attr, invocation);
+                throw EjbMessages.MESSAGES.unknownTxAttributeOnInvocation(attr, invocation);
         }
     }
 
@@ -229,17 +231,13 @@ public class CMTTxInterceptor implements Interceptor {
         throw new RuntimeException("UNREACHABLE");
     }
 
-    protected Object invokeInNoTx(InterceptorContext invocation) throws Exception {
+    protected Object invokeInNoTx(InterceptorContext invocation, final EJBComponent component) throws Exception {
         try {
             return invocation.proceed();
         } catch (Throwable t) {
-            if (t instanceof Exception) {
-                throw (Exception) t;
-            } else {
-                //If this is an error we wrap in in an EJBException
-                throw new EJBException(new RuntimeException(t));
-            }
+            handleExceptionInNoTx(invocation, t, component);
         }
+        throw new RuntimeException("UNREACHABLE");
     }
 
     protected Object invokeInOurTx(InterceptorContext invocation, TransactionManager tm, final EJBComponent component) throws Exception {
@@ -275,7 +273,7 @@ public class CMTTxInterceptor implements Interceptor {
         final TransactionManager tm = component.getTransactionManager();
         Transaction tx = tm.getTransaction();
         if (tx == null) {
-            throw EjbLogger.EJB3_LOGGER.txRequiredForInvocation(invocation);
+            throw EjbMessages.MESSAGES.txRequiredForInvocation(invocation);
         }
         return invokeInCallerTx(invocation, tx, component);
     }
@@ -283,9 +281,9 @@ public class CMTTxInterceptor implements Interceptor {
     protected Object never(InterceptorContext invocation, final EJBComponent component) throws Exception {
         final TransactionManager tm = component.getTransactionManager();
         if (tm.getTransaction() != null) {
-            throw EjbLogger.EJB3_LOGGER.txPresentForNeverTxAttribute();
+            throw EjbMessages.MESSAGES.txPresentForNeverTxAttribute();
         }
-        return invokeInNoTx(invocation);
+        return invokeInNoTx(invocation, component);
     }
 
     protected Object notSupported(InterceptorContext invocation, final EJBComponent component) throws Exception {
@@ -294,20 +292,13 @@ public class CMTTxInterceptor implements Interceptor {
         if (tx != null) {
             tm.suspend();
             try {
-                return invokeInNoTx(invocation);
-            } catch (Throwable e) {
-                handleExceptionInNoTx(invocation, e, component);
+                return invokeInNoTx(invocation, component);
             } finally {
                 tm.resume(tx);
             }
         } else {
-            try {
-                return invokeInNoTx(invocation);
-            } catch (Throwable e) {
-                handleExceptionInNoTx(invocation, e, component);
-            }
+            return invokeInNoTx(invocation, component);
         }
-        throw new RuntimeException("UNREACHABLE");
     }
 
     protected Object required(final InterceptorContext invocation, final EJBComponent component, final int timeout) throws Exception {
@@ -381,7 +372,7 @@ public class CMTTxInterceptor implements Interceptor {
         final TransactionManager tm = component.getTransactionManager();
         Transaction tx = tm.getTransaction();
         if (tx == null) {
-            return invokeInNoTx(invocation);
+            return invokeInNoTx(invocation, component);
         } else {
             return invokeInCallerTx(invocation, tx, component);
         }

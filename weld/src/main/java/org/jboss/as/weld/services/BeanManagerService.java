@@ -24,13 +24,15 @@ package org.jboss.as.weld.services;
 import javax.enterprise.inject.spi.BeanManager;
 
 import org.jboss.as.server.deployment.DeploymentUnit;
-import org.jboss.as.weld.WeldContainer;
+import org.jboss.as.weld.WeldBootstrapService;
 import org.jboss.msc.service.Service;
 import org.jboss.msc.service.ServiceName;
 import org.jboss.msc.service.StartContext;
 import org.jboss.msc.service.StartException;
 import org.jboss.msc.service.StopContext;
 import org.jboss.msc.value.InjectedValue;
+import org.jboss.weld.bean.builtin.BeanManagerProxy;
+import org.jboss.weld.manager.BeanManagerImpl;
 
 /**
  * Service that provides access to the BeanManger for a (sub)deployment
@@ -42,9 +44,9 @@ public class BeanManagerService implements Service<BeanManager> {
 
     public static final ServiceName NAME = ServiceName.of("beanmanager");
 
-    private final InjectedValue<WeldContainer> weldContainer = new InjectedValue<WeldContainer>();
+    private final InjectedValue<WeldBootstrapService> weldContainer = new InjectedValue<WeldBootstrapService>();
     private final String beanDeploymentArchiveId;
-    private volatile BeanManager beanManager;
+    private volatile BeanManagerImpl beanManager;
 
     public BeanManagerService(String beanDeploymentArchiveId) {
         this.beanDeploymentArchiveId = beanDeploymentArchiveId;
@@ -62,10 +64,10 @@ public class BeanManagerService implements Service<BeanManager> {
 
     @Override
     public BeanManager getValue() throws IllegalStateException, IllegalArgumentException {
-        return beanManager;
+        return new BeanManagerProxy(beanManager);
     }
 
-    public InjectedValue<WeldContainer> getWeldContainer() {
+    public InjectedValue<WeldBootstrapService> getWeldContainer() {
         return weldContainer;
     }
 

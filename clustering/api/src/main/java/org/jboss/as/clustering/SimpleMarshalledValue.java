@@ -28,8 +28,6 @@ import java.io.Externalizable;
 import java.io.IOException;
 import java.io.ObjectInput;
 import java.io.ObjectOutput;
-import java.security.AccessController;
-import java.security.PrivilegedAction;
 import java.util.Arrays;
 
 import org.jboss.marshalling.Marshaller;
@@ -73,21 +71,7 @@ public class SimpleMarshalledValue<T> implements MarshalledValue<T, MarshallingC
         Marshaller marshaller = this.context.createMarshaller(version);
         try {
             marshaller.start(data);
-
-            // Workaround for AS7-2496
-            ClassLoader currentLoader = null;
-            ClassLoader contextLoader = context.getContextClassLoader(version);
-            if (contextLoader != null) {
-                currentLoader = getCurrentThreadContextClassLoader();
-                setCurrentThreadContextClassLoader(contextLoader);
-            }
-            try {
-                marshaller.writeObject(this.object);
-            } finally {
-                if (contextLoader != null) {
-                    setCurrentThreadContextClassLoader(currentLoader);
-                }
-            }
+            marshaller.writeObject(this.object);
             marshaller.finish();
             return output.toByteArray();
         } finally {
@@ -111,20 +95,7 @@ public class SimpleMarshalledValue<T> implements MarshalledValue<T, MarshallingC
                 Unmarshaller unmarshaller = context.createUnmarshaller(version);
                 try {
                     unmarshaller.start(data);
-                    // Workaround for AS7-2496
-                    ClassLoader currentLoader = null;
-                    ClassLoader contextLoader = context.getContextClassLoader(version);
-                    if (contextLoader != null) {
-                        currentLoader = getCurrentThreadContextClassLoader();
-                        setCurrentThreadContextClassLoader(contextLoader);
-                    }
-                    try {
-                        this.object = (T) unmarshaller.readObject();
-                    } finally {
-                        if (contextLoader != null) {
-                            setCurrentThreadContextClassLoader(currentLoader);
-                        }
-                    }
+                    this.object = (T) unmarshaller.readObject();
                     unmarshaller.finish();
                     this.bytes = null; // Free up memory
                 } finally {
@@ -190,34 +161,5 @@ public class SimpleMarshalledValue<T> implements MarshalledValue<T, MarshallingC
             in.read(bytes);
         }
         this.bytes = bytes;
-    }
-
-    static ClassLoader getCurrentThreadContextClassLoader() {
-        if(System.getSecurityManager() == null) {
-            return Thread.currentThread().getContextClassLoader();
-        } else {
-            PrivilegedAction<ClassLoader> action = new PrivilegedAction<ClassLoader>() {
-                @Override
-                public ClassLoader run() {
-                    return Thread.currentThread().getContextClassLoader();
-                }
-            };
-            return AccessController.doPrivileged(action);
-        }
-    }
-
-    static void setCurrentThreadContextClassLoader(final ClassLoader loader) {
-        if(System.getSecurityManager() == null) {
-            Thread.currentThread().setContextClassLoader(loader);
-        } else {
-            PrivilegedAction<Void> action = new PrivilegedAction<Void>() {
-                @Override
-                public Void run() {
-                    Thread.currentThread().setContextClassLoader(loader);
-                    return null;
-                }
-            };
-            AccessController.doPrivileged(action);
-        }
     }
 }

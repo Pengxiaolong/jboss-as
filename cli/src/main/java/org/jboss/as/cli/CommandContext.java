@@ -124,11 +124,12 @@ public interface CommandContext {
      * If the port is less than zero, the default controller port will be used,
      * which is 9999.
      *
+     * @param protocol the protocol to connect with, either remote, http or https
      * @param host the host to connect with
      * @param port the port to connect on
      * @throws CommandLineException  in case the attempt to connect failed
      */
-    void connectController(String host, int port) throws CommandLineException;
+    void connectController(String protocol, String host, int port) throws CommandLineException;
 
     /**
      * Bind the controller to an existing, connected client.
@@ -343,4 +344,48 @@ public interface CommandContext {
      * false if system properties should be resolved on the server side.
      */
     void setResolveParameterValues(boolean resolve);
+
+    /**
+     * Whether the info or error messages should be written to the terminal output.
+     *
+     * The output of the info and error messages is done in the following way:
+     * 1) the message is always logged using a logger
+     *    (which is disabled in the config by default);
+     * 2) if the output target was specified on the command line using '>'
+     *    it would be used;
+     * 3) if the output target was not specified, whether the message is
+     *    written or not to the terminal output will depend on
+     *    whether it's a silent mode or not.
+     *
+     * @return  true if the CLI is in the silent mode, i.e. not writing info
+     *          and error messages to the terminal output, otherwise - false.
+     */
+    boolean isSilent();
+
+    /**
+     * Enables of disables the silent mode.
+     *
+     * @param silent  true if the CLI should go into the silent mode,
+     *                false if the CLI should resume writing info
+     *                and error messages to the terminal output.
+     */
+    void setSilent(boolean silent);
+
+    /**
+     * Returns the current terminal window width in case the console
+     * has been initialized. Otherwise -1.
+     *
+     * @return  current terminal with if the console has been initialized,
+     *          -1 otherwise
+     */
+    int getTerminalWidth();
+
+    /**
+     * Returns the current terminal window height in case the console
+     * has been initialized. Otherwise -1.
+     *
+     * @return  current terminal height if the console has been initialized,
+     *          -1 otherwise
+     */
+    int getTerminalHeight();
 }

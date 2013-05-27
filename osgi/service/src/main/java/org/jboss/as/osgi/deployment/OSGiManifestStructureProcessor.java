@@ -25,15 +25,17 @@ package org.jboss.as.osgi.deployment;
 import java.util.jar.Manifest;
 
 import org.jboss.as.osgi.OSGiConstants;
+import org.jboss.as.osgi.OSGiConstants.DeploymentType;
+import org.jboss.as.osgi.service.BundleLifecycleIntegration;
 import org.jboss.as.server.deployment.Attachments;
 import org.jboss.as.server.deployment.DeploymentPhaseContext;
 import org.jboss.as.server.deployment.DeploymentUnit;
 import org.jboss.as.server.deployment.DeploymentUnitProcessingException;
 import org.jboss.as.server.deployment.DeploymentUnitProcessor;
 import org.jboss.as.server.deployment.module.ResourceRoot;
-import org.jboss.osgi.metadata.OSGiMetaData;
-import org.jboss.osgi.metadata.OSGiMetaDataBuilder;
-import org.jboss.osgi.spi.OSGiManifestBuilder;
+import org.jboss.osgi.deployment.deployer.Deployment;
+import org.jboss.osgi.framework.spi.IntegrationConstants;
+import org.jboss.osgi.metadata.OSGiManifestBuilder;
 
 /**
  * Processes deployments that contain a valid OSGi manifest.
@@ -48,26 +50,31 @@ public class OSGiManifestStructureProcessor implements DeploymentUnitProcessor {
     @Override
     public void deploy(DeploymentPhaseContext phaseContext) throws DeploymentUnitProcessingException {
 
-        final DeploymentUnit depUnit = phaseContext.getDeploymentUnit();
-        if (depUnit.hasAttachment(Attachments.OSGI_MANIFEST) || depUnit.hasAttachment(OSGiConstants.OSGI_METADATA_KEY))
+        DeploymentUnit depUnit = phaseContext.getDeploymentUnit();
+        Manifest manifest = depUnit.getAttachment(Attachments.OSGI_MANIFEST);
+        if (manifest != null)
             return;
 
-        final ResourceRoot deploymentRoot = depUnit.getAttachment(Attachments.DEPLOYMENT_ROOT);
-        if (deploymentRoot == null)
-            return;
+        // Check if we already have a bundle {@link Deployment}
+        Deployment dep = BundleLifecycleIntegration.getDeployment(depUnit.getName());
+        if (dep != null) {
+            manifest = dep.getAttachment(IntegrationConstants.MANIFEST_KEY);
+        }
+
+        ResourceRoot deploymentRoot = depUnit.getAttachment(Attachments.DEPLOYMENT_ROOT);
+        if (manifest == null && deploymentRoot != null) {
+            manifest = deploymentRoot.getAttachment(Attachments.MANIFEST);
+        }
 
         // Check whether this is an OSGi manifest
-        Manifest manifest = deploymentRoot.getAttachment(Attachments.MANIFEST);
         if (OSGiManifestBuilder.isValidBundleManifest(manifest)) {
             depUnit.putAttachment(Attachments.OSGI_MANIFEST, manifest);
-            OSGiMetaData metadata = OSGiMetaDataBuilder.load(manifest);
-            depUnit.putAttachment(OSGiConstants.OSGI_METADATA_KEY, metadata);
+            depUnit.putAttachment(OSGiConstants.DEPLOYMENT_TYPE_KEY, DeploymentType.Bundle);
         }
     }
 
     @Override
     public void undeploy(DeploymentUnit deploymentUnit) {
         deploymentUnit.removeAttachment(Attachments.OSGI_MANIFEST);
-        deploymentUnit.removeAttachment(OSGiConstants.OSGI_METADATA_KEY);
     }
 }

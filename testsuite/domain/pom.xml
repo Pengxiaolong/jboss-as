@@ -27,19 +27,19 @@
     <modelVersion>4.0.0</modelVersion>
 
     <parent>
-        <artifactId>jboss-as-testsuite</artifactId>
-        <groupId>org.jboss.as</groupId>
-        <version>7.2.0.Alpha1-SNAPSHOT</version>
+        <artifactId>wildfly-testsuite</artifactId>
+        <groupId>org.wildfly</groupId>
+        <version>8.0.0.Alpha2-SNAPSHOT</version>
     </parent>
 
-    <artifactId>jboss-as-testsuite-integration-domain</artifactId>
-    <name>JBoss Application Server Test Suite: Domain Mode Integration Tests</name>
+    <artifactId>wildfly-testsuite-integration-domain</artifactId>
+    <name>WildFly Test Suite: Domain Mode Integration Tests</name>
 
     <properties>
 
         <!-- used to provide an absolute location for the distribution under test -->
         <!-- this value is overridden in modules with the correct relative pathname -->
-        <jboss.dist>${project.basedir}/../../build/target/jboss-as-${jboss.as.release.version}</jboss.dist>
+        <jboss.dist>${project.basedir}/../../${wildfly.build.output.dir}</jboss.dist>
         <jboss.home>${jboss.dist}</jboss.home>
 
         <!-- Used to provide an absolute location for the XSLT scripts. -->
@@ -77,6 +77,7 @@
                         <jboss.test.host.slave.address>${node1}</jboss.test.host.slave.address>
                     </systemPropertyVariables>
                     <includes>
+                         <include>org/jboss/as/test/integration/autoignore/*TestCase.java</include>
                          <include>org/jboss/as/test/integration/respawn/*TestCase.java</include>
                          <include>org/jboss/as/test/integration/domain/*TestCase.java</include>
                          <include>org/jboss/as/test/integration/domain/suites/*TestSuite.java</include>

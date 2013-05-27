@@ -24,21 +24,19 @@ package org.jboss.as.controller.extension;
 
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.EXTENSION;
 
-import org.jboss.as.controller.Extension;
 import org.jboss.as.controller.PathElement;
-import org.jboss.as.controller.ResourceDefinition;
 import org.jboss.as.controller.SimpleAttributeDefinition;
 import org.jboss.as.controller.SimpleAttributeDefinitionBuilder;
 import org.jboss.as.controller.SimpleResourceDefinition;
 import org.jboss.as.controller.descriptions.ModelDescriptionConstants;
-import org.jboss.as.controller.descriptions.common.CommonDescriptions;
+import org.jboss.as.controller.descriptions.common.ControllerResolver;
 import org.jboss.as.controller.operations.validation.StringLengthValidator;
 import org.jboss.as.controller.registry.ManagementResourceRegistration;
 import org.jboss.as.controller.registry.OperationEntry;
 import org.jboss.dmr.ModelType;
 
 /**
- * {@link ResourceDefinition} for an {@link Extension} resource.
+ * {@link SimpleResourceDefinition} for an {@link org.jboss.as.controller.Extension} resource.
  *
  * @author Brian Stansberry (c) 2011 Red Hat Inc.
  */
@@ -47,9 +45,9 @@ public class ExtensionResourceDefinition extends SimpleResourceDefinition {
     public static final SimpleAttributeDefinition MODULE = new SimpleAttributeDefinitionBuilder(ModelDescriptionConstants.MODULE, ModelType.STRING, false)
             .setValidator(new StringLengthValidator(1)).build();
 
-    public ExtensionResourceDefinition(final ExtensionRegistry extensionRegistry, final boolean parallelBoot, boolean slaveHC) {
-        super(PathElement.pathElement(EXTENSION), CommonDescriptions.getResourceDescriptionResolver(EXTENSION, false),
-                new ExtensionAddHandler(extensionRegistry, parallelBoot, slaveHC), new ExtensionRemoveHandler(extensionRegistry),
+    public ExtensionResourceDefinition(final ExtensionRegistry extensionRegistry, final boolean parallelBoot, final boolean standalone, final boolean slaveHC) {
+        super(PathElement.pathElement(EXTENSION), ControllerResolver.getResolver(EXTENSION),
+                new ExtensionAddHandler(extensionRegistry, parallelBoot, standalone, slaveHC), new ExtensionRemoveHandler(extensionRegistry),
                 OperationEntry.Flag.RESTART_NONE, OperationEntry.Flag.RESTART_NONE);
     }
 

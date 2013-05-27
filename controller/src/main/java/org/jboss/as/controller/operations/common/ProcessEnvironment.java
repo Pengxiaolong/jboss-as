@@ -29,7 +29,6 @@ import java.net.UnknownHostException;
 import java.util.UUID;
 
 import org.jboss.as.controller.AttributeDefinition;
-import org.jboss.as.controller.ControlledProcessState;
 import org.jboss.as.controller.ControllerMessages;
 import org.jboss.as.controller.OperationContext;
 import org.jboss.as.controller.OperationFailedException;
@@ -96,7 +95,7 @@ public abstract class ProcessEnvironment {
      *
      * @return {@code true} if the update can be applied to the runtime system properties; {@code} false if it
      *         should just be stored in the persistent configuration and the process should be put into
-     *         {@link ControlledProcessState.State#RELOAD_REQUIRED reload-required state}.
+     *         {@link org.jboss.as.controller.ControlledProcessState.State#RELOAD_REQUIRED reload-required state}.
      *
      * @throws OperationFailedException if a change to the given property is not allowed at all; e.g. changing
      *                                  {@code jboss.server.base.dir} after primordial boot is not allowed; the
@@ -148,9 +147,9 @@ public abstract class ProcessEnvironment {
 
             NAME.validateAndSet(mockOp, model);
 
-            boolean booting = context.isBooting();
+            final boolean booting = context.isBooting();
             String resolved = null;
-            if (context.isBooting()) {
+            if (booting) {
                 final ModelNode resolvedNode = NAME.resolveModelAttribute(context, model);
                 resolved = resolvedNode.isDefined() ? resolvedNode.asString() : null;
                 resolved = resolved == null ? null : resolveGUID(resolved);
@@ -158,13 +157,19 @@ public abstract class ProcessEnvironment {
                 context.reloadRequired();
             }
 
-            if (context.completeStep() == OperationContext.ResultAction.KEEP) {
-                if (booting) {
-                    ProcessEnvironment.this.setProcessName(resolved);
+            final String processName = resolved;
+            context.completeStep(new OperationContext.ResultHandler() {
+                @Override
+                public void handleResult(OperationContext.ResultAction resultAction, OperationContext context, ModelNode operation) {
+                    if (resultAction == OperationContext.ResultAction.KEEP) {
+                        if (booting) {
+                            ProcessEnvironment.this.setProcessName(processName);
+                        }
+                    } else if (!booting) {
+                        context.revertReloadRequired();
+                    }
                 }
-            } else if (!booting) {
-                context.revertReloadRequired();
-            }
+            });
         }
     }
 

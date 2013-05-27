@@ -36,6 +36,7 @@ import org.jboss.as.controller.SimpleAttributeDefinition;
 import org.jboss.as.controller.SimpleAttributeDefinitionBuilder;
 import org.jboss.as.controller.SimpleResourceDefinition;
 import org.jboss.as.controller.descriptions.ModelDescriptionConstants;
+import org.jboss.as.controller.operations.common.GenericSubsystemDescribeHandler;
 import org.jboss.as.controller.registry.AttributeAccess;
 import org.jboss.as.controller.registry.ManagementResourceRegistration;
 import org.jboss.as.controller.registry.Resource;
@@ -64,12 +65,21 @@ public class JMXSubsystemRootResource extends SimpleResourceDefinition {
     @Override
     public void registerOperations(ManagementResourceRegistration resourceRegistration) {
         super.registerOperations(resourceRegistration);
+        resourceRegistration.registerOperationHandler(GenericSubsystemDescribeHandler.DEFINITION, GenericSubsystemDescribeHandler.INSTANCE);
     }
 
     @Override
     public void registerAttributes(ManagementResourceRegistration resourceRegistration) {
         resourceRegistration.registerReadWriteAttribute(SHOW_MODEL_ALIAS, ShowModelAliasReadHandler.INSTANCE, ShowModelAliasWriteHandler.INSTANCE);
     }
+
+    @Override
+    public void registerChildren(ManagementResourceRegistration resourceRegistration) {
+        resourceRegistration.registerSubModel(ExposeModelResourceResolved.INSTANCE);
+        resourceRegistration.registerSubModel(ExposeModelResourceExpression.INSTANCE);
+        resourceRegistration.registerSubModel(RemotingConnectorResource.INSTANCE);
+    }
+
 
     private static class ShowModelAliasWriteHandler implements OperationStepHandler {
         static final ShowModelAliasWriteHandler INSTANCE = new ShowModelAliasWriteHandler();
@@ -84,7 +94,7 @@ public class JMXSubsystemRootResource extends SimpleResourceDefinition {
                     ModelNode addOp = new ModelNode();
                     addOp.get(OP).set(ADD);
                     addOp.get(OP_ADDR).set(PathAddress.pathAddress(operation.get(OP_ADDR)).append(RESOLVED_PATH).toModelNode());
-                    context.addStep(addOp, handler, Stage.IMMEDIATE);
+                    context.addStep(addOp, handler, Stage.MODEL, true);
                 }
             } else {
                 if (hasResource) {
@@ -92,10 +102,10 @@ public class JMXSubsystemRootResource extends SimpleResourceDefinition {
                     ModelNode addOp = new ModelNode();
                     addOp.get(OP).set(REMOVE);
                     addOp.get(OP_ADDR).set(PathAddress.pathAddress(operation.get(OP_ADDR)).append(RESOLVED_PATH).toModelNode());
-                    context.addStep(addOp, handler, Stage.IMMEDIATE);
+                    context.addStep(addOp, handler, Stage.MODEL, true);
                 }
             }
-            context.completeStep(OperationContext.RollbackHandler.NOOP_ROLLBACK_HANDLER);
+            context.stepCompleted();
         }
     }
 
@@ -106,7 +116,7 @@ public class JMXSubsystemRootResource extends SimpleResourceDefinition {
         public void execute(OperationContext context, ModelNode operation) throws OperationFailedException {
             final Resource resource = context.readResource(PathAddress.EMPTY_ADDRESS);
             context.getResult().set(resource.hasChild(PathElement.pathElement(CommonAttributes.EXPOSE_MODEL, CommonAttributes.RESOLVED)));
-            context.completeStep(OperationContext.RollbackHandler.NOOP_ROLLBACK_HANDLER);
+            context.stepCompleted();
         }
 
     }

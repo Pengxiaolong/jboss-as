@@ -25,16 +25,18 @@ package org.jboss.as.ejb3.remote.protocol.versionone;
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
+import java.util.Map;
 import java.util.concurrent.ExecutorService;
 
 import org.jboss.as.ejb3.EjbMessages;
 import org.jboss.as.ejb3.remote.EJBRemoteTransactionsRepository;
+import org.jboss.as.ejb3.remote.protocol.AbstractMessageHandler;
 import org.jboss.ejb.client.TransactionID;
 import org.jboss.ejb.client.UserTransactionID;
 import org.jboss.ejb.client.XidTransactionID;
 import org.jboss.ejb.client.remoting.PackedInteger;
 import org.jboss.marshalling.MarshallerFactory;
-import org.jboss.remoting3.MessageInputStream;
 import org.jboss.remoting3.MessageOutputStream;
 
 /**
@@ -69,8 +71,8 @@ class TransactionRequestHandler extends AbstractMessageHandler {
     }
 
     @Override
-    public void processMessage(final ChannelAssociation channelAssociation, final MessageInputStream messageInputStream) throws IOException {
-        final DataInputStream input = new DataInputStream(messageInputStream);
+    public void processMessage(final ChannelAssociation channelAssociation, final InputStream inputStream) throws IOException {
+        final DataInputStream input = new DataInputStream(inputStream);
         // read the invocation id
         final short invocationId = input.readShort();
         // read the transaction id length
@@ -180,4 +182,9 @@ class TransactionRequestHandler extends AbstractMessageHandler {
         }
     }
 
+    // overridden here to allow package protected access to XidTransactionManagementTask
+    @Override
+    protected void writeException(ChannelAssociation channelAssociation, MarshallerFactory marshallerFactory, short invocationId, Throwable t, Map<String, Object> attachments) throws IOException {
+        super.writeException(channelAssociation, marshallerFactory, invocationId, t, attachments);
+    }
 }

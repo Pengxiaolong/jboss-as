@@ -27,38 +27,24 @@
     <modelVersion>4.0.0</modelVersion>
 
     <parent>
-        <groupId>org.jboss.as</groupId>
-        <artifactId>jboss-as-parent</artifactId>
-        <version>7.2.0.Alpha1-SNAPSHOT</version>
+        <groupId>org.wildfly</groupId>
+        <artifactId>wildfly-parent</artifactId>
+        <version>8.0.0.Alpha2-SNAPSHOT</version>
     </parent>
 
-    <groupId>org.jboss.as</groupId>
-    <artifactId>jboss-as-management-client-content</artifactId>
+    <groupId>org.wildfly</groupId>
+    <artifactId>wildfly-management-client-content</artifactId>
 
-    <name>JBoss Application Server: Management Client Content</name>
-
-    <build>
-        <plugins>
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-compiler-plugin</artifactId>
-                <configuration>
-                    <compilerArgument>
-                        -AgeneratedTranslationFilesPath=${project.build.directory}/generated-translation-files
-                    </compilerArgument>
-                </configuration>
-            </plugin>
-        </plugins>
-    </build>
+    <name>WildFly: Management Client Content</name>
 
     <dependencies>
         <dependency>
-            <groupId>org.jboss.as</groupId>
-            <artifactId>jboss-as-controller</artifactId>
+            <groupId>org.wildfly</groupId>
+            <artifactId>wildfly-controller</artifactId>
         </dependency>
         <dependency>
-            <groupId>org.jboss.as</groupId>
-            <artifactId>jboss-as-deployment-repository</artifactId>
+            <groupId>org.wildfly</groupId>
+            <artifactId>wildfly-deployment-repository</artifactId>
         </dependency>
         <dependency>
             <groupId>org.jboss.logging</groupId>

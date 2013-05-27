@@ -28,10 +28,10 @@ import java.io.File;
 import java.net.URL;
 import java.util.concurrent.TimeUnit;
 
-import junit.framework.Assert;
+import org.junit.Assert;
 
 import org.jboss.as.test.integration.common.HttpRequest;
-import org.jboss.as.test.integration.domain.DomainTestSupport;
+import org.jboss.as.test.integration.domain.management.util.DomainTestSupport;
 import org.jboss.as.test.integration.domain.suites.CLITestSuite;
 import org.jboss.as.test.integration.management.base.AbstractCliTestBase;
 import org.jboss.as.test.integration.management.util.SimpleServlet;

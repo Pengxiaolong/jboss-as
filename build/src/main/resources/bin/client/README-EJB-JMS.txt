@@ -3,16 +3,17 @@ with standalone clients only, not with deployments are that deployed to an AS7 i
 
 This jar contains the classes required for remote JMS and EJB usage, and consists of the following shaded artifacts:
 
-org.jboss.spec.javax.jms:jboss-jms-api_1.1_spec
+org.jboss.spec.javax.jms:jboss-jms-api_2.0_spec
 org.jboss.spec.javax.transaction:jboss-transaction-api_1.1_spec
-org.jboss.spec.javax.ejb:jboss-ejb-api_3.1_spec
+org.jboss.spec.javax.ejb:jboss-ejb-api_3.2_spec
 
+org.jboss:jboss-ejb-client
 org.jboss:jboss-remote-naming
 org.jboss.logging:jboss-logging
 org.jboss.marshalling:jboss-marshalling
 org.jboss.marshalling:jboss-marshalling-river
-org.jboss.remoting3:jboss-remoting
-org.jboss.remoting3:remoting-jmx
+org.jboss.remoting:jboss-remoting
+org.jboss.remotingjmx:remoting-jmx
 org.jboss.sasl:jboss-sasl
 org.jboss.xnio:xnio-api
 org.jboss.xnio:xnio-nio

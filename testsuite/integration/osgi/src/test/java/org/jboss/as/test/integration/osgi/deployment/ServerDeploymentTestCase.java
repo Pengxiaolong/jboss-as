@@ -16,14 +16,10 @@
  */
 package org.jboss.as.test.integration.osgi.deployment;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.fail;
 import static org.osgi.framework.Constants.ACTIVATION_LAZY;
 import static org.osgi.framework.Constants.BUNDLE_VERSION;
 
 import java.io.InputStream;
-
-import javax.inject.Inject;
 
 import org.jboss.arquillian.container.test.api.Deployer;
 import org.jboss.arquillian.container.test.api.Deployment;
@@ -33,20 +29,23 @@ import org.jboss.as.controller.client.ModelControllerClient;
 import org.jboss.as.controller.client.helpers.ClientConstants;
 import org.jboss.as.controller.client.helpers.standalone.DeploymentPlanBuilder;
 import org.jboss.as.controller.client.helpers.standalone.ServerDeploymentHelper;
+import org.jboss.as.test.integration.osgi.deployment.bundle.AttachedType;
 import org.jboss.as.test.osgi.FrameworkUtils;
-import org.jboss.osgi.spi.ManifestBuilder;
-import org.jboss.osgi.spi.OSGiManifestBuilder;
+import org.jboss.osgi.metadata.ManifestBuilder;
+import org.jboss.osgi.metadata.OSGiManifestBuilder;
 import org.jboss.shrinkwrap.api.ShrinkWrap;
 import org.jboss.shrinkwrap.api.asset.Asset;
+import org.jboss.shrinkwrap.api.exporter.ZipExporter;
+import org.jboss.shrinkwrap.api.spec.EnterpriseArchive;
 import org.jboss.shrinkwrap.api.spec.JavaArchive;
+import org.junit.Assert;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.osgi.framework.Bundle;
 import org.osgi.framework.BundleContext;
+import org.osgi.framework.BundleReference;
 import org.osgi.framework.Constants;
-import org.osgi.framework.ServiceReference;
-import org.osgi.service.packageadmin.PackageAdmin;
-import org.osgi.service.startlevel.StartLevel;
+import org.osgi.util.tracker.ServiceTracker;
 
 /**
  * Test bundle deployment using the {@link ModelControllerClient}
@@ -57,25 +56,21 @@ import org.osgi.service.startlevel.StartLevel;
 @RunWith(Arquillian.class)
 public class ServerDeploymentTestCase {
 
-    static final String GOOD_BUNDLE = "good-bundle";
+    static final String GOOD_BUNDLE = "good-bundle.jar";
+    static final String GOOD_FRAGMENT = "good-fragment.jar";
+    static final String GOOD_FRAGMENT_EAR = "good-fragment.ear";
     static final String BAD_BUNDLE_VERSION = "bad-bundle-version";
     static final String ACTIVATE_LAZILY = "activate-lazily";
 
     @ArquillianResource
-    public Deployer deployer;
+    Deployer deployer;
 
-    @Inject
-    public StartLevel startLevel;
-
-    @Inject
-    public BundleContext context;
-
-    @Inject
-    public Bundle bundle;
+    @ArquillianResource
+    BundleContext context;
 
     @Deployment
     public static JavaArchive createdeployment() {
-        final JavaArchive archive = ShrinkWrap.create(JavaArchive.class, "example-bundle");
+        final JavaArchive archive = ShrinkWrap.create(JavaArchive.class, "deployment-tests");
         archive.addClasses(ServerDeploymentHelper.class, FrameworkUtils.class);
         archive.setManifest(new Asset() {
             @Override
@@ -84,7 +79,7 @@ public class ServerDeploymentTestCase {
                 builder.addBundleSymbolicName(archive.getName());
                 builder.addBundleManifestVersion(2);
                 builder.addImportPackages(ClientConstants.class, ModelControllerClient.class, DeploymentPlanBuilder.class);
-                builder.addImportPackages(PackageAdmin.class);
+                builder.addImportPackages(ServiceTracker.class);
                 return builder.openStream();
             }
         });
@@ -93,35 +88,154 @@ public class ServerDeploymentTestCase {
 
     @Test
     public void testAutoStart() throws Exception {
+        ModelControllerClient client = FrameworkUtils.waitForService(context, ModelControllerClient.class);
+        ServerDeploymentHelper server = new ServerDeploymentHelper(client);
 
         // Deploy the bundle
         InputStream input = deployer.getDeployment(GOOD_BUNDLE);
-        ServerDeploymentHelper server = new ServerDeploymentHelper(getModelControllerClient());
         String runtimeName = server.deploy("auto-start", input);
 
         // Find the deployed bundle
-        Bundle bundle = FrameworkUtils.getDeployedBundle(context, GOOD_BUNDLE, null);
-        assertEquals("Bundle ACTIVE", Bundle.ACTIVE, bundle.getState());
+        Bundle bundle = context.getBundle("auto-start");
+        Assert.assertEquals("Bundle ACTIVE", Bundle.ACTIVE, bundle.getState());
 
         server.undeploy(runtimeName);
-        assertEquals("Bundle UNINSTALLED", Bundle.UNINSTALLED, bundle.getState());
+        Assert.assertEquals("Bundle UNINSTALLED", Bundle.UNINSTALLED, bundle.getState());
     }
 
     @Test
     public void testBadBundleVersion() throws Exception {
+        ModelControllerClient client = FrameworkUtils.waitForService(context, ModelControllerClient.class);
+        ServerDeploymentHelper server = new ServerDeploymentHelper(client);
         InputStream input = deployer.getDeployment(BAD_BUNDLE_VERSION);
-        ServerDeploymentHelper server = new ServerDeploymentHelper(getModelControllerClient());
         try {
             server.deploy(BAD_BUNDLE_VERSION, input);
-            fail("Deployment exception expected");
+            Assert.fail("Deployment exception expected");
         } catch (Exception ex) {
             // expected
         }
     }
 
-    private ModelControllerClient getModelControllerClient() {
-        ServiceReference sref = context.getServiceReference(ModelControllerClient.class.getName());
-        return (ModelControllerClient) context.getService(sref);
+    @Test
+    public void testRedeployAfterUndeploy() throws Exception {
+        ModelControllerClient client = FrameworkUtils.waitForService(context, ModelControllerClient.class);
+        ServerDeploymentHelper server = new ServerDeploymentHelper(client);
+
+        // Deploy the bundle
+        InputStream input = deployer.getDeployment(GOOD_BUNDLE);
+        String runtimeName = server.deploy("redeploy", input);
+
+        // Find the deployed bundle
+        Bundle bundle = context.getBundle("redeploy");
+        Assert.assertEquals("Bundle ACTIVE", Bundle.ACTIVE, bundle.getState());
+
+        server.undeploy(runtimeName);
+        Assert.assertEquals("Bundle UNINSTALLED", Bundle.UNINSTALLED, bundle.getState());
+
+        // Redeploy the same bundle
+        input = deployer.getDeployment(GOOD_BUNDLE);
+        runtimeName = server.deploy("redeploy", input);
+
+        // Find the deployed bundle
+        bundle = context.getBundle("redeploy");
+        Assert.assertEquals("Bundle ACTIVE", Bundle.ACTIVE, bundle.getState());
+
+        server.undeploy(runtimeName);
+        Assert.assertEquals("Bundle UNINSTALLED", Bundle.UNINSTALLED, bundle.getState());
+    }
+
+    @Test
+    public void testAttachedFragment() throws Exception {
+        ModelControllerClient client = FrameworkUtils.waitForService(context, ModelControllerClient.class);
+        ServerDeploymentHelper server = new ServerDeploymentHelper(client);
+
+        // Deploy the fragment
+        InputStream input = deployer.getDeployment(GOOD_FRAGMENT);
+        String fragmentName = server.deploy("bundle-fragment-attached", input);
+
+        // Find the deployed bundle
+        Bundle fragment = context.getBundle("bundle-fragment-attached");
+        Assert.assertEquals("Bundle INSTALLED", Bundle.INSTALLED, fragment.getState());
+
+        // Deploy the bundle
+        input = deployer.getDeployment(GOOD_BUNDLE);
+        String hostName = server.deploy("bundle-host-attached", input);
+
+        // Find the deployed bundle
+        Bundle host = context.getBundle("bundle-host-attached");
+        Assert.assertEquals("Bundle ACTIVE", Bundle.ACTIVE, host.getState());
+        Assert.assertEquals("Bundle RESOLVED", Bundle.RESOLVED, fragment.getState());
+
+        Class<?> clazz = host.loadClass("org.jboss.as.test.integration.osgi.deployment.bundle.AttachedType");
+        Assert.assertNotNull("Class not null", clazz);
+        Assert.assertSame(host, ((BundleReference)clazz.getClassLoader()).getBundle());
+
+        server.undeploy(fragmentName);
+        Assert.assertEquals("Bundle UNINSTALLED", Bundle.UNINSTALLED, fragment.getState());
+
+        server.undeploy(hostName);
+        Assert.assertEquals("Bundle UNINSTALLED", Bundle.UNINSTALLED, host.getState());
+    }
+
+    @Test
+    public void testUnattachedFragment() throws Exception {
+        ModelControllerClient client = FrameworkUtils.waitForService(context, ModelControllerClient.class);
+        ServerDeploymentHelper server = new ServerDeploymentHelper(client);
+
+        // Deploy the bundle
+        InputStream input = deployer.getDeployment(GOOD_BUNDLE);
+        String hostName = server.deploy("bundle-host", input);
+
+        // Find the deployed bundle
+        Bundle host = context.getBundle("bundle-host");
+        Assert.assertEquals("Bundle ACTIVE", Bundle.ACTIVE, host.getState());
+
+        // Deploy the fragment
+        input = deployer.getDeployment(GOOD_FRAGMENT);
+        String fragmentName = server.deploy("bundle-fragment", input);
+
+        // Find the deployed bundle
+        Bundle fragment = context.getBundle("bundle-fragment");
+        Assert.assertEquals("Bundle INSTALLED", Bundle.INSTALLED, fragment.getState());
+
+        try {
+            host.loadClass("org.jboss.as.test.integration.osgi.deployment.bundle.AttachedType");
+            Assert.fail("ClassNotFoundException expected");
+        } catch (ClassNotFoundException ex) {
+            // expected
+        }
+
+        server.undeploy(fragmentName);
+        Assert.assertEquals("Bundle UNINSTALLED", Bundle.UNINSTALLED, fragment.getState());
+
+        server.undeploy(hostName);
+        Assert.assertEquals("Bundle UNINSTALLED", Bundle.UNINSTALLED, host.getState());
+    }
+
+    @Test
+    public void testAttachedFragmentEar() throws Exception {
+        ModelControllerClient client = FrameworkUtils.waitForService(context, ModelControllerClient.class);
+        ServerDeploymentHelper server = new ServerDeploymentHelper(client);
+
+        // Deploy the fragment
+        InputStream input = deployer.getDeployment(GOOD_FRAGMENT_EAR);
+        String earName = server.deploy(GOOD_FRAGMENT_EAR, input);
+
+        // Find the deployed fragment
+        Bundle fragment = context.getBundle(GOOD_FRAGMENT);
+        Assert.assertEquals("Bundle RESOLVED", Bundle.RESOLVED, fragment.getState());
+
+        // Find the deployed bundle
+        Bundle host = context.getBundle(GOOD_BUNDLE);
+        Assert.assertEquals("Bundle ACTIVE", Bundle.ACTIVE, host.getState());
+
+        Class<?> clazz = host.loadClass("org.jboss.as.test.integration.osgi.deployment.bundle.AttachedType");
+        Assert.assertNotNull("Class not null", clazz);
+        Assert.assertSame(host, ((BundleReference)clazz.getClassLoader()).getBundle());
+
+        server.undeploy(earName);
+        Assert.assertEquals("Bundle UNINSTALLED", Bundle.UNINSTALLED, fragment.getState());
+        Assert.assertEquals("Bundle UNINSTALLED", Bundle.UNINSTALLED, host.getState());
     }
 
     @Deployment(name = GOOD_BUNDLE, managed = false, testable = false)
@@ -136,6 +250,31 @@ public class ServerDeploymentTestCase {
                 return builder.openStream();
             }
         });
+        return archive;
+    }
+
+    @Deployment(name = GOOD_FRAGMENT, managed = false, testable = false)
+    public static JavaArchive getGoodFragmentArchive() {
+        final JavaArchive archive = ShrinkWrap.create(JavaArchive.class, GOOD_FRAGMENT);
+        archive.addClasses(AttachedType.class);
+        archive.setManifest(new Asset() {
+            @Override
+            public InputStream openStream() {
+                OSGiManifestBuilder builder = OSGiManifestBuilder.newInstance();
+                builder.addBundleManifestVersion(2);
+                builder.addBundleSymbolicName(archive.getName());
+                builder.addFragmentHost(GOOD_BUNDLE);
+                return builder.openStream();
+            }
+        });
+        return archive;
+    }
+
+    @Deployment(name = GOOD_FRAGMENT_EAR, managed = false, testable = false)
+    public static EnterpriseArchive getGoodFragmentEar() {
+        final EnterpriseArchive archive = ShrinkWrap.create(EnterpriseArchive.class, GOOD_FRAGMENT_EAR);
+        archive.add(getGoodBundleArchive(), "/", ZipExporter.class);
+        archive.add(getGoodFragmentArchive(), "/", ZipExporter.class);
         return archive;
     }
 

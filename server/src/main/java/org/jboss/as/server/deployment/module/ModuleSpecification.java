@@ -21,6 +21,8 @@
  */
 package org.jboss.as.server.deployment.module;
 
+import java.security.Permission;
+import java.security.Permissions;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -52,6 +54,12 @@ public class ModuleSpecification extends SimpleAttachable {
      * Local dependencies are dependencies on other parts of the deployment, such as class-path entry
      */
     private final List<ModuleDependency> localDependencies = new ArrayList<ModuleDependency>();
+    /**
+     * If set to true this indicates that a dependency on this module requires a dependency on all it's local
+     * dependencies.
+     */
+    private boolean localDependenciesTransitive;
+
     /**
      * User dependencies are dependencies that the user has specifically added, either via jboss-deployment-structure.xml
      * or via the manifest.
@@ -85,12 +93,6 @@ public class ModuleSpecification extends SimpleAttachable {
     private boolean privateModule;
 
     /**
-     * If set to true this indicates that a dependency on this module requires a dependency on all it's transitive
-     * dependencies.
-     */
-    private boolean requiresTransitiveDependencies;
-
-    /**
      * Flag that indicates that local resources should come last in the dependencies list
      */
     private boolean localLast;
@@ -103,11 +105,13 @@ public class ModuleSpecification extends SimpleAttachable {
     /**
      * JBoss modules system dependencies, which allow you to specify dependencies on the app class loader
      * to get access to JDK classes.
-     *
-     * This is not
-     *
      */
     private final List<DependencySpec> moduleSystemDependencies = new ArrayList<DependencySpec>();
+
+    /**
+     * The minimum permission set for this module.
+     */
+    private final Permissions permissions = new Permissions();
 
     public void addSystemDependency(final ModuleDependency dependency) {
         if (!exclusions.contains(dependency.getIdentifier()) && !systemDependenciesSet.contains(dependency.getIdentifier())) {
@@ -227,12 +231,49 @@ public class ModuleSpecification extends SimpleAttachable {
         this.privateModule = privateModule;
     }
 
-    public boolean isRequiresTransitiveDependencies() {
-        return requiresTransitiveDependencies;
+    /**
+     * Returns true if the {@link #localDependencies} added for this {@link ModuleSpecification} should be made
+     * transitive (i.e. if any other module 'B' depends on the module 'A' represented by this {@link ModuleSpecification}, then
+     * module 'B' will be added with all "local dependencies" that are applicable for module "A"). Else returns false.
+     *
+     * @see {@link #localDependencies}
+     * @return
+     */
+    public boolean isLocalDependenciesTransitive() {
+        return localDependenciesTransitive;
     }
 
+    /**
+     * Sets whether the {@link #localDependencies} applicable for this {@link ModuleSpecification} are to be treated as transitive dependencies
+     * for modules which depend on the module represented by this {@link ModuleSpecification}
+     *
+     * @param localDependenciesTransitive True if the {@link #localDependencies} added for this {@link ModuleSpecification} should be made
+     *                                    transitive (i.e. if any other module 'B' depends on the module 'A' represented by
+     *                                    this {@link ModuleSpecification}, then module 'B' will be added with
+     *                                    all "local dependencies" that are applicable for module "A"). False otherwise
+     * @see {@link #localDependencies}
+     * @return
+     */
+    public void setLocalDependenciesTransitive(final boolean localDependenciesTransitive) {
+        this.localDependenciesTransitive = localDependenciesTransitive;
+    }
+
+    /**
+     * @deprecated since AS 8.x. Use {@link #isLocalDependenciesTransitive()} instead
+     * @return
+     */
+    @Deprecated
+    public boolean isRequiresTransitiveDependencies() {
+        return localDependenciesTransitive;
+    }
+
+    /**
+     * @deprecated since AS 8.x. Use {@link #setLocalDependenciesTransitive(boolean)} instead
+     * @param requiresTransitiveDependencies
+     */
+    @Deprecated
     public void setRequiresTransitiveDependencies(final boolean requiresTransitiveDependencies) {
-        this.requiresTransitiveDependencies = requiresTransitiveDependencies;
+        this.localDependenciesTransitive = requiresTransitiveDependencies;
     }
 
     public boolean isLocalLast() {
@@ -271,5 +312,25 @@ public class ModuleSpecification extends SimpleAttachable {
 
     public List<DependencySpec> getModuleSystemDependencies() {
         return Collections.unmodifiableList(moduleSystemDependencies);
+    }
+
+    /**
+     * Add a permission to this deployment.  This may include permissions not explicitly specified
+     * in the domain configuration; such permissions must be validated before being added.
+     *
+     * @param permission the permission to add
+     */
+    public void addPermission(final Permission permission) {
+        permissions.add(permission);
+    }
+
+    /**
+     * Get the permission set for this deployment.  This may include permissions not explicitly specified
+     * in the domain configuration; such permissions must be validated before being added.
+     *
+     * @return the permission set for this deployment
+     */
+    public Permissions getPermissions() {
+        return permissions;
     }
 }

@@ -25,31 +25,40 @@ import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.SER
 import static org.jboss.as.host.controller.HostControllerLogger.ROOT_LOGGER;
 import static org.jboss.as.host.controller.HostControllerMessages.MESSAGES;
 
-import java.util.Locale;
 import java.util.Map;
 
 import org.jboss.as.controller.OperationContext;
+import org.jboss.as.controller.OperationDefinition;
 import org.jboss.as.controller.OperationFailedException;
 import org.jboss.as.controller.OperationStepHandler;
 import org.jboss.as.controller.PathAddress;
 import org.jboss.as.controller.RunningMode;
-import org.jboss.as.controller.descriptions.DescriptionProvider;
+import org.jboss.as.controller.SimpleOperationDefinitionBuilder;
 import org.jboss.as.controller.registry.Resource;
 import org.jboss.as.host.controller.HostControllerEnvironment;
 import org.jboss.as.host.controller.HostRunningModeControl;
 import org.jboss.as.host.controller.RestartMode;
 import org.jboss.as.host.controller.ServerInventory;
+import org.jboss.as.host.controller.resources.ServerConfigResourceDefinition;
 import org.jboss.as.process.ProcessInfo;
 import org.jboss.dmr.ModelNode;
+import org.jboss.dmr.Property;
+import org.wildfly.security.manager.WildFlySecurityManager;
 
 /**
  * Starts or reconnect all auto-start servers (at boot).
  *
  * @author Brian Stansberry (c) 2011 Red Hat Inc.
  */
-public class StartServersHandler implements OperationStepHandler, DescriptionProvider {
+public class StartServersHandler implements OperationStepHandler {
 
+    public static final boolean START_BLOCKING = Boolean.parseBoolean(WildFlySecurityManager.getPropertyPrivileged("org.jboss.as.host.start.servers.sequential", "false"));
     public static final String OPERATION_NAME = "start-servers";
+
+  //Private method does not need resources for description
+    public static final OperationDefinition DEFINITION = new SimpleOperationDefinitionBuilder(OPERATION_NAME, null)
+        .setPrivateEntry()
+        .build();
 
     private final ServerInventory serverInventory;
     private final HostControllerEnvironment hostControllerEnvironment;
@@ -78,7 +87,6 @@ public class StartServersHandler implements OperationStepHandler, DescriptionPro
             throw new OperationFailedException(new ModelNode(MESSAGES.cannotStartServersInvalidMode(context.getRunningMode())));
         }
 
-
         final ModelNode domainModel = Resource.Tools.readModel(context.readResourceFromRoot(PathAddress.EMPTY_ADDRESS, true));
         context.addStep(new OperationStepHandler() {
             @Override
@@ -89,29 +97,24 @@ public class StartServersHandler implements OperationStepHandler, DescriptionPro
                 if(hostModel.hasDefined(SERVER_CONFIG)) {
                     final ModelNode servers = hostModel.get(SERVER_CONFIG).clone();
                     if (hostControllerEnvironment.isRestart() || runningModeControl.getRestartMode() == RestartMode.HC_ONLY){
-                        restartedHcStartOrReconnectServers(servers, domainModel);
+                        restartedHcStartOrReconnectServers(servers, domainModel, context);
                     } else {
-                        cleanStartServers(servers, domainModel);
+                        cleanStartServers(servers, domainModel, context);
                     }
                 }
-                context.completeStep();
+                context.completeStep(OperationContext.RollbackHandler.NOOP_ROLLBACK_HANDLER);
             }
         }, OperationContext.Stage.RUNTIME);
 
-        context.completeStep(OperationContext.RollbackHandler.NOOP_ROLLBACK_HANDLER);
+        context.stepCompleted();
     }
 
-    @Override
-    public ModelNode getModelDescription(final Locale locale) {
-        // private operation does not need description
-        return new ModelNode();
-    }
-
-    private void cleanStartServers(final ModelNode servers, final ModelNode domainModel){
-        for(final String serverName : servers.keys()) {
-            if(servers.get(serverName, AUTO_START).asBoolean(true)) {
+    private void cleanStartServers(final ModelNode servers, final ModelNode domainModel, OperationContext context) throws OperationFailedException {
+        for(final Property serverProp : servers.asPropertyList()) {
+            String serverName = serverProp.getName();
+            if (ServerConfigResourceDefinition.AUTO_START.resolveModelAttribute(context, serverProp.getValue()).asBoolean(true)) {
                 try {
-                    serverInventory.startServer(serverName, domainModel);
+                    serverInventory.startServer(serverName, domainModel, START_BLOCKING);
                 } catch (Exception e) {
                     ROOT_LOGGER.failedToStartServer(e, serverName);
                 }
@@ -119,20 +122,21 @@ public class StartServersHandler implements OperationStepHandler, DescriptionPro
         }
     }
 
-    private void restartedHcStartOrReconnectServers(final ModelNode servers, final ModelNode domainModel){
+    private void restartedHcStartOrReconnectServers(final ModelNode servers, final ModelNode domainModel, final OperationContext context){
         Map<String, ProcessInfo> processInfos = serverInventory.determineRunningProcesses();
         for(final String serverName : servers.keys()) {
             ProcessInfo info = processInfos.get(serverInventory.getServerProcessName(serverName));
             boolean auto = servers.get(serverName, AUTO_START).asBoolean(true);
             if (info == null && auto) {
                 try {
-                    serverInventory.startServer(serverName, domainModel);
+                    serverInventory.startServer(serverName, domainModel, START_BLOCKING);
                 } catch (Exception e) {
                     ROOT_LOGGER.failedToStartServer(e, serverName);
                 }
             } else if (info != null){
-                //Reconnect the server
-                serverInventory.reconnectServer(serverName, domainModel, info.isRunning());
+                // Reconnect the server using the current authKey
+                final byte[] authKey = info.getAuthKey();
+                serverInventory.reconnectServer(serverName, domainModel, authKey, info.isRunning(), info.isStopping());
             }
         }
     }

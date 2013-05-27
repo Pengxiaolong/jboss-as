@@ -29,12 +29,14 @@ import org.jboss.as.controller.descriptions.ModelDescriptionConstants;
 import org.jboss.as.controller.registry.ManagementResourceRegistration;
 import org.jboss.as.controller.registry.Resource;
 import org.jboss.as.domain.controller.LocalHostControllerInfo;
-import org.jboss.as.host.controller.descriptions.HostRootDescription;
+import org.jboss.as.host.controller.descriptions.HostResolver;
+import org.jboss.dmr.ModelNode;
 
 /**
  * Registry for excluded domain-level resources. To be used by slave Host Controllers to ignore requests
  * for particular resources that the host cannot understand. This is a mechanism to allow hosts running earlier
  * AS releases to function as slaves in domains whose master is in a later release.
+ *
  *
  * @author Brian Stansberry (c) 2011 Red Hat Inc.
  */
@@ -56,16 +58,17 @@ public class IgnoredDomainResourceRegistry {
      * @return {@code true} if the operation should be ignored; {@code false} otherwise
      */
     public boolean isResourceExcluded(final PathAddress address) {
-        boolean result = false;
         if (!localHostControllerInfo.isMasterDomainController() && address.size() > 0) {
             IgnoredDomainResourceRoot root = this.rootResource;
             PathElement firstElement = address.getElement(0);
             IgnoreDomainResourceTypeResource typeResource = root == null ? null : root.getChildInternal(firstElement.getKey());
             if (typeResource != null) {
-                result = typeResource.hasName(firstElement.getValue());
+                if (typeResource.hasName(firstElement.getValue())) {
+                    return true;
+                }
             }
         }
-        return result;
+        return false;
     }
 
     public void registerResources(final ManagementResourceRegistration parentRegistration) {
@@ -76,6 +79,12 @@ public class IgnoredDomainResourceRegistry {
         IgnoredDomainResourceRoot root = new IgnoredDomainResourceRoot(this);
         this.rootResource = root;
         return root;
+    }
+
+    public ModelNode getIgnoredResourcesAsModel() {
+        IgnoredDomainResourceRoot root = this.rootResource;
+        ModelNode model =  (root == null ? new ModelNode() : Resource.Tools.readModel(root));
+        return model;
     }
 
     void publish(IgnoredDomainResourceRoot root) {
@@ -89,7 +98,7 @@ public class IgnoredDomainResourceRegistry {
     private class ResourceDefinition extends SimpleResourceDefinition {
 
         public ResourceDefinition() {
-            super(IgnoredDomainResourceRoot.PATH_ELEMENT, HostRootDescription.getResourceDescriptionResolver(ModelDescriptionConstants.IGNORED_RESOURCES));
+            super(IgnoredDomainResourceRoot.PATH_ELEMENT, HostResolver.getResolver(ModelDescriptionConstants.IGNORED_RESOURCES));
         }
 
         @Override

@@ -21,53 +21,55 @@
  */
 package org.jboss.as.osgi.service;
 
-import java.util.Collections;
-import java.util.List;
+import java.util.HashSet;
+import java.util.Set;
 
-import org.jboss.as.controller.ServiceVerificationHandler;
 import org.jboss.msc.service.ServiceBuilder;
-import org.jboss.msc.service.ServiceController;
-import org.jboss.msc.service.ServiceListener.Inheritance;
-import org.jboss.msc.service.ServiceTarget;
 import org.jboss.msc.service.StartContext;
 import org.jboss.msc.service.StartException;
 import org.jboss.osgi.deployment.deployer.Deployment;
-import org.jboss.osgi.framework.BootstrapBundlesInstall;
-import org.jboss.osgi.framework.IntegrationService;
+import org.jboss.osgi.framework.spi.BootstrapBundlesInstall;
+import org.jboss.osgi.framework.spi.IntegrationConstants;
+import org.jboss.osgi.framework.spi.IntegrationServices;
+import org.jboss.osgi.resolver.XBundleRevision;
 
 /**
- * An {@link IntegrationService} that installs persistent bundles on framework startup.
+ * An {@link org.jboss.osgi.framework.spi.IntegrationService} that installs persistent bundles on framework startup.
  *
  * @author thomas.diesler@jboss.com
  * @since 12-Apr-2012
  */
-class PersistentBundlesIntegration extends BootstrapBundlesInstall<Void> implements IntegrationService<Void> {
+class PersistentBundlesIntegration extends BootstrapBundlesInstall<Void> {
 
-    PersistentBundlesIntegration() {
-        super(PERSISTENT_BUNDLES);
-    }
+    private final InitialDeploymentTracker deploymentTracker;
 
-    ServiceController<Void> install(ServiceTarget serviceTarget, ServiceVerificationHandler verificationHandler) {
-        ServiceController<Void> controller = super.install(serviceTarget);
-        if (verificationHandler != null)
-            controller.addListener(Inheritance.ALL, verificationHandler);
-        return controller;
+    PersistentBundlesIntegration(InitialDeploymentTracker deploymentTracker) {
+        super(IntegrationServices.PERSISTENT_BUNDLES);
+        this.deploymentTracker = deploymentTracker;
     }
 
     @Override
     protected void addServiceDependencies(ServiceBuilder<Void> builder) {
+        super.addServiceDependencies(builder);
         builder.addDependency(InitialDeploymentTracker.INITIAL_DEPLOYMENTS_COMPLETE);
         builder.addDependency(ModuleRegistrationTracker.MODULE_REGISTRATION_COMPLETE);
-        builder.addDependency(IntegrationService.BOOTSTRAP_BUNDLES_COMPLETE);
+        builder.addDependency(IntegrationServices.BOOTSTRAP_BUNDLES_COMPLETE);
     }
 
     @Override
     public void start(StartContext context) throws StartException {
-        super.start(context);
 
-        // This actually does not install any bundle deployments
-        // At server startup the persistet bundles are deployed like any other persistet deployment
-        List<Deployment> deployments = Collections.emptyList();
-        installBootstrapBundles(context.getChildTarget(), deployments);
+        // Get the set of persistent bundle deployments from {@link InitialDeploymentTracker}
+        Set<Deployment> deployments = deploymentTracker.getDeployments();
+
+        // Collect the installed bundle revisions
+        Set<XBundleRevision> installedRevisions = new HashSet<XBundleRevision>();
+        for (Deployment dep : deployments) {
+            XBundleRevision brev = dep.getAttachment(IntegrationConstants.BUNDLE_REVISION_KEY);
+            installedRevisions.add(brev);
+        }
+
+        // Install the persistent bundle resolve service
+        installResolveService(context.getChildTarget(), installedRevisions);
     }
 }

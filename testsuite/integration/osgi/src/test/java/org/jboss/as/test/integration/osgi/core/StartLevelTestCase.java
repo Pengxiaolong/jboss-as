@@ -16,21 +16,17 @@
  */
 package org.jboss.as.test.integration.osgi.core;
 
-import static java.util.concurrent.TimeUnit.MILLISECONDS;
-import static org.jboss.as.test.osgi.FrameworkUtils.changeStartLevel;
 import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.fail;
 
 import java.io.InputStream;
 
-import javax.inject.Inject;
-
+import org.jboss.arquillian.container.test.api.Deployer;
 import org.jboss.arquillian.container.test.api.Deployment;
 import org.jboss.arquillian.junit.Arquillian;
-import org.jboss.arquillian.osgi.StartLevelAware;
+import org.jboss.arquillian.test.api.ArquillianResource;
 import org.jboss.as.test.osgi.FrameworkUtils;
-import org.jboss.osgi.spi.OSGiManifestBuilder;
+import org.jboss.osgi.metadata.OSGiManifestBuilder;
 import org.jboss.shrinkwrap.api.ShrinkWrap;
 import org.jboss.shrinkwrap.api.asset.Asset;
 import org.jboss.shrinkwrap.api.spec.JavaArchive;
@@ -39,7 +35,9 @@ import org.junit.runner.RunWith;
 import org.osgi.framework.Bundle;
 import org.osgi.framework.BundleContext;
 import org.osgi.framework.BundleException;
-import org.osgi.service.startlevel.StartLevel;
+import org.osgi.framework.startlevel.BundleStartLevel;
+import org.osgi.framework.startlevel.FrameworkStartLevel;
+import org.osgi.util.tracker.ServiceTracker;
 
 /**
  * Test framework/bundle start level
@@ -50,21 +48,19 @@ import org.osgi.service.startlevel.StartLevel;
 @RunWith(Arquillian.class)
 public class StartLevelTestCase {
 
-    public static final int TIMEOUT = 6000;
+    private static final String BUNDLE_A = "osgi-startlevel-a";
 
-    @Inject
-    public Bundle bundle;
+    static final int TIMEOUT = 6000;
 
-    @Inject
-    public BundleContext context;
+    @ArquillianResource
+    public Deployer deployer;
 
-    @Inject
-    public StartLevel startLevel;
+    @ArquillianResource
+    BundleContext context;
 
     @Deployment
-    @StartLevelAware(startLevel = 3)
-    public static JavaArchive create() {
-        final JavaArchive archive = ShrinkWrap.create(JavaArchive.class, "startlevel-bundle");
+    public static JavaArchive deployment() {
+        final JavaArchive archive = ShrinkWrap.create(JavaArchive.class, "startlevel-testcase");
         archive.addClass(FrameworkUtils.class);
         archive.setManifest(new Asset() {
             @Override
@@ -72,7 +68,7 @@ public class StartLevelTestCase {
                 OSGiManifestBuilder builder = OSGiManifestBuilder.newInstance();
                 builder.addBundleSymbolicName(archive.getName());
                 builder.addBundleManifestVersion(2);
-                builder.addImportPackages(StartLevel.class);
+                builder.addImportPackages(FrameworkStartLevel.class, ServiceTracker.class);
                 return builder.openStream();
             }
         });
@@ -82,22 +78,26 @@ public class StartLevelTestCase {
     @Test
     public void testStartLevel() throws Exception {
 
-        int frameworkStartLevel = startLevel.getStartLevel();
-        assertEquals("Framework start level", 1, frameworkStartLevel);
+        int orglevel = FrameworkUtils.getFrameworkStartLevel(context);
+        assertEquals("Framework start level", 1, orglevel);
+
+        Bundle sysbundle = context.getBundle();
+        FrameworkStartLevel fwStartLevel = sysbundle.adapt(FrameworkStartLevel.class);
+        int initialStartLevel = fwStartLevel.getInitialBundleStartLevel();
+        assertEquals("Initial bundle start level", 1, initialStartLevel);
+
+        InputStream input = deployer.getDeployment(BUNDLE_A);
+        Bundle bundle = context.installBundle(BUNDLE_A, input);
         try {
-            assertNotNull("StartLevel injected", startLevel);
-            int initialStartLevel = startLevel.getInitialBundleStartLevel();
-            assertEquals("Initial bundle start level", 1, initialStartLevel);
+            assertEquals("Bundle INSTALLED", Bundle.INSTALLED, bundle.getState());
 
-            assertEquals("Bundle RESOLVED", Bundle.RESOLVED, bundle.getState());
-            assertEquals("startlevel-bundle", bundle.getSymbolicName());
-
-            int bundleStartLevel = startLevel.getBundleStartLevel(bundle);
-            assertEquals("Bundle start level", 3, bundleStartLevel);
+            BundleStartLevel bStartLevel = bundle.adapt(BundleStartLevel.class);
+            bStartLevel.setStartLevel(3);
+            assertEquals("Bundle start level", 3, bStartLevel.getStartLevel());
 
             // Change the framework start level and wait for the changed event
-            changeStartLevel(context, 2, TIMEOUT, MILLISECONDS);
-            assertEquals("Framework start level", 2, startLevel.getStartLevel());
+            FrameworkUtils.setFrameworkStartLevel(context, 2);
+            assertEquals("Framework start level", 2, fwStartLevel.getStartLevel());
 
             try {
                 bundle.start(Bundle.START_TRANSIENT);
@@ -105,26 +105,35 @@ public class StartLevelTestCase {
             } catch (BundleException ex) {
                 // expected
             }
-            assertEquals("Bundle RESOLVED", Bundle.RESOLVED, bundle.getState());
+            assertEquals("Bundle INSTALLED", Bundle.INSTALLED, bundle.getState());
 
             // The bundle should not be started
             bundle.start();
-            assertEquals("Bundle RESOLVED", Bundle.RESOLVED, bundle.getState());
+            assertEquals("Bundle INSTALLED", Bundle.INSTALLED, bundle.getState());
 
             // Change the framework start level and wait for the changed event
-            changeStartLevel(context, 3, TIMEOUT, MILLISECONDS);
+            FrameworkUtils.setFrameworkStartLevel(context, 3);
 
             // The bundle should now be started
             assertEquals("Bundle ACTIVE", Bundle.ACTIVE, bundle.getState());
-
-            bundle.stop();
-            assertEquals("Bundle RESOLVED", Bundle.RESOLVED, bundle.getState());
-
-            bundle.uninstall();
-            assertEquals("Bundle UNINSTALLED", Bundle.UNINSTALLED, bundle.getState());
         } finally {
-            // Change the framework start level and wait for the changed event
-            changeStartLevel(context, frameworkStartLevel, TIMEOUT, MILLISECONDS);
+            bundle.uninstall();
+            FrameworkUtils.setFrameworkStartLevel(context, orglevel);
         }
+    }
+
+    @Deployment(name = BUNDLE_A, managed = false, testable=false)
+    public static JavaArchive create() {
+        final JavaArchive archive = ShrinkWrap.create(JavaArchive.class, BUNDLE_A);
+        archive.setManifest(new Asset() {
+            @Override
+            public InputStream openStream() {
+                OSGiManifestBuilder builder = OSGiManifestBuilder.newInstance();
+                builder.addBundleSymbolicName(archive.getName());
+                builder.addBundleManifestVersion(2);
+                return builder.openStream();
+            }
+        });
+        return archive;
     }
 }

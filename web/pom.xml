@@ -27,30 +27,16 @@
     <modelVersion>4.0.0</modelVersion>
 
     <parent>
-        <groupId>org.jboss.as</groupId>
-        <artifactId>jboss-as-parent</artifactId>
-        <version>7.2.0.Alpha1-SNAPSHOT</version>
+        <groupId>org.wildfly</groupId>
+        <artifactId>wildfly-parent</artifactId>
+        <version>8.0.0.Alpha2-SNAPSHOT</version>
     </parent>
 
-    <artifactId>jboss-as-web</artifactId>
+    <artifactId>wildfly-web</artifactId>
 
     <packaging>jar</packaging>
 
-    <name>JBoss Application Server: Web Subsystem</name>
-
-    <build>
-        <plugins>
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-compiler-plugin</artifactId>
-                <configuration>
-                    <compilerArgument>
-                        -AgeneratedTranslationFilesPath=${project.build.directory}/generated-translation-files
-                    </compilerArgument>
-                </configuration>
-            </plugin>
-        </plugins>
-    </build>
+    <name>WildFly: Web Subsystem</name>
 
     <dependencies>
 
@@ -71,28 +57,38 @@
         </dependency>
 
         <dependency>
-            <groupId>org.jboss.as</groupId>
-            <artifactId>jboss-as-server</artifactId>
+            <groupId>org.wildfly</groupId>
+            <artifactId>wildfly-server</artifactId>
         </dependency>
 
         <dependency>
-            <groupId>org.jboss.as</groupId>
-            <artifactId>jboss-as-clustering-registry</artifactId>
+            <groupId>org.wildfly</groupId>
+            <artifactId>wildfly-clustering-registry</artifactId>
         </dependency>
 
         <dependency>
-            <groupId>org.jboss.as</groupId>
-            <artifactId>jboss-as-clustering-web-spi</artifactId>
+            <groupId>org.wildfly</groupId>
+            <artifactId>wildfly-clustering-web-spi</artifactId>
         </dependency>
 
         <dependency>
-            <groupId>org.jboss.as</groupId>
-            <artifactId>jboss-as-ee</artifactId>
+            <groupId>org.wildfly</groupId>
+            <artifactId>wildfly-ee</artifactId>
         </dependency>
 
         <dependency>
-            <groupId>org.jboss.as</groupId>
-            <artifactId>jboss-as-security</artifactId>
+            <groupId>org.wildfly</groupId>
+            <artifactId>wildfly-security</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.wildfly</groupId>
+            <artifactId>wildfly-security-manager</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.wildfly</groupId>
+            <artifactId>wildfly-web-common</artifactId>
         </dependency>
 
         <dependency>
@@ -106,13 +102,8 @@
         </dependency>
 
         <dependency>
-            <groupId>org.jboss.netty</groupId>
-            <artifactId>netty</artifactId>
-        </dependency>
-
-        <dependency>
             <groupId>org.jboss.spec.javax.annotation</groupId>
-            <artifactId>jboss-annotations-api_1.1_spec</artifactId>
+            <artifactId>jboss-annotations-api_1.2_spec</artifactId>
         </dependency>
 
         <dependency>
@@ -122,7 +113,7 @@
 
         <dependency>
             <groupId>org.jboss.spec.javax.servlet</groupId>
-            <artifactId>jboss-servlet-api_3.0_spec</artifactId>
+            <artifactId>jboss-servlet-api_3.1_spec</artifactId>
         </dependency>
 
         <dependency>
@@ -145,8 +136,8 @@
         </dependency>
 
         <dependency>
-            <groupId>org.jboss.web</groupId>
-            <artifactId>jasper-jdt</artifactId>
+            <groupId>org.eclipse.jdt.core.compiler</groupId>
+            <artifactId>ecj</artifactId>
         </dependency>
 
         <dependency>
@@ -155,16 +146,10 @@
         </dependency>
 
         <dependency>
-            <groupId>org.jboss.as</groupId>
-            <artifactId>jboss-as-clustering-web-infinispan</artifactId>
+            <groupId>org.wildfly</groupId>
+            <artifactId>wildfly-clustering-web-infinispan</artifactId>
             <scope>test</scope>
         </dependency>
-        <!-- Unfortunately we have to include this because of http://bugs.sun.com/view_bug.do?bug_id=6550655 -->
-        <dependency>
-            <groupId>org.rhq.helpers</groupId>
-            <artifactId>rhq-pluginAnnotations</artifactId>
-            <scope>test</scope>
-         </dependency>
         <dependency>
             <groupId>org.jboss.marshalling</groupId>
             <artifactId>jboss-marshalling-river</artifactId>
@@ -186,8 +171,9 @@
 			<scope>test</scope>
 		</dependency>
         <dependency>
-            <groupId>org.jboss.as</groupId>
-            <artifactId>jboss-as-subsystem-test</artifactId>
+            <groupId>org.wildfly</groupId>
+            <artifactId>wildfly-subsystem-test</artifactId>
+						<type>pom</type>
             <scope>test</scope>
          </dependency>
     </dependencies>
@@ -206,6 +192,11 @@
                                 <exclude>**/web/session/*TestCase.java</exclude>
                             </excludes>
                             <enableAssertions>false</enableAssertions>
+                            <systemPropertyVariables>
+                                <org.jboss.model.test.cache.root>${org.jboss.model.test.cache.root}</org.jboss.model.test.cache.root>
+	                            <org.jboss.model.test.classpath.cache>${org.jboss.model.test.classpath.cache}</org.jboss.model.test.classpath.cache>
+                                <org.jboss.model.test.maven.repository.urls>${org.jboss.model.test.maven.repository.urls}</org.jboss.model.test.maven.repository.urls>
+                            </systemPropertyVariables>
                         </configuration>
                     </plugin>
                 </plugins>

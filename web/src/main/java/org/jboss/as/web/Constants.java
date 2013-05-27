@@ -100,6 +100,7 @@ public interface Constants {
     String SMAP = "smap";
     String SOCKET_BINDING = "socket-binding";
     String SOURCE_VM = "source-vm";
+    String SSL_PROTOCOL = "ssl-protocol";
     String SSL = "ssl";
     String SSO = "sso";
     String STATIC_RESOURCES = "static-resources";
@@ -129,6 +130,11 @@ public interface Constants {
 
     String LOAD_TIME ="load-time";
     String MIN_TIME = "min-time";
-
+    String MODULE = "module";
+    String CLASS_NAME = "class-name";
+    String VALVE = "valve";
+    String PARAM_NAME = "param-name";
+    String PARAM_VALUE = "param-value";
+    String PARAM = "param";
 
 }

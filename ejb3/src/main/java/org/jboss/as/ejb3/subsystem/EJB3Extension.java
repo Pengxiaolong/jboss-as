@@ -31,20 +31,14 @@ import org.jboss.as.controller.SubsystemRegistration;
 import org.jboss.as.controller.descriptions.ModelDescriptionConstants;
 import org.jboss.as.controller.descriptions.ResourceDescriptionResolver;
 import org.jboss.as.controller.descriptions.StandardResourceDescriptionResolver;
-import org.jboss.as.controller.operations.common.GenericSubsystemDescribeHandler;
 import org.jboss.as.controller.parsing.ExtensionParsingContext;
 import org.jboss.as.controller.registry.ManagementResourceRegistration;
-import org.jboss.as.controller.registry.OperationEntry;
+import org.jboss.as.controller.services.path.PathManager;
 import org.jboss.as.ejb3.subsystem.deployment.EntityBeanResourceDefinition;
 import org.jboss.as.ejb3.subsystem.deployment.MessageDrivenBeanResourceDefinition;
 import org.jboss.as.ejb3.subsystem.deployment.SingletonBeanDeploymentResourceDefinition;
 import org.jboss.as.ejb3.subsystem.deployment.StatefulSessionBeanDeploymentResourceDefinition;
 import org.jboss.as.ejb3.subsystem.deployment.StatelessSessionBeanDeploymentResourceDefinition;
-import org.jboss.as.threads.ThreadFactoryResolver;
-import org.jboss.as.threads.ThreadsServices;
-import org.jboss.as.threads.UnboundedQueueThreadPoolResourceDefinition;
-
-import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.DESCRIBE;
 
 /**
  * Extension that provides the EJB3 subsystem.
@@ -60,9 +54,12 @@ public class EJB3Extension implements Extension {
     public static final String NAMESPACE_1_2 = EJB3SubsystemNamespace.EJB3_1_2.getUriString();
     public static final String NAMESPACE_1_3 = EJB3SubsystemNamespace.EJB3_1_3.getUriString();
     public static final String NAMESPACE_1_4 = EJB3SubsystemNamespace.EJB3_1_4.getUriString();
+    public static final String NAMESPACE_1_5 = EJB3SubsystemNamespace.EJB3_2_0.getUriString();
 
-    private static final int MANAGEMENT_API_MAJOR_VERSION = 1;
-    private static final int MANAGEMENT_API_MINOR_VERSION = 1;
+    static final PathElement SUBSYSTEM_PATH = PathElement.pathElement(ModelDescriptionConstants.SUBSYSTEM, SUBSYSTEM_NAME);
+
+    private static final int MANAGEMENT_API_MAJOR_VERSION = 2;
+    private static final int MANAGEMENT_API_MINOR_VERSION = 0;
     private static final int MANAGEMENT_API_MICRO_VERSION = 0;
 
     private static final String RESOURCE_NAME = EJB3Extension.class.getPackage().getName() + ".LocalDescriptions";
@@ -82,35 +79,10 @@ public class EJB3Extension implements Extension {
         final SubsystemRegistration subsystem = context.registerSubsystem(SUBSYSTEM_NAME, MANAGEMENT_API_MAJOR_VERSION,
                 MANAGEMENT_API_MINOR_VERSION, MANAGEMENT_API_MICRO_VERSION);
 
-        subsystem.registerXMLElementWriter(EJB3Subsystem14Parser.INSTANCE);
+        subsystem.registerXMLElementWriter(EJB3SubsystemXMLPersister.INSTANCE);
 
-        final ManagementResourceRegistration subsystemRegistration = subsystem.registerSubsystemModel(EJB3SubsystemRootResourceDefinition.INSTANCE);
-
-        // describe operation for the subsystem
-        subsystemRegistration.registerOperationHandler(GenericSubsystemDescribeHandler.DEFINITION, GenericSubsystemDescribeHandler.INSTANCE);
-
-        // subsystem=ejb3/service=remote
-        subsystemRegistration.registerSubModel(EJB3RemoteResourceDefinition.INSTANCE);
-
-        // subsystem=ejb3/service=async
-        subsystemRegistration.registerSubModel(EJB3AsyncResourceDefinition.INSTANCE);
-
-        // subsystem=ejb3/strict-max-bean-instance-pool=*
-        subsystemRegistration.registerSubModel(StrictMaxPoolResourceDefinition.INSTANCE);
-
-        subsystemRegistration.registerSubModel(CacheFactoryResourceDefinition.INSTANCE);
-        subsystemRegistration.registerSubModel(FilePassivationStoreResourceDefinition.INSTANCE);
-        subsystemRegistration.registerSubModel(ClusterPassivationStoreResourceDefinition.INSTANCE);
-
-        // subsystem=ejb3/service=timerservice
-        subsystemRegistration.registerSubModel(TimerServiceResourceDefinition.INSTANCE);
-
-        // subsystem=ejb3/thread-pool=*
-        subsystemRegistration.registerSubModel(UnboundedQueueThreadPoolResourceDefinition.create(EJB3SubsystemModel.THREAD_POOL,
-                new EJB3ThreadFactoryResolver(), EJB3SubsystemModel.BASE_THREAD_POOL_SERVICE_NAME, registerRuntimeOnly));
-
-        // subsystem=ejb3/service=iiop
-        subsystemRegistration.registerSubModel(EJB3IIOPResourceDefinition.INSTANCE);
+        PathManager pathManager = context.getProcessType().isServer() ? context.getPathManager() : null;
+        subsystem.registerSubsystemModel(new EJB3SubsystemRootResourceDefinition(registerRuntimeOnly, pathManager));
 
         if (registerRuntimeOnly) {
             ResourceDefinition deploymentsDef = new SimpleResourceDefinition(PathElement.pathElement(ModelDescriptionConstants.SUBSYSTEM, SUBSYSTEM_NAME),
@@ -121,6 +93,11 @@ public class EJB3Extension implements Extension {
             deploymentsRegistration.registerSubModel(SingletonBeanDeploymentResourceDefinition.INSTANCE);
             deploymentsRegistration.registerSubModel(StatelessSessionBeanDeploymentResourceDefinition.INSTANCE);
             deploymentsRegistration.registerSubModel(StatefulSessionBeanDeploymentResourceDefinition.INSTANCE);
+        }
+
+        // Transformers
+        if (context.isRegisterTransformers()) {
+            EJB3SubsystemRootResourceDefinition.registerTransformers(subsystem);
         }
     }
 
@@ -134,17 +111,6 @@ public class EJB3Extension implements Extension {
         context.setSubsystemXmlMapping(SUBSYSTEM_NAME, NAMESPACE_1_2, EJB3Subsystem12Parser.INSTANCE);
         context.setSubsystemXmlMapping(SUBSYSTEM_NAME, NAMESPACE_1_3, EJB3Subsystem13Parser.INSTANCE);
         context.setSubsystemXmlMapping(SUBSYSTEM_NAME, NAMESPACE_1_4, EJB3Subsystem14Parser.INSTANCE);
-    }
-
-    private static class EJB3ThreadFactoryResolver extends ThreadFactoryResolver.SimpleResolver {
-
-        private EJB3ThreadFactoryResolver() {
-            super(ThreadsServices.FACTORY);
-        }
-
-        @Override
-        protected String getThreadGroupName(String threadPoolName) {
-            return "EJB " + threadPoolName;
-        }
+        context.setSubsystemXmlMapping(SUBSYSTEM_NAME, NAMESPACE_1_5, EJB3Subsystem20Parser.INSTANCE);
     }
 }

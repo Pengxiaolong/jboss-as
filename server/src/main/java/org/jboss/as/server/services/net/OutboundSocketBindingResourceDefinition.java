@@ -30,7 +30,6 @@ import org.jboss.as.controller.SimpleResourceDefinition;
 import org.jboss.as.controller.descriptions.ModelDescriptionConstants;
 import org.jboss.as.controller.descriptions.ResourceDescriptionResolver;
 import org.jboss.as.controller.operations.validation.IntRangeValidator;
-import org.jboss.as.controller.operations.validation.ModelTypeValidator;
 import org.jboss.as.controller.operations.validation.StringLengthValidator;
 import org.jboss.as.controller.registry.AttributeAccess;
 import org.jboss.as.controller.registry.ManagementResourceRegistration;
@@ -44,8 +43,8 @@ import org.jboss.dmr.ModelType;
  */
 public abstract class OutboundSocketBindingResourceDefinition extends SimpleResourceDefinition {
 
-    public static final SimpleAttributeDefinition NAME = new SimpleAttributeDefinitionBuilder(ModelDescriptionConstants.NAME, ModelType.STRING, false)
-            .setValidator(new StringLengthValidator(1)).build();
+    /*public static final SimpleAttributeDefinition NAME = new SimpleAttributeDefinitionBuilder(ModelDescriptionConstants.NAME, ModelType.STRING, false)
+            .setValidator(new StringLengthValidator(1)).build();*/
 
     public static final SimpleAttributeDefinition SOURCE_PORT = new SimpleAttributeDefinitionBuilder(ModelDescriptionConstants.SOURCE_PORT, ModelType.INT, true)
             .setAllowExpression(true).setValidator(new IntRangeValidator(0, 65535, true, true))

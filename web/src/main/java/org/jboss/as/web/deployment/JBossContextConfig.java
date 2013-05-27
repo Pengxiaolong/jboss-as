@@ -23,6 +23,7 @@ package org.jboss.as.web.deployment;
 
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -39,6 +40,7 @@ import javax.servlet.annotation.ServletSecurity.TransportGuarantee;
 import org.apache.catalina.Container;
 import org.apache.catalina.Lifecycle;
 import org.apache.catalina.LifecycleEvent;
+import org.apache.catalina.Valve;
 import org.apache.catalina.Wrapper;
 import org.apache.catalina.core.StandardContext;
 import org.apache.catalina.deploy.Multipart;
@@ -54,12 +56,13 @@ import org.apache.naming.resources.FileDirContext;
 import org.apache.naming.resources.ProxyDirContext;
 import org.apache.tomcat.util.IntrospectionUtils;
 import org.jboss.annotation.javaee.Icon;
-import org.jboss.as.clustering.ClassLoaderAwareClassResolver;
 import org.jboss.as.clustering.web.DistributedCacheManagerFactory;
 import org.jboss.as.clustering.web.OutgoingDistributableSessionData;
 import org.jboss.as.server.deployment.Attachments;
 import org.jboss.as.server.deployment.DeploymentUnit;
+import org.jboss.as.web.AuthenticatorValve;
 import org.jboss.as.web.WebLogger;
+import org.jboss.as.web.WebServerService;
 import org.jboss.as.web.deployment.helpers.VFSDirContext;
 import org.jboss.as.web.session.DistributableSessionManager;
 import org.jboss.marshalling.ClassResolver;
@@ -113,14 +116,19 @@ import org.jboss.modules.ModuleIdentifier;
 import org.jboss.msc.inject.Injector;
 import org.jboss.msc.value.InjectedValue;
 import org.jboss.vfs.VirtualFile;
+import org.jboss.as.web.common.WarMetaData;
+import org.wildfly.security.manager.WildFlySecurityManager;
 
 /**
  * @author Remy Maucherat
+ * @author Jean-Frederic Clere
  */
 public class JBossContextConfig extends ContextConfig {
     private DeploymentUnit deploymentUnitContext = null;
     private Set<String> overlays = new HashSet<String>();
     private final InjectedValue<DistributedCacheManagerFactory> factory = new InjectedValue<DistributedCacheManagerFactory>();
+    private Map<String, AuthenticatorValve> authenValves = null;
+    private boolean DELETE_WORK_DIR_ONCONTEXTDESTROY = Boolean.parseBoolean(WildFlySecurityManager.getPropertyPrivileged("org.jboss.as.web.deployment.DELETE_WORK_DIR_ONCONTEXTDESTROY", "false"));
 
     /**
      * <p>
@@ -130,6 +138,13 @@ public class JBossContextConfig extends ContextConfig {
     public JBossContextConfig(DeploymentUnit deploymentUnitContext) {
         super();
         this.deploymentUnitContext = deploymentUnitContext;
+    }
+
+    public JBossContextConfig(DeploymentUnit deploymentUnitContext, WebServerService service) {
+        super();
+        this.deploymentUnitContext = deploymentUnitContext;
+        if (service !=null)
+            this.authenValves = service.getAuthenValves();
     }
 
     @Override
@@ -268,7 +283,7 @@ public class JBossContextConfig extends ContextConfig {
         if (module != null && metaData.getDistributable() != null) {
             try {
                 ClassResolver resolver = ModularClassResolver.getInstance(module.getModuleLoader());
-                context.setManager(new DistributableSessionManager<OutgoingDistributableSessionData>(this.factory.getValue(), metaData, new ClassLoaderAwareClassResolver(resolver, module.getClassLoader())));
+                context.setManager(new DistributableSessionManager<OutgoingDistributableSessionData>(this.factory.getValue(), metaData, resolver));
                 context.setDistributable(true);
             } catch (Exception e) {
                 WebLogger.WEB_LOGGER.clusteringNotSupported();
@@ -564,6 +579,9 @@ public class JBossContextConfig extends ContextConfig {
 
     @Override
     protected void destroy() {
+        if (DELETE_WORK_DIR_ONCONTEXTDESTROY) {
+           super.destroy();
+        }
     }
 
     /**
@@ -870,6 +888,35 @@ public class JBossContextConfig extends ContextConfig {
         if (ok && (metaData != null)) {
             // Resolve run as
             metaData.resolveRunAs();
+        }
+
+        // Configure configure global authenticators.
+        if (ok) {
+            if (! authenValves.isEmpty()) {
+                Map<String, Valve> authenvalves = new HashMap<String, Valve>();
+                for (String name : authenValves.keySet()) {
+                    // Instantiate valve and add properties.
+                    AuthenticatorValve authenvalve = (AuthenticatorValve) authenValves.get(name);
+                    Valve valve = null;
+                    try {
+                        valve = (Valve) authenvalve.classz.newInstance();
+                    } catch (InstantiationException e) {
+                        ok = false;
+                        break;
+                    } catch (IllegalAccessException e) {
+                        ok = false;
+                        break;
+                    }
+                    if (authenvalve.properties != null) {
+                        for (String pro: authenvalve.properties.keySet()) {
+                            IntrospectionUtils.setProperty(valve, pro, authenvalve.properties.get(pro));
+                        }
+                    }
+                    authenvalves.put(name, valve);
+                }
+                if (ok)
+                    setCustomAuthenticators(authenvalves);
+            }
         }
 
         // Configure an authenticator if we need one

@@ -37,6 +37,12 @@ import org.jboss.dmr.ModelNode;
 public interface ModelController {
 
     /**
+     * A {@link RuntimePermission} needed to access a {@link ModelController} via {@link org.jboss.msc.service.Service#getValue()} or
+     * to invoke its methods. The name of the necessary {@code RuntimePermission} is "{@code canAccessModelController}."
+     */
+    RuntimePermission ACCESS_PERMISSION = new RuntimePermission("canAccessModelController");
+
+    /**
      * Execute an operation, sending updates to the given handler.  This method is not intended to be invoked directly
      * by clients.
      *
@@ -45,6 +51,8 @@ public interface ModelController {
      * @param control the transaction control for this operation
      * @param attachments the operation attachments
      * @return the operation result
+     *
+     * @throws SecurityException if the caller does not have {@link #ACCESS_PERMISSION}
      */
     ModelNode execute(ModelNode operation, OperationMessageHandler handler, OperationTransactionControl control, OperationAttachments attachments);
 
@@ -53,6 +61,8 @@ public interface ModelController {
      *
      * @param executor the executor to use for asynchronous operation execution
      * @return the client
+     *
+     * @throws SecurityException if the caller does not have {@link #ACCESS_PERMISSION}
      */
     ModelControllerClient createClient(Executor executor);
 

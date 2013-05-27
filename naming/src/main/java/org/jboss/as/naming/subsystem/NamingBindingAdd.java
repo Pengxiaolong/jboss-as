@@ -21,20 +21,12 @@
  */
 package org.jboss.as.naming.subsystem;
 
-import static org.jboss.as.naming.subsystem.NamingSubsystemModel.BINDING_TYPE;
-import static org.jboss.as.naming.subsystem.NamingSubsystemModel.CLASS;
-import static org.jboss.as.naming.subsystem.NamingSubsystemModel.LOOKUP;
-import static org.jboss.as.naming.subsystem.NamingSubsystemModel.MODULE;
-import static org.jboss.as.naming.subsystem.NamingSubsystemModel.OBJECT_FACTORY;
-import static org.jboss.as.naming.subsystem.NamingSubsystemModel.SIMPLE;
-import static org.jboss.as.naming.subsystem.NamingSubsystemModel.TYPE;
-import static org.jboss.as.naming.subsystem.NamingSubsystemModel.VALUE;
-
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.util.Arrays;
 import java.util.Hashtable;
 import java.util.List;
+import java.util.Map;
 
 import javax.naming.InitialContext;
 import javax.naming.spi.ObjectFactory;
@@ -45,6 +37,9 @@ import org.jboss.as.controller.OperationFailedException;
 import org.jboss.as.controller.PathAddress;
 import org.jboss.as.controller.ServiceVerificationHandler;
 import org.jboss.as.controller.descriptions.ModelDescriptionConstants;
+import org.jboss.as.naming.ContextListAndJndiViewManagedReferenceFactory;
+import org.jboss.as.naming.ContextListManagedReferenceFactory;
+import org.jboss.as.naming.ExternalContextObjectFactory;
 import org.jboss.as.naming.ManagedReference;
 import org.jboss.as.naming.ManagedReferenceFactory;
 import org.jboss.as.naming.NamingMessages;
@@ -54,7 +49,6 @@ import org.jboss.as.naming.ValueManagedReferenceFactory;
 import org.jboss.as.naming.deployment.ContextNames;
 import org.jboss.as.naming.service.BinderService;
 import org.jboss.dmr.ModelNode;
-import org.jboss.dmr.Property;
 import org.jboss.modules.Module;
 import org.jboss.modules.ModuleIdentifier;
 import org.jboss.modules.ModuleLoadException;
@@ -62,6 +56,10 @@ import org.jboss.msc.service.ServiceBuilder;
 import org.jboss.msc.service.ServiceController;
 import org.jboss.msc.service.ServiceTarget;
 import org.jboss.msc.value.ImmediateValue;
+import org.wildfly.security.manager.WildFlySecurityManager;
+
+import static org.jboss.as.naming.subsystem.NamingSubsystemModel.BINDING_TYPE;
+import static org.jboss.as.naming.subsystem.NamingSubsystemModel.TYPE;
 
 /**
  * A {@link org.jboss.as.controller.AbstractAddStepHandler} to handle the add operation for simple JNDI bindings
@@ -87,24 +85,27 @@ public class NamingBindingAdd extends AbstractAddStepHandler {
 
     void installRuntimeServices(final OperationContext context, final String name, final ModelNode model, ServiceVerificationHandler verificationHandler, final List<ServiceController<?>> newControllers) throws OperationFailedException {
         boolean allowed = false;
-        for(String ns : GLOBAL_NAMESPACES) {
-            if(name.startsWith(ns)) {
+        for (String ns : GLOBAL_NAMESPACES) {
+            if (name.startsWith(ns)) {
                 allowed = true;
                 break;
             }
         }
-        if(!allowed) {
+        if (!allowed) {
             throw NamingMessages.MESSAGES.invalidNamespaceForBinding(name, Arrays.toString(GLOBAL_NAMESPACES));
         }
-        final String type = model.require(BINDING_TYPE).asString();
-        if (type.equals(SIMPLE)) {
+
+        final BindingType type = BindingType.forName(NamingBindingResourceDefinition.BINDING_TYPE.resolveModelAttribute(context, model).asString());
+        if (type == BindingType.SIMPLE) {
             installSimpleBinding(context, name, model, verificationHandler, newControllers);
-        } else if (type.equals(OBJECT_FACTORY)) {
+        } else if (type == BindingType.OBJECT_FACTORY) {
             installObjectFactory(context, name, model, verificationHandler, newControllers);
-        } else if (type.equals(LOOKUP)) {
+        } else if (type == BindingType.LOOKUP) {
             installLookup(context, name, model, verificationHandler, newControllers);
+        } else if (type == BindingType.EXTERNAL_CONTEXT) {
+            installExternalContext(context, name, model, verificationHandler, newControllers);
         } else {
-            throw NamingMessages.MESSAGES.unknownBindingType(type);
+            throw NamingMessages.MESSAGES.unknownBindingType(type.toString());
         }
     }
 
@@ -155,9 +156,9 @@ public class NamingBindingAdd extends AbstractAddStepHandler {
 
         final ObjectFactory objectFactoryClassInstance;
 
-        final ClassLoader cl = SecurityActions.getContextClassLoader();
+        final ClassLoader cl = WildFlySecurityManager.getCurrentContextClassLoaderPrivileged();
         try {
-            SecurityActions.setContextClassLoader(module.getClassLoader());
+            WildFlySecurityManager.setCurrentContextClassLoaderPrivileged(module.getClassLoader());
             final Class<?> clazz = module.getClassLoader().loadClass(className);
             objectFactoryClassInstance = (ObjectFactory) clazz.newInstance();
         } catch (ClassNotFoundException e) {
@@ -169,16 +170,16 @@ public class NamingBindingAdd extends AbstractAddStepHandler {
         } catch (ClassCastException e) {
             throw NamingMessages.MESSAGES.notAnInstanceOfObjectFactory(className, moduleID);
         } finally {
-            SecurityActions.setContextClassLoader(cl);
+            WildFlySecurityManager.setCurrentContextClassLoaderPrivileged(cl);
         }
 
         final ServiceTarget serviceTarget = context.getServiceTarget();
         final ContextNames.BindInfo bindInfo = ContextNames.bindInfoFor(name);
 
-        final Hashtable<String, String> environment = getObjectFactoryEnvironment(context,model);
+        final Hashtable<String, String> environment = getObjectFactoryEnvironment(context, model);
 
         final BinderService binderService = new BinderService(name, objectFactoryClassInstance);
-        binderService.getManagedObjectInjector().inject(new ManagedReferenceFactory() {
+        binderService.getManagedObjectInjector().inject(new ContextListAndJndiViewManagedReferenceFactory() {
             @Override
             public ManagedReference getReference() {
                 try {
@@ -186,6 +187,29 @@ public class NamingBindingAdd extends AbstractAddStepHandler {
                     return new ValueManagedReference(new ImmediateValue<Object>(value));
                 } catch (Exception e) {
                     throw new RuntimeException(e);
+                }
+            }
+
+            @Override
+            public String getInstanceClassName() {
+                final ClassLoader cl = WildFlySecurityManager.getCurrentContextClassLoaderPrivileged();
+                try {
+                    WildFlySecurityManager.setCurrentContextClassLoaderPrivileged(objectFactoryClassInstance.getClass().getClassLoader());
+                    final Object value = getReference().getInstance();
+                    return value != null ? value.getClass().getName() : ContextListManagedReferenceFactory.DEFAULT_INSTANCE_CLASS_NAME;
+                } finally {
+                    WildFlySecurityManager.setCurrentContextClassLoaderPrivileged(cl);
+                }
+            }
+
+            @Override
+            public String getJndiViewInstanceValue() {
+                final ClassLoader cl = WildFlySecurityManager.getCurrentContextClassLoaderPrivileged();
+                try {
+                    WildFlySecurityManager.setCurrentContextClassLoaderPrivileged(objectFactoryClassInstance.getClass().getClassLoader());
+                    return String.valueOf(getReference().getInstance());
+                } finally {
+                    WildFlySecurityManager.setCurrentContextClassLoaderPrivileged(cl);
                 }
             }
         });
@@ -205,17 +229,73 @@ public class NamingBindingAdd extends AbstractAddStepHandler {
         }
     }
 
-    private Hashtable<String, String> getObjectFactoryEnvironment(OperationContext context, ModelNode model)
-            throws OperationFailedException {
-        Hashtable<String, String> environment = null;
-        ModelNode resolvedModelAttribute = NamingBindingResourceDefinition.OBJECT_FACTORY_ENV.resolveModelAttribute(context,
-                model);
-        if (resolvedModelAttribute.isDefined()) {
-            environment = new Hashtable<String, String>();
-            for (Property property : resolvedModelAttribute.asPropertyList()) {
-                environment.put(property.getName(), property.getValue().asString());
+
+    void installExternalContext(final OperationContext context, final String name, final ModelNode model, ServiceVerificationHandler verificationHandler, final List<ServiceController<?>> newControllers) throws OperationFailedException {
+
+        final String moduleID = NamingBindingResourceDefinition.MODULE.resolveModelAttribute(context, model).asString();
+        final String className = NamingBindingResourceDefinition.CLASS.resolveModelAttribute(context, model).asString();
+        final ModelNode cacheNode = NamingBindingResourceDefinition.CACHE.resolveModelAttribute(context, model);
+        boolean cache = cacheNode.isDefined() ? cacheNode.asBoolean() : false;
+
+        final ObjectFactory objectFactoryClassInstance = new ExternalContextObjectFactory();
+
+        final ServiceTarget serviceTarget = context.getServiceTarget();
+        final ContextNames.BindInfo bindInfo = ContextNames.bindInfoFor(name);
+
+        final Hashtable<String, String> environment = getObjectFactoryEnvironment(context, model);
+        environment.put(ExternalContextObjectFactory.CACHE_CONTEXT, Boolean.toString(cache));
+        environment.put(ExternalContextObjectFactory.INITIAL_CONTEXT_CLASS, className);
+        environment.put(ExternalContextObjectFactory.INITIAL_CONTEXT_MODULE, moduleID);
+
+        final BinderService binderService = new BinderService(name, objectFactoryClassInstance);
+        binderService.getManagedObjectInjector().inject(new ContextListAndJndiViewManagedReferenceFactory() {
+            @Override
+            public ManagedReference getReference() {
+                try {
+                    final Object value = objectFactoryClassInstance.getObjectInstance(name, null, null, environment);
+                    return new ValueManagedReference(new ImmediateValue<Object>(value));
+                } catch (Exception e) {
+                    throw new RuntimeException(e);
+                }
             }
+
+            @Override
+            public String getInstanceClassName() {
+                return className;
+            }
+
+            @Override
+            public String getJndiViewInstanceValue() {
+                final ClassLoader cl = WildFlySecurityManager.getCurrentContextClassLoaderPrivileged();
+                try {
+                    WildFlySecurityManager.setCurrentContextClassLoaderPrivileged(objectFactoryClassInstance.getClass().getClassLoader());
+                    return String.valueOf(getReference().getInstance());
+                } finally {
+                    WildFlySecurityManager.setCurrentContextClassLoaderPrivileged(cl);
+                }
+            }
+        });
+
+        ServiceBuilder<ManagedReferenceFactory> builder = serviceTarget.addService(bindInfo.getBinderServiceName(), binderService)
+                .addDependency(bindInfo.getParentContextServiceName(), ServiceBasedNamingStore.class, binderService.getNamingStoreInjector());
+
+        if (verificationHandler != null) {
+            builder.addListener(verificationHandler);
         }
+
+        if (newControllers != null) {
+            newControllers.add(
+                    builder.install());
+        } else {
+            builder.install();
+        }
+    }
+
+
+    private Hashtable<String, String> getObjectFactoryEnvironment(OperationContext context, ModelNode model) throws OperationFailedException {
+        Hashtable<String, String> environment;
+        Map<String, String> resolvedModelAttribute = NamingBindingResourceDefinition.ENVIRONMENT.unwrap(context, model);
+        environment = new Hashtable<String, String>(resolvedModelAttribute);
         return environment;
     }
 
@@ -227,7 +307,7 @@ public class NamingBindingAdd extends AbstractAddStepHandler {
         final ContextNames.BindInfo bindInfo = ContextNames.bindInfoFor(name);
 
         final BinderService binderService = new BinderService(name);
-        binderService.getManagedObjectInjector().inject(new ManagedReferenceFactory() {
+        binderService.getManagedObjectInjector().inject(new ContextListAndJndiViewManagedReferenceFactory() {
             @Override
             public ManagedReference getReference() {
                 try {
@@ -236,6 +316,17 @@ public class NamingBindingAdd extends AbstractAddStepHandler {
                 } catch (Exception e) {
                     throw new RuntimeException(e);
                 }
+            }
+
+            @Override
+            public String getInstanceClassName() {
+                final Object value = getReference().getInstance();
+                return value != null ? value.getClass().getName() : ContextListManagedReferenceFactory.DEFAULT_INSTANCE_CLASS_NAME;
+            }
+
+            @Override
+            public String getJndiViewInstanceValue() {
+                return String.valueOf(getReference().getInstance());
             }
         });
 
@@ -277,7 +368,7 @@ public class NamingBindingAdd extends AbstractAddStepHandler {
             try {
                 return new URL(value);
             } catch (MalformedURLException e) {
-                throw NamingMessages.MESSAGES.unableToTransformURLBindingValue(value,e);
+                throw NamingMessages.MESSAGES.unableToTransformURLBindingValue(value, e);
             }
         } else {
             throw NamingMessages.MESSAGES.unsupportedSimpleBindingType(type);
@@ -287,21 +378,24 @@ public class NamingBindingAdd extends AbstractAddStepHandler {
 
     @Override
     protected void populateModel(ModelNode operation, ModelNode model) throws OperationFailedException {
-        final String type = operation.require(BINDING_TYPE).asString();
-        model.get(BINDING_TYPE).set(type);
-        if (type.equals(SIMPLE)) {
-            model.get(VALUE).set(operation.require(VALUE).asString());
-            if (operation.hasDefined(TYPE)) {
-                model.get(TYPE).set(operation.require(TYPE).asString());
-            }
-        } else if (type.equals(OBJECT_FACTORY)) {
-            model.get(MODULE).set(operation.require(MODULE).asString());
-            model.get(CLASS).set(operation.require(CLASS).asString());
-            NamingBindingResourceDefinition.OBJECT_FACTORY_ENV.validateAndSet(operation, model);
-        } else if (type.equals(LOOKUP)) {
-            model.get(LOOKUP).set(operation.require(LOOKUP).asString());
+        final BindingType type = BindingType.forName(operation.require(BINDING_TYPE).asString());
+        NamingBindingResourceDefinition.BINDING_TYPE.validateAndSet(operation, model);
+        if (type == BindingType.SIMPLE) {
+            NamingBindingResourceDefinition.VALUE.validateAndSet(operation, model);
+            NamingBindingResourceDefinition.TYPE.validateAndSet(operation, model);
+        } else if (type == BindingType.OBJECT_FACTORY) {
+            NamingBindingResourceDefinition.MODULE.validateAndSet(operation, model);
+            NamingBindingResourceDefinition.CLASS.validateAndSet(operation, model);
+            NamingBindingResourceDefinition.ENVIRONMENT.validateAndSet(operation, model);
+        } else if (type == BindingType.EXTERNAL_CONTEXT) {
+            NamingBindingResourceDefinition.MODULE.validateAndSet(operation, model);
+            NamingBindingResourceDefinition.CLASS.validateAndSet(operation, model);
+            NamingBindingResourceDefinition.CACHE.validateAndSet(operation, model);
+            NamingBindingResourceDefinition.ENVIRONMENT.validateAndSet(operation, model);
+        } else if (type == BindingType.LOOKUP) {
+            NamingBindingResourceDefinition.LOOKUP.validateAndSet(operation, model);
         } else {
-            throw NamingMessages.MESSAGES.unknownBindingType(type);
+            throw NamingMessages.MESSAGES.unknownBindingType(type.toString());
         }
     }
 }

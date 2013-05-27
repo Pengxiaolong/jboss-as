@@ -23,33 +23,32 @@
 package org.jboss.as.test.integration.jca.metrics;
 
 
-import static junit.framework.Assert.*;
-
 import java.util.List;
-import org.jboss.arquillian.container.test.api.Deployment;
+
 import org.jboss.arquillian.container.test.api.RunAsClient;
 import org.jboss.arquillian.junit.Arquillian;
 
 import org.jboss.as.connector.subsystems.resourceadapters.Namespace;
-import org.jboss.as.connector.subsystems.resourceadapters.ResourceAdaptersExtension.ResourceAdapterSubsystemParser;
+import org.jboss.as.connector.subsystems.resourceadapters.ResourceAdapterSubsystemParser;
 import org.jboss.as.test.integration.management.jca.DsMgmtTestBase;
+import org.jboss.as.test.shared.FileUtils;
 import org.jboss.dmr.ModelNode;
-import org.jboss.shrinkwrap.api.Archive;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 
-import static junit.framework.Assert.assertEquals;
-import static junit.framework.Assert.assertFalse;
-import static junit.framework.Assert.assertTrue;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
 
 /**
  * Resource adapters configuration and metrics unit test.
- * 
+ *
  * @author <a href="mailto:vrastsel@redhat.com">Vladimir Rastseluev</a>
  */
 @RunWith(Arquillian.class)
 @RunAsClient
-public class RaCfgMetricUnitTestCase extends DsMgmtTestBase {
+public class RaCfgMetricUnitTestCase extends JCAMetrictsTestBase {
 
     public static void setBaseAddress(String rar) {
         baseAddress = new ModelNode();
@@ -68,9 +67,8 @@ public class RaCfgMetricUnitTestCase extends DsMgmtTestBase {
      */
     protected void setModel(String modelName) throws Exception {
         setBaseAddress(modelName + ".rar");
-        String xml = readXmlResource(System.getProperty("jbossas.ts.integ.dir") + "/basic/src/test/resources/jca/metrics/ra/"
-                + modelName + ".xml");
-        List<ModelNode> operations = xmlToModelOperations(xml, Namespace.CURRENT.getUriString(),
+        String xml = FileUtils.readFile(RaCfgMetricUnitTestCase.class, "ra/"+ modelName + ".xml");
+        List<ModelNode> operations = xmlToModelOperations(xml, Namespace.RESOURCEADAPTERS_1_0.getUriString(),
                 new ResourceAdapterSubsystemParser());
         executeOperation(operationListToCompositeOperation(operations));
     }
@@ -194,7 +192,16 @@ public class RaCfgMetricUnitTestCase extends DsMgmtTestBase {
         assertTrue(readAttribute(address1, "security-application").asBoolean());
         assertTrue(readAttribute(address1, "wrap-xa-resource").asBoolean());
         assertFalse(readAttribute(address1, "pad-xid").asBoolean());
-        removeRa();
+        assertFalse(readAttribute(address1, "same-rm-override").isDefined());
+        try{
+        	readAttribute(address1, "same-rm-override").asBoolean();
+        	fail("Got  boolean value of undefined parameter");
+        }catch(Exception e){
+        	//Expected
+        }
+        finally{
+        	removeRa();
+        }
     }
 
     @Test

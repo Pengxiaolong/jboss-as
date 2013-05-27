@@ -28,17 +28,16 @@ import javax.naming.NamingException;
 
 /**
  * @author Paul Ferraro
- *
  */
 public class LocalEJBDirectory extends AbstractEJBDirectory {
     private final String module;
-    
+
     public LocalEJBDirectory(String module) throws NamingException {
         super(new Properties());
         this.module = module;
     }
 
-    protected <T> String createJndiName(Class<? extends T> beanClass, Class<T> beanInterface, Type type) {
-        return String.format("java:app/%s/%s!%s", this.module, beanClass.getSimpleName(), beanInterface.getName());
+    protected <T> String createJndiName(String beanName, Class<T> beanInterface, Type type) {
+        return String.format("java:app/%s/%s!%s", this.module, beanName, beanInterface.getName());
     }
 }

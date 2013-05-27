@@ -21,6 +21,18 @@
  */
 package org.jboss.as.modcluster;
 
+import static javax.xml.stream.XMLStreamConstants.END_ELEMENT;
+import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.ADD;
+import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.OP;
+import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.OP_ADDR;
+import static org.jboss.as.controller.parsing.ParseUtils.requireNoNamespaceAttribute;
+import static org.jboss.as.controller.parsing.ParseUtils.unexpectedAttribute;
+import static org.jboss.as.controller.parsing.ParseUtils.unexpectedElement;
+
+import java.util.List;
+
+import javax.xml.stream.XMLStreamException;
+
 import org.jboss.as.controller.PathAddress;
 import org.jboss.as.controller.PathElement;
 import org.jboss.as.controller.descriptions.ModelDescriptionConstants;
@@ -30,17 +42,6 @@ import org.jboss.dmr.ModelNode;
 import org.jboss.dmr.Property;
 import org.jboss.staxmapper.XMLElementReader;
 import org.jboss.staxmapper.XMLExtendedStreamReader;
-
-import javax.xml.stream.XMLStreamException;
-import java.util.List;
-
-import static javax.xml.stream.XMLStreamConstants.END_ELEMENT;
-import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.ADD;
-import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.OP;
-import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.OP_ADDR;
-import static org.jboss.as.controller.parsing.ParseUtils.requireNoNamespaceAttribute;
-import static org.jboss.as.controller.parsing.ParseUtils.unexpectedAttribute;
-import static org.jboss.as.controller.parsing.ParseUtils.unexpectedElement;
 
 public class ModClusterSubsystemXMLReader_1_0 implements XMLElementReader<List<ModelNode>> {
 
@@ -184,7 +185,7 @@ public class ModClusterSubsystemXMLReader_1_0 implements XMLElementReader<List<M
     }
 
     void parseDynamicLoadProvider(XMLExtendedStreamReader reader, List<ModelNode> list, PathAddress parent) throws XMLStreamException {
-        PathAddress address = parent.append(ModClusterExtension.DYNAMIC_LOAD_PROVIDER);
+        PathAddress address = parent.append(ModClusterExtension.DYNAMIC_LOAD_PROVIDER_PATH);
         final ModelNode load = Util.createAddOperation(address);
         final int count = reader.getAttributeCount();
         for (int i = 0; i < count; i++) {
@@ -242,7 +243,7 @@ public class ModClusterSubsystemXMLReader_1_0 implements XMLElementReader<List<M
                     throw unexpectedAttribute(reader, i);
             }
         }
-        PathElement pe = PathElement.pathElement(ModClusterExtension.LOAD_METRIC.getKey(), metric.get(CommonAttributes.TYPE).asString());
+        PathElement pe = PathElement.pathElement(ModClusterExtension.LOAD_METRIC_PATH.getKey(), metric.get(CommonAttributes.TYPE).asString());
         metric.get(ModelDescriptionConstants.OP).set(ModelDescriptionConstants.ADD);
         metric.get(ModelDescriptionConstants.OP_ADDR).set(address.append(pe).toModelNode());
         readProperties(reader, metric);
@@ -254,7 +255,7 @@ public class ModClusterSubsystemXMLReader_1_0 implements XMLElementReader<List<M
             final Element element = Element.forName(reader.getLocalName());
             switch (element) {
                 case PROPERTY:
-                    final Property property = ParseUtils.readProperty(reader);
+                    final Property property = ParseUtils.readProperty(reader, true);
                     metric.get(CommonAttributes.PROPERTY).get(property.getName()).set(property.getValue());
                     break;
                 default:
@@ -284,7 +285,7 @@ public class ModClusterSubsystemXMLReader_1_0 implements XMLElementReader<List<M
                     throw unexpectedAttribute(reader, i);
             }
         }
-        PathElement pe = PathElement.pathElement(ModClusterExtension.CUSTOM_LOAD_METRIC.getKey(), customMetric.get(CommonAttributes.CLASS).asString());
+        PathElement pe = PathElement.pathElement(ModClusterExtension.CUSTOM_LOAD_METRIC_PATH.getKey(), customMetric.get(CommonAttributes.CLASS).asString());
         customMetric.get(ModelDescriptionConstants.OP).set(ModelDescriptionConstants.ADD);
         customMetric.get(ModelDescriptionConstants.OP_ADDR).set(address.append(pe).toModelNode());
         readProperties(reader, customMetric);

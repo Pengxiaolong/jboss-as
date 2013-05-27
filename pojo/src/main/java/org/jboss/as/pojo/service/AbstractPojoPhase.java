@@ -22,6 +22,12 @@
 
 package org.jboss.as.pojo.service;
 
+import java.lang.reflect.Method;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import java.util.Set;
+
 import org.jboss.as.pojo.BeanState;
 import org.jboss.as.pojo.PojoLogger;
 import org.jboss.as.pojo.PojoMessages;
@@ -44,12 +50,7 @@ import org.jboss.msc.service.StartException;
 import org.jboss.msc.service.StopContext;
 import org.jboss.msc.value.ImmediateValue;
 import org.jboss.msc.value.Value;
-
-import java.lang.reflect.Method;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
-import java.util.Set;
+import org.wildfly.security.manager.WildFlySecurityManager;
 
 /**
  * Abstract pojo phase; it handles install/uninstall
@@ -70,6 +71,20 @@ public abstract class AbstractPojoPhase implements Service<Object> {
     protected abstract AbstractPojoPhase createNextPhase();
 
     public void start(StartContext context) throws StartException {
+        if (module != null) {
+            final ClassLoader previous = WildFlySecurityManager.getCurrentContextClassLoaderPrivileged();
+            WildFlySecurityManager.setCurrentContextClassLoaderPrivileged(module.getClassLoader());
+            try {
+                startInternal(context);
+            } finally {
+                WildFlySecurityManager.setCurrentContextClassLoaderPrivileged(previous);
+            }
+        } else {
+            startInternal(context);
+        }
+    }
+
+    protected void startInternal(StartContext context) throws StartException {
         try {
             executeInstalls();
 
@@ -121,6 +136,20 @@ public abstract class AbstractPojoPhase implements Service<Object> {
     }
 
     public void stop(StopContext context) {
+        if (module != null) {
+            final ClassLoader previous = WildFlySecurityManager.getCurrentContextClassLoaderPrivileged();
+            WildFlySecurityManager.setCurrentContextClassLoaderPrivileged(module.getClassLoader());
+            try {
+                stopInternal(context);
+            } finally {
+                WildFlySecurityManager.setCurrentContextClassLoaderPrivileged(previous);
+            }
+        } else {
+            stopInternal(context);
+        }
+    }
+
+    protected void stopInternal(StopContext context) {
         if (getLifecycleState().isAfter(BeanState.DESCRIBED)) {
             InstancesService.removeInstance(context.getController().getServiceContainer(), getLifecycleState(), getBean());
 

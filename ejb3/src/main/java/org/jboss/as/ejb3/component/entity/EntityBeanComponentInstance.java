@@ -21,6 +21,8 @@
  */
 package org.jboss.as.ejb3.component.entity;
 
+import static org.jboss.as.ejb3.EjbMessages.MESSAGES;
+
 import java.lang.reflect.Method;
 import java.rmi.RemoteException;
 import java.util.Map;
@@ -33,7 +35,6 @@ import javax.ejb.Timer;
 
 import org.jboss.as.ee.component.BasicComponent;
 import org.jboss.as.ee.component.interceptors.InvocationType;
-import org.jboss.as.ejb3.EjbLogger;
 import org.jboss.as.ejb3.component.EjbComponentInstance;
 import org.jboss.as.ejb3.context.EntityContextImpl;
 import org.jboss.as.ejb3.timerservice.TimerImpl;
@@ -141,6 +142,16 @@ public class EntityBeanComponentInstance extends EjbComponentInstance {
      */
     public synchronized void associate(Object primaryKey) {
         this.primaryKey = primaryKey;
+    }
+
+    /**
+     * Invoke the ejbActivate and ejbLoad callback methods for the entity bean.
+     * This is called when an entity bean is picked up from the entity cache.
+     *
+     * @param primaryKey The primary key to activate the entity with
+     */
+    public synchronized void activate(Object primaryKey) {
+        this.primaryKey = primaryKey;
         try {
             final InterceptorContext context = prepareInterceptorContext();
             final EntityBeanComponent component = getComponent();
@@ -238,7 +249,7 @@ public class EntityBeanComponentInstance extends EjbComponentInstance {
     public EJBObject getEjbObject() {
         final Object pk = getPrimaryKey();
         if (pk == null) {
-            throw EjbLogger.EJB3_LOGGER.cannotCallGetEjbObjectBeforePrimaryKeyAssociation();
+            throw MESSAGES.cannotCallGetEjbObjectBeforePrimaryKeyAssociation();
         }
         return getComponent().getEJBObject(pk);
     }
@@ -246,7 +257,7 @@ public class EntityBeanComponentInstance extends EjbComponentInstance {
     public EJBLocalObject getEjbLocalObject() {
         final Object pk = getPrimaryKey();
         if (pk == null) {
-            throw EjbLogger.EJB3_LOGGER.cannotCallGetEjbLocalObjectBeforePrimaryKeyAssociation();
+            throw MESSAGES.cannotCallGetEjbLocalObjectBeforePrimaryKeyAssociation();
         }
         return getComponent().getEJBLocalObject(pk);
     }

@@ -23,7 +23,6 @@ package org.jboss.as.host.controller;
 
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.GROUP;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.JVM;
-import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.MANAGEMENT_SUBSYSTEM_ENDPOINT;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.PROFILE;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.SERVER_CONFIG;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.SERVER_GROUP;
@@ -37,10 +36,12 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
+import java.util.TreeMap;
 
 import org.jboss.as.controller.ExpressionResolver;
 import org.jboss.as.controller.OperationFailedException;
-import org.jboss.as.host.controller.ManagedServer.ManagedServerBootConfiguration;
+import org.jboss.as.domain.controller.resources.ServerGroupResourceDefinition;
+import org.jboss.as.host.controller.model.host.HostResourceDefinition;
 import org.jboss.as.host.controller.model.jvm.JvmElement;
 import org.jboss.as.host.controller.model.jvm.JvmOptionsBuilderFactory;
 import org.jboss.as.process.DefaultJvmUtils;
@@ -48,6 +49,7 @@ import org.jboss.as.server.ServerEnvironment;
 import org.jboss.as.server.controller.resources.SystemPropertyResourceDefinition;
 import org.jboss.dmr.ModelNode;
 import org.jboss.dmr.Property;
+import org.wildfly.security.manager.WildFlySecurityManager;
 
 /**
  * Combines the relevant parts of the domain-level and host-level models to
@@ -56,11 +58,7 @@ import org.jboss.dmr.Property;
  * @author <a href="kabir.khan@jboss.com">Kabir Khan</a>
  * @author <a href="mailto:jperkins@redhat.com">James R. Perkins</a>
  */
-class ManagedServerBootCmdFactory implements ManagedServerBootConfiguration {
-
-    private static final String RMI_CLIENT_INTERVAL = "sun.rmi.dgc.client.gcInterval";
-    private static final String RMI_SERVER_INTERVAL = "sun.rmi.dgc.server.gcInterval";
-    private static final String DEFAULT_RMI_INTERVAL = "3600000";
+public class ManagedServerBootCmdFactory implements ManagedServerBootConfiguration {
 
     private static final ModelNode EMPTY = new ModelNode();
     static {
@@ -78,22 +76,23 @@ class ManagedServerBootCmdFactory implements ManagedServerBootConfiguration {
     private final boolean managementSubsystemEndpoint;
     private final ModelNode endpointConfig = new ModelNode();
     private final ExpressionResolver expressionResolver;
+    private final DirectoryGrouping directoryGrouping;
 
-    ManagedServerBootCmdFactory(final String serverName, final ModelNode domainModel, final ModelNode hostModel, final HostControllerEnvironment environment, final ExpressionResolver expressionResolver) {
+    public ManagedServerBootCmdFactory(final String serverName, final ModelNode domainModel, final ModelNode hostModel, final HostControllerEnvironment environment, final ExpressionResolver expressionResolver) {
         this.serverName = serverName;
         this.domainModel = domainModel;
         this.hostModel = hostModel;
-        this.serverModel = hostModel.require(SERVER_CONFIG).require(serverName);
         this.environment = environment;
-
-        final String serverGroupName = serverModel.require(GROUP).asString();
-        this.serverGroup = domainModel.require(SERVER_GROUP).require(serverGroupName);
         this.expressionResolver = expressionResolver;
+        this.serverModel = resolveExpressions(hostModel.require(SERVER_CONFIG).require(serverName));
+        this.directoryGrouping = resolveDirectoryGrouping(hostModel, expressionResolver);
+        final String serverGroupName = serverModel.require(GROUP).asString();
+        this.serverGroup = resolveExpressions(domainModel.require(SERVER_GROUP).require(serverGroupName));
 
         String serverVMName = null;
         ModelNode serverVM = null;
         if(serverModel.hasDefined(JVM)) {
-            for(final String jvm : serverModel.get(JVM).keys()) {
+            for (final String jvm : serverModel.get(JVM).keys()) {
                 serverVMName = jvm;
                 serverVM = serverModel.get(JVM, jvm);
                 break;
@@ -110,7 +109,7 @@ class ManagedServerBootCmdFactory implements ManagedServerBootConfiguration {
         }
         // Use the subsystem endpoint
         // TODO by default use the subsystem endpoint
-        this.managementSubsystemEndpoint = serverGroup.get(MANAGEMENT_SUBSYSTEM_ENDPOINT).asBoolean(false);
+        this.managementSubsystemEndpoint = serverGroup.get(ServerGroupResourceDefinition.MANAGEMENT_SUBSYSTEM_ENDPOINT.getName()).asBoolean(false);
         // Get the endpoint configuration
         if(managementSubsystemEndpoint) {
             final String profileName = serverGroup.get(PROFILE).asString();
@@ -122,7 +121,45 @@ class ManagedServerBootCmdFactory implements ManagedServerBootConfiguration {
 
         final String jvmName = serverVMName != null ? serverVMName : groupVMName;
         final ModelNode hostVM = jvmName != null ? hostModel.get(JVM, jvmName) : null;
-        this.jvmElement = new JvmElement(jvmName, hostVM, groupVM, serverVM);
+
+        this.jvmElement = new JvmElement(jvmName,
+                resolveExpressions(hostVM),
+                resolveExpressions(groupVM),
+                resolveExpressions(serverVM));
+    }
+
+    /**
+     * Resolve expressions in the given model (if there are any)
+     */
+    private ModelNode resolveExpressions(final ModelNode unresolved) {
+        if (unresolved == null) {
+            return null;
+        }
+        try {
+            return expressionResolver.resolveExpressions(unresolved.clone());
+        } catch (OperationFailedException e) {
+            // Fail
+            throw new IllegalStateException(e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Returns the value of found in the model.
+     *
+     * @param model the model that contains the key and value.
+     * @param expressionResolver the expression resolver to use to resolve expressions
+     *
+     * @return the directory grouping found in the model.
+     *
+     * @throws IllegalArgumentException if the {@link org.jboss.as.controller.descriptions.ModelDescriptionConstants#DIRECTORY_GROUPING directory grouping}
+     *                                  was not found in the model.
+     */
+    private static DirectoryGrouping resolveDirectoryGrouping(final ModelNode model, final ExpressionResolver expressionResolver) {
+        try {
+            return DirectoryGrouping.forName(HostResourceDefinition.DIRECTORY_GROUPING.resolveModelAttribute(expressionResolver, model).asString());
+        } catch (OperationFailedException e) {
+            throw new IllegalStateException(e);
+        }
     }
 
     /**
@@ -151,10 +188,6 @@ class ManagedServerBootCmdFactory implements ManagedServerBootConfiguration {
 
         JvmOptionsBuilderFactory.getInstance().addOptions(jvmElement, command);
 
-        //These need to go in on the command-line
-        command.add("-D" + RMI_CLIENT_INTERVAL + "=" + SecurityActions.getSystemProperty(RMI_CLIENT_INTERVAL, DEFAULT_RMI_INTERVAL));
-        command.add("-D" + RMI_SERVER_INTERVAL + "=" + SecurityActions.getSystemProperty(RMI_SERVER_INTERVAL, DEFAULT_RMI_INTERVAL));
-
         Map<String, String> bootTimeProperties = getAllSystemProperties(true);
         // Add in properties passed in to the ProcessController command line
         for (Map.Entry<String, String> hostProp : environment.getHostSystemProperties().entrySet()) {
@@ -172,8 +205,7 @@ class ManagedServerBootCmdFactory implements ManagedServerBootConfiguration {
                 command.add(sb.toString());
             }
         }
-        // Determine the directory grouping type and use it to set props controlling the server data/log/tmp dirs
-        final DirectoryGrouping directoryGrouping = DirectoryGrouping.fromModel(hostModel);
+        // Use the directory grouping type to set props controlling the server data/log/tmp dirs
         String serverDirProp = bootTimeProperties.get(ServerEnvironment.SERVER_BASE_DIR);
         File serverDir = serverDirProp == null ? new File(environment.getDomainServersDir(), serverName) : new File(serverDirProp);
         final String logDir = addPathProperty(command, "log", ServerEnvironment.SERVER_LOG_DIR, bootTimeProperties,
@@ -188,10 +220,13 @@ class ManagedServerBootCmdFactory implements ManagedServerBootConfiguration {
         if (loggingConfig.exists()) {
             path = "file:" + loggingConfig.getAbsolutePath();
         } else {
-            command.add("-Dorg.jboss.boot.log.file=" + getAbsolutePath(new File(logDir), "boot.log"));
-            final String fileName = SecurityActions.getSystemProperty("logging.configuration");
+            // Sets the initial log file to use
+            command.add("-Dorg.jboss.boot.log.file=" + getAbsolutePath(new File(logDir), "server.log"));
+            final String fileName = WildFlySecurityManager.getPropertyPrivileged("logging.configuration", null);
             if (fileName == null) {
-                path = "file:" + getAbsolutePath(environment.getDomainConfigurationDir(), "logging.properties");
+                // If nothing else is defined use a default logging configuration that matches the default from the
+                // standalone server. This allows a single log file to be used.
+                path = "file:" + getAbsolutePath(environment.getDomainConfigurationDir(), "default-server-logging.properties");
             } else {
                 path = fileName;
             }
@@ -202,8 +237,6 @@ class ManagedServerBootCmdFactory implements ManagedServerBootConfiguration {
         command.add(getAbsolutePath(environment.getHomeDir(), "jboss-modules.jar"));
         command.add("-mp");
         command.add(environment.getModulePath());
-        command.add("-jaxpmodule");
-        command.add("javax.xml.jaxp-provider");
         command.add("org.jboss.as.server");
 
         return command;
@@ -245,7 +278,7 @@ class ManagedServerBootCmdFactory implements ManagedServerBootConfiguration {
     }
 
     private Map<String, String> getAllSystemProperties(boolean boottimeOnly){
-        Map<String, String> props = new HashMap<String, String>();
+        Map<String, String> props = new TreeMap<String, String>();
 
         addSystemProperties(domainModel, props, boottimeOnly);
         addSystemProperties(serverGroup, props, boottimeOnly);
@@ -300,7 +333,16 @@ class ManagedServerBootCmdFactory implements ManagedServerBootConfiguration {
             }
             properties.put(propertyName, result);
         } else {
-            result = new File(value).getAbsolutePath();
+            final File dir = new File(value);
+            switch (directoryGrouping) {
+                case BY_TYPE:
+                    result = getAbsolutePath(dir, "servers", serverName);
+                    break;
+                case BY_SERVER:
+                default:
+                    result = dir.getAbsolutePath();
+                    break;
+            }
         }
         command.add(String.format("-D%s=%s", propertyName, result));
         return result;

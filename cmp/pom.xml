@@ -29,64 +29,17 @@
     <modelVersion>4.0.0</modelVersion>
 
     <parent>
-        <groupId>org.jboss.as</groupId>
-        <artifactId>jboss-as-parent</artifactId>
-        <version>7.2.0.Alpha1-SNAPSHOT</version>
+        <groupId>org.wildfly</groupId>
+        <artifactId>wildfly-parent</artifactId>
+        <version>8.0.0.Alpha2-SNAPSHOT</version>
     </parent>
 
-    <artifactId>jboss-as-cmp</artifactId>
+    <artifactId>wildfly-cmp</artifactId>
 
-    <name>JBoss Application Server: EJB Container Managed Persistence Subsystem</name>
+    <name>WildFly: EJB Container Managed Persistence Subsystem</name>
 
     <build>
         <plugins>
-            <plugin>
-                <groupId>org.codehaus.mojo</groupId>
-                <artifactId>javacc-maven-plugin</artifactId>
-                <executions>
-                    <execution>
-                        <id>jjtree-javacc-jbossql</id>
-                        <goals>
-                            <goal>jjtree-javacc</goal>
-                        </goals>
-                        <configuration>
-                            <includes>
-                                <include>org/jboss/as/cmp/ejbql/EJBQLParser.jjt</include>
-                            </includes>
-                        </configuration>
-                    </execution>
-                    <execution>
-                        <id>jjtree-javacc-ejbql</id>
-                        <goals>
-                            <goal>jjtree-javacc</goal>
-                        </goals>
-                        <configuration>
-                            <includes>
-                                <include>org/jboss/as/cmp/ejbql/JBossQLParser.jjt</include>
-                            </includes>
-                        </configuration>
-                    </execution>
-                </executions>
-            </plugin>
-            <plugin>
-                <groupId>org.codehaus.mojo</groupId>
-                <artifactId>build-helper-maven-plugin</artifactId>
-                <executions>
-                    <execution>
-                        <id>add-source</id>
-                        <phase>generate-sources</phase>
-                        <goals>
-                            <goal>add-source</goal>
-                        </goals>
-                        <configuration>
-                            <sources>
-                                <source>${project.build.directory}/generated-sources/javacc</source>
-                                <source>${project.build.directory}/generated-sources/jjtree</source>
-                            </sources>
-                        </configuration>
-                    </execution>
-                </executions>
-            </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
@@ -94,48 +47,19 @@
                     <includes>
                         <include>org/jboss/as/cmp/**/*TestCase.java</include>
                     </includes>
-                </configuration>
-            </plugin>
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-compiler-plugin</artifactId>
-                <configuration>
-                    <compilerArgument>
-                        -AgeneratedTranslationFilesPath=${project.build.directory}/generated-translation-files
-                    </compilerArgument>
+                    <systemPropertyVariables>
+                      <org.jboss.model.test.cache.root>${org.jboss.model.test.cache.root}</org.jboss.model.test.cache.root>
+                      <org.jboss.model.test.classpath.cache>${org.jboss.model.test.classpath.cache}</org.jboss.model.test.classpath.cache>
+                    </systemPropertyVariables>
                 </configuration>
             </plugin>
         </plugins>
     </build>
     <dependencies>
-        <dependency>
-            <groupId>${project.groupId}</groupId>
-            <artifactId>jboss-as-ee</artifactId>
-        </dependency>
 
         <dependency>
             <groupId>${project.groupId}</groupId>
-            <artifactId>jboss-as-ejb3</artifactId>
-        </dependency>
-
-        <dependency>
-            <groupId>${project.groupId}</groupId>
-            <artifactId>jboss-as-security</artifactId>
-        </dependency>
-
-        <dependency>
-            <groupId>${project.groupId}</groupId>
-            <artifactId>jboss-as-server</artifactId>
-        </dependency>
-
-        <dependency>
-            <groupId>org.jboss</groupId>
-            <artifactId>jboss-common-core</artifactId>
-        </dependency>
-
-        <dependency>
-            <groupId>org.jboss.classfilewriter</groupId>
-            <artifactId>jboss-classfilewriter</artifactId>
+            <artifactId>wildfly-controller</artifactId>
         </dependency>
 
         <dependency>
@@ -153,25 +77,15 @@
         </dependency>
 
         <dependency>
-            <groupId>org.jboss.metadata</groupId>
-            <artifactId>jboss-metadata-ejb</artifactId>
-        </dependency>
-
-        <dependency>
-            <groupId>org.mockito</groupId>
-            <artifactId>mockito-all</artifactId>
-            <scope>test</scope>
-        </dependency>
-
-        <dependency>
             <groupId>junit</groupId>
             <artifactId>junit</artifactId>
             <scope>test</scope>
         </dependency>
 
         <dependency>
-            <groupId>org.jboss.as</groupId>
-            <artifactId>jboss-as-subsystem-test</artifactId>
+            <groupId>${project.groupId}</groupId>
+            <artifactId>wildfly-subsystem-test</artifactId>
+			<type>pom</type>
             <scope>test</scope>
         </dependency>
     </dependencies>

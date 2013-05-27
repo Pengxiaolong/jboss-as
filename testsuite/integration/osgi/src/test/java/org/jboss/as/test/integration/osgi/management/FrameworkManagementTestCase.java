@@ -41,7 +41,7 @@ import org.jboss.as.controller.client.ModelControllerClient;
 import org.jboss.as.osgi.parser.ModelConstants;
 import org.jboss.as.test.osgi.FrameworkManagement;
 import org.jboss.dmr.ModelNode;
-import org.jboss.osgi.spi.OSGiManifestBuilder;
+import org.jboss.osgi.metadata.OSGiManifestBuilder;
 import org.jboss.shrinkwrap.api.ShrinkWrap;
 import org.jboss.shrinkwrap.api.asset.Asset;
 import org.jboss.shrinkwrap.api.exporter.ZipExporter;
@@ -60,49 +60,9 @@ import org.osgi.framework.Version;
 @RunAsClient
 @RunWith(Arquillian.class)
 public class FrameworkManagementTestCase {
+
     @ContainerResource
     ManagementClient managementClient;
-
-    @Deployment(name = "test-bundle", managed = false, testable = false)
-    public static JavaArchive createTestBundle() {
-        return createTestBundle("test-bundle", "999");
-    }
-
-    @Deployment(name = "test-bundle2", managed = false, testable = false)
-    public static JavaArchive createTestBundle2() {
-        return createTestBundle("test-bundle2", "1.2.3.something");
-    }
-
-    private static JavaArchive createTestBundle(final String bsn, final String version) {
-        final JavaArchive archive = ShrinkWrap.create(JavaArchive.class, bsn);
-        archive.setManifest(new Asset() {
-            @Override
-            public InputStream openStream() {
-                OSGiManifestBuilder builder = OSGiManifestBuilder.newInstance();
-                builder.addBundleSymbolicName(bsn);
-                builder.addBundleVersion(version);
-                builder.addBundleManifestVersion(2);
-                return builder.openStream();
-            }
-        });
-        return archive;
-    }
-
-    @Deployment(name = "test-fragment", managed = false, testable = false)
-    public static JavaArchive createTestFragment() {
-        final JavaArchive archive = ShrinkWrap.create(JavaArchive.class, "test-fragment");
-        archive.setManifest(new Asset() {
-            @Override
-            public InputStream openStream() {
-                OSGiManifestBuilder builder = OSGiManifestBuilder.newInstance();
-                builder.addBundleSymbolicName(archive.getName());
-                builder.addFragmentHost("test-bundle");
-                builder.addBundleManifestVersion(2);
-                return builder.openStream();
-            }
-        });
-        return archive;
-    }
 
     @Test
     public void testActivationMode() throws Exception {
@@ -110,13 +70,13 @@ public class FrameworkManagementTestCase {
 
         assertEquals("eager", FrameworkManagement.getActivationMode(getControllerClient()));
         try {
-            assertTrue(FrameworkManagement.setActivationMode(getControllerClient(), "lazy"));
+            FrameworkManagement.setActivationMode(getControllerClient(), "lazy");
             assertEquals("lazy", FrameworkManagement.getActivationMode(getControllerClient()));
 
             assertEquals("This operation should not change the active status of the subsystem", initialActivationState, isFrameworkActive());
         } finally {
             // set it back
-            assertTrue(FrameworkManagement.setActivationMode(getControllerClient(), "eager"));
+            FrameworkManagement.setActivationMode(getControllerClient(), "eager");
         }
     }
 
@@ -125,10 +85,10 @@ public class FrameworkManagementTestCase {
         boolean initialActivationState = isFrameworkActive();
 
         String propName = "testProp" + System.currentTimeMillis();
-        assertTrue(FrameworkManagement.addProperty(getControllerClient(), propName, "testing123testing"));
+        FrameworkManagement.addProperty(getControllerClient(), propName, "testing123testing");
         assertEquals("testing123testing", FrameworkManagement.readProperty(getControllerClient(), propName));
         assertTrue(FrameworkManagement.listProperties(getControllerClient()).contains(propName));
-        assertTrue(FrameworkManagement.removeProperty(getControllerClient(), propName));
+        FrameworkManagement.removeProperty(getControllerClient(), propName);
         assertFalse(FrameworkManagement.listProperties(getControllerClient()).contains(propName));
 
         assertEquals("This operation should not change the active status of the subsystem", initialActivationState, isFrameworkActive());
@@ -147,13 +107,13 @@ public class FrameworkManagementTestCase {
         JavaArchive capabilityBundle = createTestBundle("capability-bundle", "1.0.1");
         capabilityBundle.as(ZipExporter.class).exportTo(bundleFile);
 
-        assertTrue(FrameworkManagement.addCapability(getControllerClient(), capabilityName, 1));
+        FrameworkManagement.addCapability(getControllerClient(), capabilityName, 1);
         assertTrue(FrameworkManagement.listCapabilities(getControllerClient()).contains(capabilityName));
 
         Long capBundleId = FrameworkManagement.getBundleId(getControllerClient(), "capability-bundle", Version.parseVersion("1.0.1"));
         assertEquals("The capability bundle should not yet be added to the system, this requires a restart", new Long(-1), capBundleId);
 
-        assertTrue(FrameworkManagement.removeCapability(getControllerClient(), capabilityName));
+        FrameworkManagement.removeCapability(getControllerClient(), capabilityName);
         assertFalse(FrameworkManagement.listCapabilities(getControllerClient()).contains(capabilityName));
 
         // clean up
@@ -186,11 +146,11 @@ public class FrameworkManagementTestCase {
         assertEquals("test-bundle", resultMap.get("symbolic-name").asString());
         assertEquals("999.0.0", resultMap.get("version").asString());
 
-        assertTrue(FrameworkManagement.bundleStop(getControllerClient(), testBundleId));
+        FrameworkManagement.bundleStop(getControllerClient(), testBundleId);
         ModelNode resultMap3 = FrameworkManagement.getBundleInfo(getControllerClient(), testBundleId);
         assertEquals("RESOLVED", resultMap3.get("state").asString());
 
-        assertTrue(FrameworkManagement.bundleStart(getControllerClient(), testBundleId));
+        FrameworkManagement.bundleStart(getControllerClient(), testBundleId);
         ModelNode resultMap2 = FrameworkManagement.getBundleInfo(getControllerClient(), testBundleId);
         assertEquals("ACTIVE", resultMap2.get("state").asString());
 
@@ -225,17 +185,58 @@ public class FrameworkManagementTestCase {
             Long testBundleId = FrameworkManagement.getBundleId(getControllerClient(), "test-bundle2", Version.parseVersion("1.2.3.something"));
             assertTrue(testBundleId > 0);
 
-            assertTrue(FrameworkManagement.bundleStart(getControllerClient(), testBundleId));
+            FrameworkManagement.bundleStart(getControllerClient(), testBundleId);
             ModelNode resultMap = FrameworkManagement.getBundleInfo(getControllerClient(), testBundleId);
             assertEquals("ACTIVE", resultMap.get(ModelConstants.STATE).asString());
 
-            assertTrue(FrameworkManagement.setFrameworkStartLevel(getControllerClient(), 0));
+            FrameworkManagement.setFrameworkStartLevel(getControllerClient(), 0);
             if (!waitForBundleStateAfterStartLevelChange("RESOLVED", testBundleId, 10000)) {
                 fail("Bundle not RESOLVED");
             }
         } finally {
-            assertTrue(FrameworkManagement.setFrameworkStartLevel(getControllerClient(), initial));
+            FrameworkManagement.setFrameworkStartLevel(getControllerClient(), initial);
         }
+    }
+
+    @Deployment(name = "test-bundle", managed = false, testable = false)
+    public static JavaArchive createTestBundle() {
+        return createTestBundle("test-bundle", "999");
+    }
+
+    @Deployment(name = "test-bundle2", managed = false, testable = false)
+    public static JavaArchive createTestBundle2() {
+        return createTestBundle("test-bundle2", "1.2.3.something");
+    }
+
+    @Deployment(name = "test-fragment", managed = false, testable = false)
+    public static JavaArchive createTestFragment() {
+        final JavaArchive archive = ShrinkWrap.create(JavaArchive.class, "test-fragment");
+        archive.setManifest(new Asset() {
+            @Override
+            public InputStream openStream() {
+                OSGiManifestBuilder builder = OSGiManifestBuilder.newInstance();
+                builder.addBundleSymbolicName(archive.getName());
+                builder.addFragmentHost("test-bundle");
+                builder.addBundleManifestVersion(2);
+                return builder.openStream();
+            }
+        });
+        return archive;
+    }
+
+    private static JavaArchive createTestBundle(final String bsn, final String version) {
+        final JavaArchive archive = ShrinkWrap.create(JavaArchive.class, bsn);
+        archive.setManifest(new Asset() {
+            @Override
+            public InputStream openStream() {
+                OSGiManifestBuilder builder = OSGiManifestBuilder.newInstance();
+                builder.addBundleSymbolicName(bsn);
+                builder.addBundleVersion(version);
+                builder.addBundleManifestVersion(2);
+                return builder.openStream();
+            }
+        });
+        return archive;
     }
 
     private boolean waitForBundleStateAfterStartLevelChange(String state, long bundleId, int timeout) throws Exception {

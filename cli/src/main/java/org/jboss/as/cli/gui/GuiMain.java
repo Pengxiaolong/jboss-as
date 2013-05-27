@@ -58,7 +58,7 @@ import org.jboss.as.cli.gui.metacommand.UndeployAction;
 public class GuiMain {
     private static Image jbossIcon;
     static {
-        URL iconURL = GuiMain.class.getResource("/icon/as7_logo_32x32x32.png");
+        URL iconURL = GuiMain.class.getResource("/icon/wildfly.png");
         jbossIcon = Toolkit.getDefaultToolkit().getImage(iconURL);
         ToolTipManager.sharedInstance().setDismissDelay(15000);
     }
@@ -203,7 +203,7 @@ public class GuiMain {
 
     private static JTabbedPane makeTabbedPane(CliGuiContext cliGuiCtx, JPanel output) {
         JTabbedPane tabs = new JTabbedPane();
-        tabs.addTab("Command Builder", new JScrollPane(new ManagementModel(cliGuiCtx)));
+        tabs.addTab("Command Builder", new ManagementModel(cliGuiCtx));
         tabs.addTab("Output", output);
         return tabs;
     }

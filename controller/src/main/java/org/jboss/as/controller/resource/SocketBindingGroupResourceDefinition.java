@@ -43,7 +43,7 @@ import org.jboss.as.controller.SimpleAttributeDefinition;
 import org.jboss.as.controller.SimpleAttributeDefinitionBuilder;
 import org.jboss.as.controller.SimpleResourceDefinition;
 import org.jboss.as.controller.descriptions.ModelDescriptionConstants;
-import org.jboss.as.controller.descriptions.common.CommonDescriptions;
+import org.jboss.as.controller.descriptions.common.ControllerResolver;
 import org.jboss.as.controller.operations.validation.IntRangeValidator;
 import org.jboss.as.controller.operations.validation.StringLengthValidator;
 import org.jboss.as.controller.parsing.Attribute;
@@ -56,13 +56,15 @@ import org.jboss.dmr.ModelNode;
 import org.jboss.dmr.ModelType;
 
 /**
- * {@link ResourceDefinition} for a resource representing a socket binding group.
+ * {@link org.jboss.as.controller.ResourceDefinition} for a resource representing a socket binding group.
  *
  * @author Brian Stansberry (c) 2011 Red Hat Inc.
  */
 public class SocketBindingGroupResourceDefinition extends SimpleResourceDefinition {
 
     // Common attributes
+
+    public static final PathElement PATH = PathElement.pathElement(ModelDescriptionConstants.SOCKET_BINDING_GROUP);
 
     public static final SimpleAttributeDefinition NAME = new SimpleAttributeDefinitionBuilder(ModelDescriptionConstants.NAME, ModelType.STRING, false)
             .setResourceOnly()
@@ -75,7 +77,7 @@ public class SocketBindingGroupResourceDefinition extends SimpleResourceDefiniti
     // Server-only attributes.
 
     public static final SimpleAttributeDefinition PORT_OFFSET = new SimpleAttributeDefinitionBuilder(ModelDescriptionConstants.PORT_OFFSET, ModelType.INT, true)
-            .setAllowExpression(true).setValidator(new IntRangeValidator(0, 65535, true, true))
+            .setAllowExpression(true).setValidator(new IntRangeValidator(-65535, 65535, true, true))
             .setDefaultValue(new ModelNode().set(0)).setFlags(AttributeAccess.Flag.RESTART_ALL_SERVICES).build();
 
     // Domain-only attributes
@@ -104,8 +106,8 @@ public class SocketBindingGroupResourceDefinition extends SimpleResourceDefiniti
 
 
     public SocketBindingGroupResourceDefinition(final OperationStepHandler addHandler, final OperationStepHandler removeHandler, final boolean forDomainModel, ResourceDefinition...children) {
-        super(PathElement.pathElement(ModelDescriptionConstants.SOCKET_BINDING_GROUP),
-                CommonDescriptions.getResourceDescriptionResolver(ModelDescriptionConstants.SOCKET_BINDING_GROUP),
+        super(PATH,
+                ControllerResolver.getResolver(ModelDescriptionConstants.SOCKET_BINDING_GROUP),
                 addHandler, removeHandler, OperationEntry.Flag.RESTART_ALL_SERVICES, OperationEntry.Flag.RESTART_ALL_SERVICES);
         this.forDomainModel = forDomainModel;
         this.children = children;

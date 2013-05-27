@@ -20,7 +20,6 @@ package org.jboss.as.controller.operations.common;
 
 
 import static org.jboss.as.controller.ControllerMessages.MESSAGES;
-import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.ADD;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.OP_ADDR;
 
 import java.util.List;
@@ -44,17 +43,6 @@ import org.jboss.msc.service.ServiceController;
  */
 public class InterfaceAddHandler extends AbstractAddStepHandler {
 
-
-    @Deprecated
-    public static ModelNode getAddInterfaceOperation(ModelNode address, ModelNode criteria) {
-        ModelNode op = Util.getEmptyOperation(ADD, address);
-        for (final AttributeDefinition def : InterfaceDefinition.ROOT_ATTRIBUTES) {
-            if(criteria.hasDefined(def.getName())) {
-                op.get(def.getName()).set(criteria.get(def.getName()));
-            }
-        }
-        return op;
-    }
 
     public static final InterfaceAddHandler NAMED_INSTANCE = new InterfaceAddHandler(false);
     public static final InterfaceAddHandler SPECIFIED_INSTANCE = new InterfaceAddHandler(true);

@@ -37,7 +37,7 @@ import java.util.Set;
 import java.util.regex.Pattern;
 import java.util.regex.PatternSyntaxException;
 
-import org.jboss.as.controller.OperationContext;
+import org.jboss.as.controller.ExpressionResolver;
 import org.jboss.as.controller.OperationFailedException;
 import org.jboss.as.controller.descriptions.ModelDescriptionConstants;
 import org.jboss.as.controller.parsing.Element;
@@ -45,6 +45,7 @@ import org.jboss.as.controller.parsing.ParseUtils;
 import org.jboss.dmr.ModelNode;
 import org.jboss.dmr.ModelType;
 import org.jboss.dmr.Property;
+import org.wildfly.security.manager.WildFlySecurityManager;
 
 /**
  * Utility class to create a interface criteria based on a {@link ModelNode} description
@@ -102,15 +103,7 @@ public final class ParsedInterfaceCriteria {
         return criteria;
     }
 
-    public static ParsedInterfaceCriteria parse(final ModelNode criteria) {
-        return parse(criteria, true, null);
-    }
-
-    public static ParsedInterfaceCriteria parse(final ModelNode criteria, final boolean specified) {
-        return parse(criteria, specified, null);
-    }
-
-    public static ParsedInterfaceCriteria parse(final ModelNode model, final boolean specified, final OperationContext context) {
+    public static ParsedInterfaceCriteria parse(final ModelNode model, final boolean specified, final ExpressionResolver expressionResolver) {
         if (model.getType() != ModelType.OBJECT) {
             return new ParsedInterfaceCriteria(MESSAGES.illegalInterfaceCriteria(model.getType(), ModelType.OBJECT));
         }
@@ -125,13 +118,18 @@ public final class ParsedInterfaceCriteria {
         } else if(subModel.hasDefined(ANY_IPV4_ADDRESS) && subModel.get(ANY_IPV4_ADDRESS).asBoolean(false)) {
             parsed = ParsedInterfaceCriteria.V4;
         } else if(subModel.hasDefined(ANY_IPV6_ADDRESS) && subModel.get(ANY_IPV6_ADDRESS).asBoolean(false)) {
-            parsed = ParsedInterfaceCriteria.V6;
+            // AS7-5360 Reject this setting if java.net.preferIPv4Stack=true
+            if (Boolean.parseBoolean(WildFlySecurityManager.getEnvPropertyPrivileged("java.net.preferIPv4Stack", "false"))) {
+                parsed = new ParsedInterfaceCriteria(MESSAGES.invalidAnyIPv6());
+            } else {
+                parsed = ParsedInterfaceCriteria.V6;
+            }
         } else {
             try {
                 final List<Property> nodes = subModel.asPropertyList();
                 final Set<InterfaceCriteria> criteriaSet = new HashSet<InterfaceCriteria>();
                 for (final Property property : nodes) {
-                    final InterfaceCriteria criterion = parseCriteria(property, false, context);
+                    final InterfaceCriteria criterion = parseCriteria(property, false, expressionResolver);
                     if (criterion instanceof WildcardInetAddressInterfaceCriteria) {
                         // AS7-1668: stop processing and just return the any binding.
                         if (nodes.size() > 1) {
@@ -163,7 +161,8 @@ public final class ParsedInterfaceCriteria {
         return parsed;
     }
 
-    private static InterfaceCriteria parseCriteria(final Property property, final boolean nested, final OperationContext context) throws OperationFailedException {
+    private static InterfaceCriteria parseCriteria(final Property property, final boolean nested,
+                                                   final ExpressionResolver expressionResolver) throws OperationFailedException {
         final Element element = Element.forName(property.getName());
         switch (element) {
             case LINK_LOCAL_ADDRESS:
@@ -185,12 +184,12 @@ public final class ParsedInterfaceCriteria {
             case INET_ADDRESS: {
                 ModelNode value = parsePossibleExpression(property.getValue());
                 checkStringType(value, element.getLocalName(), true);
-                return createInetAddressCriteria(value, context);
+                return createInetAddressCriteria(value, expressionResolver);
             }
             case LOOPBACK_ADDRESS: {
                 ModelNode value = parsePossibleExpression(property.getValue());
                 checkStringType(value, element.getLocalName(), true);
-                return new LoopbackAddressInterfaceCriteria(parseInetAddress(value, context));
+                return new LoopbackAddressInterfaceCriteria(parseInetAddress(value, expressionResolver));
             }
             case NIC: {
                 checkStringType(property.getValue(), element.getLocalName());
@@ -208,13 +207,14 @@ public final class ParsedInterfaceCriteria {
                 if(nested) {
                     throw new ParsingException(MESSAGES.nestedElementNotAllowed(element));
                 }
-                return parseNested(property.getValue(), element == Element.ANY, context);
+                return parseNested(property.getValue(), element == Element.ANY, expressionResolver);
             default:
                 throw new ParsingException(MESSAGES.unknownCriteriaInterfaceType(property.getName()));
         }
     }
 
-    private static InterfaceCriteria parseNested(final ModelNode subModel, final boolean any, final OperationContext context) throws OperationFailedException {
+    private static InterfaceCriteria parseNested(final ModelNode subModel, final boolean any,
+                                                 final ExpressionResolver expressionResolver) throws OperationFailedException {
         if(!subModel.isDefined() || subModel.asInt() == 0) {
             return null;
         }
@@ -229,7 +229,7 @@ public final class ParsedInterfaceCriteria {
                     if (nestedProperty.getValue().getType() == ModelType.LIST) {
                         for (ModelNode item : nestedProperty.getValue().asList()) {
                             Property prop = new Property(nestedProperty.getName(), item);
-                            InterfaceCriteria itemCriteria = parseCriteria(prop, true, context);
+                            InterfaceCriteria itemCriteria = parseCriteria(prop, true, expressionResolver);
                             if(itemCriteria != null) {
                                 criteriaSet.add(itemCriteria);
                             }
@@ -238,7 +238,7 @@ public final class ParsedInterfaceCriteria {
                     } // else drop down into default: block
                 }
                 default: {
-                    final InterfaceCriteria criteria = parseCriteria(nestedProperty, true, context);
+                    final InterfaceCriteria criteria = parseCriteria(nestedProperty, true, expressionResolver);
                     if(criteria != null) {
                         criteriaSet.add(criteria);
                     }
@@ -251,8 +251,9 @@ public final class ParsedInterfaceCriteria {
         return any ? new AnyInterfaceCriteria(criteriaSet) : new NotInterfaceCriteria(criteriaSet);
     }
 
-    private static InterfaceCriteria createInetAddressCriteria(final ModelNode model, final OperationContext context) throws ParsingException, OperationFailedException {
-        InetAddress address = parseInetAddress(model, context);
+    private static InterfaceCriteria createInetAddressCriteria(final ModelNode model,
+                                                               final ExpressionResolver expressionResolver) throws ParsingException, OperationFailedException {
+        InetAddress address = parseInetAddress(model, expressionResolver);
         if (address.isAnyLocalAddress()) {
             // they've entered a wildcard address
             return new WildcardInetAddressInterfaceCriteria(address);
@@ -293,8 +294,8 @@ public final class ParsedInterfaceCriteria {
         }
     }
 
-    private static InetAddress parseInetAddress(final ModelNode model, final OperationContext context) throws OperationFailedException {
-        final String rawAddress = context == null ? model.resolve().asString() : context.resolveExpressions(model).asString();
+    private static InetAddress parseInetAddress(final ModelNode model, final ExpressionResolver expressionResolver) throws OperationFailedException {
+        final String rawAddress = expressionResolver.resolveExpressions(model).asString();
         try {
             return InetAddress.getByName(rawAddress);
         } catch (UnknownHostException e) {

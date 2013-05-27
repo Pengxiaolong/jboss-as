@@ -26,6 +26,14 @@ import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.EXP
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.TYPE;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.VALUE_TYPE;
 
+import javax.management.openmbean.ArrayType;
+import javax.management.openmbean.CompositeData;
+import javax.management.openmbean.CompositeDataSupport;
+import javax.management.openmbean.CompositeType;
+import javax.management.openmbean.OpenType;
+import javax.management.openmbean.SimpleType;
+import javax.management.openmbean.TabularData;
+import javax.management.openmbean.TabularType;
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.util.ArrayList;
@@ -35,20 +43,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-import javax.management.openmbean.ArrayType;
-import javax.management.openmbean.CompositeData;
-import javax.management.openmbean.CompositeDataSupport;
-import javax.management.openmbean.CompositeType;
-import javax.management.openmbean.OpenType;
-import javax.management.openmbean.SimpleType;
-import javax.management.openmbean.TabularData;
-import javax.management.openmbean.TabularType;
-
-import junit.framework.Assert;
-
 import org.jboss.as.jmx.model.TypeConverters.TypeConverter;
 import org.jboss.dmr.ModelNode;
 import org.jboss.dmr.ModelType;
+import org.junit.Assert;
 import org.junit.Test;
 
 /**
@@ -173,7 +171,11 @@ public class ExpressionTypeConverterUnitTestCase {
         Assert.assertEquals(SimpleType.STRING, converter.getOpenType());
 
         ModelNode node = new ModelNode();
-        node.get("abc").set(BigInteger.valueOf(10));
+        // BES 2013/01/10 This uses BigInteger; I'm not sure why. But use a value > Long.MAX_VALUE
+        // so the json parser won't convert it down to a long or int resulting in a different value
+        // See AS7-4913
+        // Likely BigInteger was used *because of* the problem discussed in AS7-4913
+        node.get("abc").set(new BigInteger(String.valueOf(Long.MAX_VALUE) + "0"));
         node.get("def").set(false);
         node.protect();
 
@@ -680,7 +682,7 @@ public class ExpressionTypeConverterUnitTestCase {
         ModelNode description = createDescription(ModelType.LIST, ModelType.INT);
         description.get(EXPRESSIONS_ALLOWED).set(true);
         TypeConverter converter = getConverter(description);
-        ArrayType<?> arrayType = assertCast(ArrayType.class, converter.getOpenType());
+        assertCast(ArrayType.class, converter.getOpenType());
 
         ModelNode node = new ModelNode();
         node.addExpression("${this.should.not.exist.!!!!!:1}");

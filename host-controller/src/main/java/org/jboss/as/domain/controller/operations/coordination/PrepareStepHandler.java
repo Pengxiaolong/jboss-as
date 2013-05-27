@@ -28,19 +28,22 @@ import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.OPE
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.OP_ADDR;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.RUNNING_SERVER;
 import static org.jboss.as.domain.controller.DomainControllerLogger.HOST_CONTROLLER_LOGGER;
-import static org.jboss.as.domain.controller.DomainControllerMessages.MESSAGES;
 
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
 
+import org.jboss.as.controller.ControllerMessages;
 import org.jboss.as.controller.OperationContext;
 import org.jboss.as.controller.OperationFailedException;
 import org.jboss.as.controller.OperationStepHandler;
 import org.jboss.as.controller.PathAddress;
 import org.jboss.as.controller.ProxyController;
+import org.jboss.as.controller.extension.ExtensionRegistry;
 import org.jboss.as.controller.registry.ImmutableManagementResourceRegistration;
 import org.jboss.as.domain.controller.LocalHostControllerInfo;
+import org.jboss.as.domain.controller.operations.ApplyMissingDomainModelResourcesHandler;
 import org.jboss.as.host.controller.ignored.IgnoredDomainResourceRegistry;
+import org.jboss.as.host.controller.mgmt.DomainControllerRuntimeIgnoreTransformationRegistry;
 import org.jboss.as.repository.ContentRepository;
 import org.jboss.dmr.ModelNode;
 
@@ -61,10 +64,16 @@ public class PrepareStepHandler  implements OperationStepHandler {
                               final ContentRepository contentRepository,
                               final Map<String, ProxyController> hostProxies,
                               final Map<String, ProxyController> serverProxies,
-                              final IgnoredDomainResourceRegistry ignoredDomainResourceRegistry) {
+                              final IgnoredDomainResourceRegistry ignoredDomainResourceRegistry,
+                              final ExtensionRegistry extensionRegistry,
+                              final DomainControllerRuntimeIgnoreTransformationRegistry runtimeIgnoreTransformationRegistry) {
         this.localHostControllerInfo = localHostControllerInfo;
-        this.slaveHandler = new OperationSlaveStepHandler(localHostControllerInfo, serverProxies, ignoredDomainResourceRegistry);
-        this.coordinatorHandler = new OperationCoordinatorStepHandler(localHostControllerInfo, contentRepository, hostProxies, serverProxies, slaveHandler);
+        this.slaveHandler = new OperationSlaveStepHandler(localHostControllerInfo, serverProxies, ignoredDomainResourceRegistry, extensionRegistry);
+        this.coordinatorHandler = new OperationCoordinatorStepHandler(localHostControllerInfo, contentRepository, hostProxies, serverProxies, slaveHandler, runtimeIgnoreTransformationRegistry);
+    }
+
+    public void initialize(ApplyMissingDomainModelResourcesHandler applyMissingDomainModelResourcesHandler) {
+        slaveHandler.intialize(applyMissingDomainModelResourcesHandler);
     }
 
     @Override
@@ -117,9 +126,14 @@ public class PrepareStepHandler  implements OperationStepHandler {
         if(stepHandler != null) {
             context.addStep(stepHandler, OperationContext.Stage.MODEL);
         } else {
-            context.getFailureDescription().set(MESSAGES.noHandlerForOperation(operationName, PathAddress.pathAddress(operation.get(OP_ADDR))));
+            PathAddress pathAddress = PathAddress.pathAddress(operation.get(OP_ADDR));
+            if (registration == null) {
+                context.getFailureDescription().set(ControllerMessages.MESSAGES.noSuchResourceType(pathAddress));
+            } else {
+                context.getFailureDescription().set(ControllerMessages.MESSAGES.noHandlerForOperation(operationName, pathAddress));
+            }
         }
-        context.completeStep();
+        context.stepCompleted();
     }
 
 }

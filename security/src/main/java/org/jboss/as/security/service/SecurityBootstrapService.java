@@ -27,7 +27,6 @@ import java.security.Policy;
 import java.util.Properties;
 import java.util.Set;
 
-import javax.security.auth.login.Configuration;
 import javax.security.jacc.PolicyContext;
 
 import org.jboss.as.security.SecurityExtension;
@@ -46,6 +45,7 @@ import org.jboss.security.SecurityConstants;
 import org.jboss.security.auth.callback.CallbackHandlerPolicyContextHandler;
 import org.jboss.security.jacc.SubjectPolicyContextHandler;
 import org.jboss.security.plugins.ClassLoaderLocatorFactory;
+import org.wildfly.security.manager.WildFlySecurityManager;
 
 /**
  * Bootstrap service for the security container
@@ -83,8 +83,7 @@ public class SecurityBootstrapService implements Service<Void> {
 
             // Get the current Policy impl
             oldPolicy = Policy.getPolicy();
-            String provider = SecurityActions.getSystemProperty(JACC_POLICY_PROVIDER,
-                    "org.jboss.security.jacc.DelegatingPolicy");
+            String provider = WildFlySecurityManager.getPropertyPrivileged(JACC_POLICY_PROVIDER, "org.jboss.security.jacc.DelegatingPolicy");
             Class<?> providerClass = SecurityActions.loadClass(provider);
             try {
                 // Look for a ctor(Policy) signature

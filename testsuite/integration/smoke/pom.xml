@@ -4,7 +4,7 @@
   Set these VM properties in your IDE debugger 
 
   -Djava.util.logging.manager=org.jboss.logmanager.LogManager
-  -Djboss.home=${workspace_loc:jboss-as-build}/target/jboss-as-7.2.0.Alpha1-SNAPSHOT 
+  -Djboss.home=${workspace_loc:jboss-as-build}/target/jboss-as-8.0.0.Alpha2-SNAPSHOT 
   -DallowConnectingToRunningServer=true
 -->
 <project xmlns="http://maven.apache.org/POM/4.0.0"
@@ -13,19 +13,19 @@
     <modelVersion>4.0.0</modelVersion>
 
     <parent>
-        <groupId>org.jboss.as</groupId>
-        <artifactId>jboss-as-ts-integ</artifactId>
-        <version>7.2.0.Alpha1-SNAPSHOT</version>
+        <groupId>org.wildfly</groupId>
+        <artifactId>wildfly-ts-integ</artifactId>
+        <version>8.0.0.Alpha2-SNAPSHOT</version>
     </parent>
 
     <!-- ********************************************************************************** -->
     <!-- ******************************** Smoke Integration ******************************* -->
     <!-- ********************************************************************************** -->
-    <groupId>org.jboss.as</groupId>
-    <artifactId>jboss-as-ts-integ-smoke</artifactId>
-    <version>7.2.0.Alpha1-SNAPSHOT</version>
+    <groupId>org.wildfly</groupId>
+    <artifactId>wildfly-ts-integ-smoke</artifactId>
+    <version>8.0.0.Alpha2-SNAPSHOT</version>
 
-    <name>JBoss Application Server Test Suite: Integration - Smoke</name>
+    <name>WildFly Test Suite: Integration - Smoke</name>
 
     <properties>
         <jbossas.ts.integ.dir>${basedir}/..</jbossas.ts.integ.dir>
@@ -99,6 +99,9 @@
                                     <systemPropertyVariables>
                                         <jboss.server.config.file.name>standalone.xml</jboss.server.config.file.name>
                                         <jboss.inst>${basedir}/target/jbossas</jboss.inst>
+                                        <org.jboss.model.test.cache.root>${org.jboss.model.test.cache.root}</org.jboss.model.test.cache.root>
+                                        <org.jboss.model.test.classpath.cache>${org.jboss.model.test.classpath.cache}</org.jboss.model.test.classpath.cache>
+																				<org.jboss.model.test.maven.repository.urls>${org.jboss.model.test.maven.repository.urls}</org.jboss.model.test.maven.repository.urls>
                                     </systemPropertyVariables>
                                 </configuration>
                             </execution>

@@ -28,39 +28,46 @@
     <modelVersion>4.0.0</modelVersion>
 
     <parent>
-        <groupId>org.jboss.as</groupId>
-        <artifactId>jboss-as-parent</artifactId>
-        <version>7.2.0.Alpha1-SNAPSHOT</version>
+        <groupId>org.wildfly</groupId>
+        <artifactId>wildfly-parent</artifactId>
+        <version>8.0.0.Alpha2-SNAPSHOT</version>
     </parent>
 
-    <groupId>org.jboss.as</groupId>
-    <artifactId>jboss-as-logging</artifactId>
+    <groupId>org.wildfly</groupId>
+    <artifactId>wildfly-logging</artifactId>
 
-    <name>JBoss Application Server: Logging Subsystem</name>
+    <name>WildFly: Logging Subsystem</name>
 
     <build>
         <plugins>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-compiler-plugin</artifactId>
-                <configuration>
-                    <compilerArgument>
-                        -AgeneratedTranslationFilesPath=${project.build.directory}/generated-translation-files
-                    </compilerArgument>
-                </configuration>
+                <artifactId>maven-dependency-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>properties</goal>
+                        </goals>
+                    </execution>
+                </executions>
             </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
                 <configuration>
-                    <includes>
-                        <include>**/*TestCase.java</include>
-                    </includes>
-                    <enableAssertions>false</enableAssertions>
+                    <useManifestOnlyJar>false</useManifestOnlyJar>
+                    <!-- the log manager needs to be setup before the agent -->
+                    <argLine>-Xbootclasspath/a:${org.jboss.logmanager:jboss-logmanager:jar}
+                        -javaagent:${org.jboss.byteman:byteman:jar}=port:9091,boot:${org.jboss.byteman:byteman:jar}</argLine>
                     <systemPropertyVariables>
                         <java.util.logging.manager>org.jboss.logmanager.LogManager</java.util.logging.manager>
-                        <jboss.server.log.dir>${project.build.directory}/logs</jboss.server.log.dir>
-                        <jboss.server.config.dir>${project.build.directory}/config</jboss.server.config.dir>
+                        <jboss.server.log.dir>${project.build.directory}${file.separator}logs</jboss.server.log.dir>
+                        <jboss.server.config.dir>${project.build.directory}${file.separator}config</jboss.server.config.dir>
+                        <org.jboss.byteman.contrib.bmunit.agent.inhibit>true</org.jboss.byteman.contrib.bmunit.agent.inhibit>
+                        <org.jboss.byteman.contrib.bmunit.agent.port>9091</org.jboss.byteman.contrib.bmunit.agent.port>
+                        <org.jboss.model.test.cache.root>${org.jboss.model.test.cache.root}</org.jboss.model.test.cache.root>
+                        <org.jboss.model.test.classpath.cache>${org.jboss.model.test.classpath.cache}</org.jboss.model.test.classpath.cache>
+                        <org.jboss.model.test.maven.repository.urls>${org.jboss.model.test.maven.repository.urls}</org.jboss.model.test.maven.repository.urls>
                     </systemPropertyVariables>
                 </configuration>
             </plugin>
@@ -79,13 +86,18 @@
         </dependency>
 
         <dependency>
-            <groupId>org.jboss.as</groupId>
-            <artifactId>jboss-as-controller</artifactId>
+            <groupId>org.wildfly</groupId>
+            <artifactId>wildfly-controller</artifactId>
         </dependency>
 
         <dependency>
-            <groupId>org.jboss.as</groupId>
-            <artifactId>jboss-as-server</artifactId>
+            <groupId>org.wildfly</groupId>
+            <artifactId>wildfly-security-manager</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.wildfly</groupId>
+            <artifactId>wildfly-server</artifactId>
         </dependency>
 
         <dependency>
@@ -113,8 +125,38 @@
         </dependency>
 
         <dependency>
-            <groupId>org.jboss.as</groupId>
-            <artifactId>jboss-as-subsystem-test</artifactId>
+            <groupId>org.jboss.stdio</groupId>
+            <artifactId>jboss-stdio</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.jboss.byteman</groupId>
+            <artifactId>byteman</artifactId>
+            <scope>test</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>org.jboss.byteman</groupId>
+            <artifactId>byteman-submit</artifactId>
+            <scope>test</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>org.jboss.byteman</groupId>
+            <artifactId>byteman-install</artifactId>
+            <scope>test</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>org.jboss.byteman</groupId>
+            <artifactId>byteman-bmunit</artifactId>
+            <scope>test</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>org.wildfly</groupId>
+            <artifactId>wildfly-subsystem-test</artifactId>
+						<type>pom</type>
             <scope>test</scope>
         </dependency>
 
@@ -125,4 +167,5 @@
         </dependency>
 
     </dependencies>
+
 </project>

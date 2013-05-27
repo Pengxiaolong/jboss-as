@@ -111,7 +111,8 @@ public final class ProcessControllerClient implements Closeable {
                             final byte[] processAuthCode = new byte[16];
                             readFully(dataStream, processAuthCode);
                             final boolean processRunning = StreamUtils.readBoolean(dataStream);
-                            inventory.put(processName, new ProcessInfo(processName, authCode, processRunning));
+                            final boolean processStopping = StreamUtils.readBoolean(dataStream);
+                            inventory.put(processName, new ProcessInfo(processName, processAuthCode, processRunning, processStopping));
                         }
                         dataStream.close();
                         CLIENT_LOGGER.tracef("Received process_inventory");
@@ -316,6 +317,34 @@ public final class ProcessControllerClient implements Closeable {
         try {
             os.write(Protocol.SHUTDOWN);
             writeInt(os, exitCode);
+            os.close();
+        } finally {
+            safeClose(os);
+        }
+    }
+
+    public void destroyProcess(String processName) throws IOException {
+        if (processName == null) {
+            throw MESSAGES.nullVar("processName");
+        }
+        final OutputStream os = connection.writeMessage();
+        try {
+            os.write(Protocol.DESTROY_PROECESS);
+            writeUTFZBytes(os, processName);
+            os.close();
+        } finally {
+            safeClose(os);
+        }
+    }
+
+    public void killProcess(String processName) throws IOException {
+        if (processName == null) {
+            throw MESSAGES.nullVar("processName");
+        }
+        final OutputStream os = connection.writeMessage();
+        try {
+            os.write(Protocol.KILL_PROCESS);
+            writeUTFZBytes(os, processName);
             os.close();
         } finally {
             safeClose(os);

@@ -23,11 +23,10 @@
 package org.jboss.as.messaging;
 
 import static org.jboss.as.controller.SimpleAttributeDefinitionBuilder.create;
-import static org.jboss.as.controller.registry.AttributeAccess.Flag.RESTART_ALL_SERVICES;
 import static org.jboss.dmr.ModelType.BOOLEAN;
 import static org.jboss.dmr.ModelType.STRING;
 
-import org.hornetq.core.config.impl.ConfigurationImpl;
+import org.hornetq.api.config.HornetQDefaultConfiguration;
 import org.jboss.as.controller.AttributeDefinition;
 import org.jboss.as.controller.PathElement;
 import org.jboss.as.controller.SimpleAttributeDefinition;
@@ -43,36 +42,43 @@ import org.jboss.dmr.ModelNode;
  */
 public class DivertDefinition extends SimpleResourceDefinition {
 
-    private static final PathElement DIVERT_PATH = PathElement.pathElement(CommonAttributes.DIVERT);
+    public static final PathElement PATH = PathElement.pathElement(CommonAttributes.DIVERT);
 
     public static final SimpleAttributeDefinition ROUTING_NAME = create("routing-name", STRING)
             .setAllowNull(true)
-            .setFlags(RESTART_ALL_SERVICES)
+            .setAllowExpression(true)
+            .setRestartAllServices()
             .build();
 
     public static final SimpleAttributeDefinition ADDRESS = create("divert-address", STRING)
             .setXmlName("address")
             .setDefaultValue(null)
-            .setFlags(RESTART_ALL_SERVICES)
+            .setAllowExpression(true)
+            .setRestartAllServices()
             .build();
 
     public static final SimpleAttributeDefinition FORWARDING_ADDRESS = create("forwarding-address", STRING)
-            .setFlags(RESTART_ALL_SERVICES)
+            .setAllowExpression(true)
+            .setRestartAllServices()
             .build();
 
     public static final SimpleAttributeDefinition EXCLUSIVE = create("exclusive", BOOLEAN)
-            .setDefaultValue(new ModelNode().set(ConfigurationImpl.DEFAULT_DIVERT_EXCLUSIVE))
+            .setDefaultValue(new ModelNode(HornetQDefaultConfiguration.isDefaultDivertExclusive()))
             .setAllowNull(true)
-            .setFlags(RESTART_ALL_SERVICES)
+            .setAllowExpression(true)
+            .setRestartAllServices()
             .build();
 
     public static final AttributeDefinition[] ATTRIBUTES = { ROUTING_NAME, ADDRESS, FORWARDING_ADDRESS, CommonAttributes.FILTER,
         CommonAttributes.TRANSFORMER_CLASS_NAME, EXCLUSIVE };
 
+    public static final AttributeDefinition[] ATTRIBUTES_WITH_EXPRESSION_ALLOWED_IN_1_2_0 = { ROUTING_NAME, ADDRESS, FORWARDING_ADDRESS, CommonAttributes.FILTER,
+            EXCLUSIVE };
+
     private final boolean registerRuntimeOnly;
 
     public DivertDefinition(boolean registerRuntimeOnly) {
-        super(DivertDefinition.DIVERT_PATH,
+        super(PATH,
                 MessagingExtension.getResourceDescriptionResolver(CommonAttributes.DIVERT),
                 DivertAdd.INSTANCE,
                 DivertRemove.INSTANCE);

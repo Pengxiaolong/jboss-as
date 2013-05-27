@@ -48,7 +48,7 @@
                 <xs:element name="interfaces" type="named-interfacesType" minOccurs="0" maxOccurs="1"/>
                 <xs:element name="socket-binding-groups" type="socket-binding-groupsType" minOccurs="0" maxOccurs="1"/>
                 <xs:element name="deployments" type="domain-deploymentsType" minOccurs="0" maxOccurs="1"/>
-                <xs:element name="deployment-overlays" type="deployment-overlaysType" minOccurs="0" maxOccurs="1"/>
+                <xs:element name="deployment-overlays" type="domain-deployment-overlaysType" minOccurs="0" maxOccurs="1"/>
                 <xs:element name="server-groups" type="server-groupsType" minOccurs="0" maxOccurs="1"/>
                 <xs:element name="management-client-content" type="management-client-contentType" minOccurs="0" maxOccurs="1"/>
             </xs:sequence>
@@ -123,7 +123,7 @@
                 <xs:element name="interfaces" type="specified-interfacesType" minOccurs="0" maxOccurs="1"/>
                 <xs:element name="socket-binding-group" type="standalone-socket-binding-groupType" minOccurs="0" maxOccurs="1"/>
                 <xs:element name="deployments" type="server-deploymentsType" minOccurs="0" maxOccurs="1"/>
-                <xs:element name="deployment-overlays" type="deployment-overlaysType" minOccurs="0" maxOccurs="1"/>
+                <xs:element name="deployment-overlays" type="standalone-deployment-overlaysType" minOccurs="0" maxOccurs="1"/>
             </xs:sequence>
             <xs:attribute name="name" type="xs:string" use="optional">
                 <xs:annotation>
@@ -215,18 +215,27 @@
                 </xs:documentation>
             </xs:annotation>
         </xs:attribute>
-        <!-- TODO - Later will be optional if we support GSSAPI to connect to LDAP -->
-        <xs:attribute name="search-dn" type="xs:string" use="required">
+        <xs:attribute name="search-dn" type="xs:string" use="optional">
             <xs:annotation>
                 <xs:documentation>
                     The distinguished name to use when connecting to LDAP to perform searches.
                 </xs:documentation>
             </xs:annotation>
         </xs:attribute>
-        <xs:attribute name="search-credential" type="xs:string" use="required">
+        <xs:attribute name="search-credential" type="xs:string" use="optional">
             <xs:annotation>
                 <xs:documentation>
                     The credential to use when connecting to perform a search.
+                </xs:documentation>
+            </xs:annotation>
+        </xs:attribute>
+        <xs:attribute name="security-realm" type="xs:string" use="optional">
+            <xs:annotation>
+                <xs:documentation>
+                    A reference to a security realm to obtain an initialised SSLContext to use when establishing a
+                    connection to the LDAP server.
+
+                    The realm referenced here MUST NOT be a realm that is also configured to use this connection.
                 </xs:documentation>
             </xs:annotation>
         </xs:attribute>
@@ -420,7 +429,7 @@
             </xs:documentation>
         </xs:annotation>
 	    <xs:complexContent>
-		    <xs:extension base="keyStoreType">
+            <xs:extension base="keyStoreType">
                 <xs:attribute name="alias" type="xs:string" use="optional">
                     <xs:annotation>
                         <xs:documentation>
@@ -585,6 +594,15 @@
             <xs:annotation>
                 <xs:documentation>
                     The name of the attribute which is the users distinguished name.
+                </xs:documentation>
+            </xs:annotation>
+        </xs:attribute>
+        <xs:attribute name="allow-empty-passwords" type="xs:boolean" default="false">
+            <xs:annotation>
+                <xs:documentation>
+                    Should users be allowed to supply an empty password?  Some LDAP servers will
+                    allow an anonymous bind so an empty password could appear as a successful authentication
+                    even though no password was sent to verify.
                 </xs:documentation>
             </xs:annotation>
         </xs:attribute>
@@ -1070,9 +1088,9 @@
             <xs:element name="socket-binding-group" type="socket-binding-group-refType" minOccurs="1"/>
 
             <xs:element name="deployments" type="server-groupDeploymentsType" minOccurs="0"/>
+            <xs:element name="deployment-overlays" type="server-group-deployment-overlaysType" minOccurs="0" maxOccurs="1"/>
 
             <xs:element name="system-properties" minOccurs="0" type="properties-with-boottime"/>
-            <xs:element name="deployment-overlays" type="server-group-deployment-overlaysType" minOccurs="0" maxOccurs="1"/>
         </xs:sequence>
         <xs:attribute name="name" type="xs:string">
             <xs:annotation>
@@ -1939,7 +1957,7 @@
                         The name of the path. Cannot be one of the standard fixed paths
                         provided by the system:
 
-                        jboss.home - the root directory of the JBoss AS distribution
+                        jboss.home.dir - the root directory of the JBoss AS distribution
                         user.home - user's home directory
                         user.dir - user's current working directory
                         java.home - java installation directory
@@ -1993,7 +2011,7 @@
                 relative to the path specified by this attribute. The standard
                 paths provided by the system include:
 
-                jboss.home - the root directory of the JBoss AS distribution
+                jboss.home.dir - the root directory of the JBoss AS distribution
                 user.home - user's home directory
                 user.dir - user's current working directory
                 java.home - java installation directory
@@ -2298,7 +2316,7 @@
         </xs:sequence>
     </xs:complexType>
 
-    <xs:complexType name="deployment-overlaysType">
+    <xs:complexType name="standalone-deployment-overlaysType">
         <xs:annotation>
             <xs:documentation>
                 <![CDATA[
@@ -2307,11 +2325,11 @@
             </xs:documentation>
         </xs:annotation>
         <xs:sequence>
-            <xs:element name="deployment-overlay" type="deployment-overlayType" minOccurs="0" maxOccurs="unbounded"/>
+            <xs:element name="deployment-overlay" type="standalone-deployment-overlayType" minOccurs="0" maxOccurs="unbounded"/>
         </xs:sequence>
     </xs:complexType>
 
-    <xs:complexType name="deployment-overlayType">
+    <xs:complexType name="standalone-deployment-overlayType">
         <xs:sequence>
             <xs:element name="content" type="deployment-overlay-contentType" minOccurs="0" maxOccurs="unbounded"/>
             <xs:element name="deployment" type="deployment-overlay-deploymentType" minOccurs="0" maxOccurs="unbounded"/>
@@ -2319,17 +2337,25 @@
         <xs:attribute name="name" use="required" type="xs:token"/>
     </xs:complexType>
 
-    <xs:complexType name="deployment-overlay-contentType">
-        <xs:attribute name="path" type="xs:token" use="required"/>
-        <xs:attribute name="content" type="xs:token" use="required"/>
+    <xs:complexType name="domain-deployment-overlaysType">
+        <xs:annotation>
+            <xs:documentation>
+                <![CDATA[
+                   Stores information about deployment overlays that can be used to override deployment content.
+                ]]>
+            </xs:documentation>
+        </xs:annotation>
+        <xs:sequence>
+            <xs:element name="deployment-overlay" type="domain-deployment-overlayType" minOccurs="0" maxOccurs="unbounded"/>
+        </xs:sequence>
     </xs:complexType>
 
-
-    <xs:complexType name="deployment-overlay-deploymentType">
-        <xs:attribute name="name" type="xs:string" use="required"/>
-        <xs:attribute name="regular-expression" type="xs:boolean" use="optional"/>
+    <xs:complexType name="domain-deployment-overlayType">
+        <xs:sequence>
+            <xs:element name="content" type="deployment-overlay-contentType" minOccurs="0" maxOccurs="unbounded"/>
+        </xs:sequence>
+        <xs:attribute name="name" use="required" type="xs:token"/>
     </xs:complexType>
-
 
     <xs:complexType name="server-group-deployment-overlaysType">
         <xs:annotation>
@@ -2350,5 +2376,15 @@
         </xs:sequence>
         <xs:attribute name="name" use="required" type="xs:token"/>
     </xs:complexType>
+
+    <xs:complexType name="deployment-overlay-contentType">
+        <xs:attribute name="path" type="xs:token" use="required"/>
+        <xs:attribute name="content" type="xs:token" use="required"/>
+    </xs:complexType>
+
+    <xs:complexType name="deployment-overlay-deploymentType">
+        <xs:attribute name="name" type="xs:string" use="required"/>
+    </xs:complexType>
+
 
 </xs:schema>

@@ -1,3 +1,25 @@
+/*
+ * JBoss, Home of Professional Open Source.
+ * Copyright 2012, Red Hat, Inc., and individual contributors
+ * as indicated by the @author tags. See the copyright.txt file in the
+ * distribution for a full listing of individual contributors.
+ *
+ * This is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU Lesser General Public License as
+ * published by the Free Software Foundation; either version 2.1 of
+ * the License, or (at your option) any later version.
+ *
+ * This software is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with this software; if not, write to the Free
+ * Software Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA
+ * 02110-1301 USA, or see the FSF site: http://www.fsf.org.
+ */
+
 package org.jboss.as.controller.resource;
 
 import static org.jboss.as.controller.ControllerMessages.MESSAGES;
@@ -18,13 +40,13 @@ import org.jboss.as.controller.AttributeDefinition;
 import org.jboss.as.controller.ListAttributeDefinition;
 import org.jboss.as.controller.OperationFailedException;
 import org.jboss.as.controller.PathElement;
-import org.jboss.as.controller.ResourceNameOperationStepHandler;
+import org.jboss.as.controller.ReadResourceNameOperationStepHandler;
 import org.jboss.as.controller.SimpleAttributeDefinitionBuilder;
 import org.jboss.as.controller.SimpleResourceDefinition;
 import org.jboss.as.controller.client.helpers.MeasurementUnit;
 import org.jboss.as.controller.descriptions.ModelDescriptionConstants;
 import org.jboss.as.controller.descriptions.ResourceDescriptionResolver;
-import org.jboss.as.controller.descriptions.common.CommonDescriptions;
+import org.jboss.as.controller.descriptions.common.ControllerResolver;
 import org.jboss.as.controller.operations.common.InterfaceAddHandler;
 import org.jboss.as.controller.operations.common.InterfaceCriteriaWriteHandler;
 import org.jboss.as.controller.operations.common.InterfaceRemoveHandler;
@@ -40,10 +62,6 @@ import org.jboss.dmr.ModelType;
  * @author <a href="mailto:tomaz.cerar@redhat.com">Tomaz Cerar</a> (c) 2012 Red Hat Inc.
  */
 public class InterfaceDefinition extends SimpleResourceDefinition {
-    /*  public static final InterfaceDefinition INSTANCE_RUNTIME = new InterfaceDefinition(true);
-        public static final InterfaceDefinition INSTANCE_CONFIG = new InterfaceDefinition(false);
-    */
-
     public static final String[] ALTERNATIVES_ANY = new String[]{ModelDescriptionConstants.ANY_ADDRESS, ModelDescriptionConstants.ANY_IPV4_ADDRESS, ModelDescriptionConstants.ANY_IPV6_ADDRESS};
     public static final String[] OTHERS = new String[]{localName(Element.INET_ADDRESS), localName(Element.LINK_LOCAL_ADDRESS),
             localName(Element.LOOPBACK), localName(Element.LOOPBACK_ADDRESS), localName(Element.MULTICAST), localName(Element.NIC),
@@ -164,7 +182,7 @@ public class InterfaceDefinition extends SimpleResourceDefinition {
 
     public InterfaceDefinition(InterfaceAddHandler addHandler, InterfaceRemoveHandler removeHandler, boolean updateRuntime) {
         super(PathElement.pathElement(INTERFACE),
-                CommonDescriptions.getResourceDescriptionResolver(INTERFACE),
+                ControllerResolver.getResolver(INTERFACE),
                 addHandler,
                 removeHandler);
         this.updateRuntime = updateRuntime;
@@ -201,7 +219,7 @@ public class InterfaceDefinition extends SimpleResourceDefinition {
         for (final AttributeDefinition def : InterfaceDefinition.ROOT_ATTRIBUTES) {
             registration.registerReadWriteAttribute(def, null, handler);
         }
-        registration.registerReadOnlyAttribute(InterfaceDefinition.NAME, ResourceNameOperationStepHandler.INSTANCE);
+        registration.registerReadOnlyAttribute(InterfaceDefinition.NAME, ReadResourceNameOperationStepHandler.INSTANCE);
     }
 
     @Deprecated

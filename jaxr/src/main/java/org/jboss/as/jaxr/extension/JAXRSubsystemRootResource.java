@@ -21,24 +21,17 @@
  */
 package org.jboss.as.jaxr.extension;
 
-import org.jboss.as.controller.PathElement;
-import org.jboss.as.controller.ReloadRequiredRemoveStepHandler;
-import org.jboss.as.controller.SimpleResourceDefinition;
-import org.jboss.as.controller.descriptions.DefaultResourceAddDescriptionProvider;
-import org.jboss.as.controller.descriptions.DefaultResourceRemoveDescriptionProvider;
-import org.jboss.as.controller.descriptions.DescriptionProvider;
-import org.jboss.as.controller.descriptions.ModelDescriptionConstants;
-import org.jboss.as.controller.descriptions.ResourceDescriptionResolver;
-import org.jboss.as.controller.descriptions.StandardResourceDescriptionResolver;
+import org.jboss.as.controller.ModelVersion;
+import org.jboss.as.controller.SimpleAttributeDefinition;
+import org.jboss.as.controller.SimpleAttributeDefinitionBuilder;
+import org.jboss.as.controller.SubsystemRegistration;
+import org.jboss.as.controller.ModelOnlyResourceDefinition;
 import org.jboss.as.controller.registry.ManagementResourceRegistration;
-import org.jboss.as.controller.registry.OperationEntry;
-import org.jboss.as.jaxr.JAXRConfiguration;
-import org.jboss.as.jaxr.JAXRConstants;
-
-import java.util.EnumSet;
-
-import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.ADD;
-import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.REMOVE;
+import org.jboss.as.controller.transform.description.RejectAttributeChecker;
+import org.jboss.as.controller.transform.description.ResourceTransformationDescriptionBuilder;
+import org.jboss.as.controller.transform.description.TransformationDescription;
+import org.jboss.as.controller.transform.description.TransformationDescriptionBuilder;
+import org.jboss.dmr.ModelType;
 
 
 /**
@@ -47,32 +40,35 @@ import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.REM
  * @author Thomas.Diesler@jboss.com
  * @since 10-Nov-2011
  */
-class JAXRSubsystemRootResource extends SimpleResourceDefinition {
+class JAXRSubsystemRootResource extends ModelOnlyResourceDefinition {
 
-    private final JAXRConfiguration config;
+    static SimpleAttributeDefinition CONNECTION_FACTORY_ATTRIBUTE =
+            new SimpleAttributeDefinitionBuilder("jndi-name", ModelType.STRING, true)
+            .setAllowExpression(true)
+            .build();
 
-    JAXRSubsystemRootResource(JAXRConfiguration config) {
-        super(PathElement.pathElement(ModelDescriptionConstants.SUBSYSTEM, JAXRConstants.SUBSYSTEM_NAME), getResourceDescriptionResolver(JAXRConstants.SUBSYSTEM_NAME));
-        this.config = config;
-    }
+    static SimpleAttributeDefinition CONNECTION_FACTORY_IMPL_ATTRIBUTE =
+            new SimpleAttributeDefinition("class", ModelType.STRING, true);
 
-    private static ResourceDescriptionResolver getResourceDescriptionResolver(final String keyPrefix) {
-        return new StandardResourceDescriptionResolver(keyPrefix, JAXRConstants.RESOURCE_NAME, JAXRSubsystemRootResource.class.getClassLoader(), true, false);
-    }
-
-    @Override
-    public void registerOperations(final ManagementResourceRegistration rootResourceRegistration) {
-        final ResourceDescriptionResolver rootResolver = getResourceDescriptionResolver();
-        final DescriptionProvider subsystemAddDescription = new DefaultResourceAddDescriptionProvider(rootResourceRegistration, rootResolver);
-        rootResourceRegistration.registerOperationHandler(ADD, new JAXRSubsystemAdd(config), subsystemAddDescription, EnumSet.of(OperationEntry.Flag.RESTART_ALL_SERVICES));
-        final DescriptionProvider subsystemRemoveDescription = new DefaultResourceRemoveDescriptionProvider(rootResolver);
-        rootResourceRegistration.registerOperationHandler(REMOVE, ReloadRequiredRemoveStepHandler.INSTANCE, subsystemRemoveDescription,
-                EnumSet.of(OperationEntry.Flag.RESTART_ALL_SERVICES));
+    JAXRSubsystemRootResource() {
+        super(JAXRExtension.SUBSYSTEM_PATH,
+                JAXRExtension.getResolver(),
+                CONNECTION_FACTORY_ATTRIBUTE, CONNECTION_FACTORY_IMPL_ATTRIBUTE);
     }
 
     @Override
-    public void registerAttributes(final ManagementResourceRegistration rootResourceRegistration) {
-        JAXRWriteAttributeHandler writeHandler = new JAXRWriteAttributeHandler(config);
-        writeHandler.registerAttributes(rootResourceRegistration);
+    public void registerChildren(ManagementResourceRegistration subsystemRoot) {
+        super.registerChildren(subsystemRoot);
+        // JAXR Properties
+        subsystemRoot.registerSubModel(new JAXRPropertyDefinition());
+    }
+
+    static void registerTransformerers(SubsystemRegistration subsystem) {
+
+        ResourceTransformationDescriptionBuilder builder = TransformationDescriptionBuilder.Factory.createSubsystemInstance();
+        builder.getAttributeBuilder()
+            .addRejectCheck(RejectAttributeChecker.SIMPLE_EXPRESSIONS, CONNECTION_FACTORY_ATTRIBUTE)
+            .end();
+        TransformationDescription.Tools.register(builder.build(), subsystem, ModelVersion.create(1, 1, 0));
     }
 }

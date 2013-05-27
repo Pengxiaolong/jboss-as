@@ -25,14 +25,16 @@ package org.jboss.as.osgi.deployment;
 import static org.jboss.as.ee.component.Attachments.EE_MODULE_DESCRIPTION;
 import static org.jboss.as.osgi.OSGiLogger.LOGGER;
 import static org.jboss.as.osgi.OSGiMessages.MESSAGES;
+import static org.jboss.osgi.framework.spi.IntegrationConstants.BUNDLE_ACTIVATOR_KEY;
+
 import org.jboss.as.ee.component.Component;
 import org.jboss.as.ee.component.ComponentDescription;
 import org.jboss.as.ee.component.ComponentInstance;
 import org.jboss.as.ee.component.EEModuleDescription;
 import org.jboss.as.osgi.OSGiConstants;
+import org.jboss.as.server.deployment.AttachmentKey;
 import org.jboss.as.server.deployment.Attachments;
 import org.jboss.as.server.deployment.Attachments.BundleState;
-import org.jboss.as.server.deployment.AttachmentKey;
 import org.jboss.as.server.deployment.DeploymentPhaseContext;
 import org.jboss.as.server.deployment.DeploymentUnit;
 import org.jboss.as.server.deployment.DeploymentUnitProcessingException;
@@ -45,12 +47,12 @@ import org.jboss.msc.service.ServiceTarget;
 import org.jboss.msc.service.StartContext;
 import org.jboss.msc.service.StartException;
 import org.jboss.msc.service.StopContext;
-import org.jboss.msc.service.ServiceController.Mode;
 import org.jboss.msc.value.InjectedValue;
 import org.jboss.osgi.deployment.deployer.Deployment;
-import org.jboss.osgi.framework.BundleManager;
+import org.jboss.osgi.framework.spi.BundleManager;
 import org.jboss.osgi.metadata.OSGiMetaData;
 import org.jboss.osgi.resolver.XBundle;
+import org.jboss.osgi.resolver.XBundleRevision;
 import org.osgi.framework.Bundle;
 import org.osgi.framework.BundleActivator;
 import org.osgi.framework.BundleException;
@@ -63,43 +65,31 @@ import org.osgi.framework.BundleException;
  */
 public class BundleActivateProcessor implements DeploymentUnitProcessor {
 
-    private final AttachmentKey<ServiceName> BUNDLE_ACTIVATE_SERVICE = AttachmentKey.create(ServiceName.class);
-
     @Override
     public void deploy(final DeploymentPhaseContext phaseContext) throws DeploymentUnitProcessingException {
         DeploymentUnit depUnit = phaseContext.getDeploymentUnit();
-        XBundle bundle = depUnit.getAttachment(OSGiConstants.BUNDLE_KEY);
-        Deployment deployment = depUnit.getAttachment(OSGiConstants.DEPLOYMENT_KEY);
-        if (bundle != null && deployment.isAutoStart() && bundle.isResolved()) {
-            ServiceName serviceName = BundleActivateService.addService(phaseContext.getServiceTarget(), depUnit, bundle).getName();
-            depUnit.addToAttachmentList(Attachments.DEPLOYMENT_COMPLETE_SERVICES, serviceName);
-            depUnit.putAttachment(BUNDLE_ACTIVATE_SERVICE, serviceName);
-        }
+        XBundleRevision brev = depUnit.getAttachment(OSGiConstants.BUNDLE_REVISION_KEY);
+        if (brev == null || brev.isFragment())
+            return;
+
+        ServiceController<XBundle> controller = BundleActivateService.addService(phaseContext.getServiceTarget(), depUnit, brev.getBundle());
+        phaseContext.addDependency(controller.getName(), AttachmentKey.create(XBundle.class));
     }
 
     @Override
     public void undeploy(final DeploymentUnit depUnit) {
-        ServiceName serviceName = depUnit.getAttachment(BUNDLE_ACTIVATE_SERVICE);
-        ServiceController<?> controller = serviceName != null ? depUnit.getServiceRegistry().getService(serviceName) : null;
-        if (controller != null) {
-            controller.setMode(Mode.REMOVE);
-            depUnit.putAttachment(Attachments.BUNDLE_STATE_KEY, BundleState.RESOLVED);
-        }
     }
 
     static class BundleActivateService implements Service<XBundle> {
 
-        private final InjectedValue<XBundle> injectedBundle = new InjectedValue<XBundle>();
         private final InjectedValue<Component> injectedComponent = new InjectedValue<Component>();
         private final DeploymentUnit depUnit;
+        private final XBundle bundle;
 
         static ServiceController<XBundle> addService(ServiceTarget serviceTarget, DeploymentUnit depUnit, XBundle bundle) {
-            BundleManager bundleManager = depUnit.getAttachment(OSGiConstants.BUNDLE_MANAGER_KEY);
-            ServiceName resolvedBundle = bundleManager.getServiceName(bundle, Bundle.RESOLVED);
             ServiceName serviceName = depUnit.getServiceName().append("Activate");
-            BundleActivateService service = new BundleActivateService(depUnit);
+            BundleActivateService service = new BundleActivateService(depUnit, bundle);
             ServiceBuilder<XBundle> builder = serviceTarget.addService(serviceName, service);
-            builder.addDependency(resolvedBundle, XBundle.class, service.injectedBundle);
             // Add a dependency on the BundleActivator component
             OSGiMetaData metadata = depUnit.getAttachment(OSGiConstants.OSGI_METADATA_KEY);
             if (metadata != null && metadata.getBundleActivator() != null) {
@@ -115,23 +105,24 @@ public class BundleActivateProcessor implements DeploymentUnitProcessor {
             return builder.install();
         }
 
-        private BundleActivateService(DeploymentUnit depUnit) {
+        private BundleActivateService(DeploymentUnit depUnit, XBundle bundle) {
             this.depUnit = depUnit;
+            this.bundle = bundle;
         }
 
         @Override
         public void start(StartContext context) throws StartException {
-            XBundle bundle = injectedBundle.getValue();
             Deployment deployment = depUnit.getAttachment(OSGiConstants.DEPLOYMENT_KEY);
-            if (bundle != null && deployment.isAutoStart() && bundle.isResolved()) {
-                Component activatorComponent = injectedComponent.getOptionalValue();
-                if (activatorComponent != null) {
-                    ComponentInstance componentInstance = activatorComponent.createInstance();
-                    BundleActivator instance = (BundleActivator) componentInstance.getInstance();
-                    deployment.addAttachment(BundleActivator.class, instance);
-                }
+            BundleManager bundleManager = depUnit.getAttachment(OSGiConstants.BUNDLE_MANAGER_KEY);
+            Component activatorComponent = injectedComponent.getOptionalValue();
+            if (activatorComponent != null && deployment.getAttachment(BUNDLE_ACTIVATOR_KEY) == null) {
+                ComponentInstance componentInstance = activatorComponent.createInstance();
+                BundleActivator instance = (BundleActivator) componentInstance.getInstance();
+                deployment.putAttachment(BUNDLE_ACTIVATOR_KEY, instance);
+            }
+            if (bundle.getState() != Bundle.ACTIVE) {
                 try {
-                    bundle.start(Bundle.START_ACTIVATION_POLICY);
+                    bundleManager.startBundle(bundle, Bundle.START_ACTIVATION_POLICY);
                     depUnit.putAttachment(Attachments.BUNDLE_STATE_KEY, BundleState.ACTIVE);
                 } catch (BundleException ex) {
                     throw MESSAGES.cannotStartBundle(ex, bundle);
@@ -141,12 +132,10 @@ public class BundleActivateProcessor implements DeploymentUnitProcessor {
 
         @Override
         public void stop(StopContext context) {
-            XBundle bundle = injectedBundle.getValue();
-            Deployment deployment = depUnit.getAttachment(OSGiConstants.DEPLOYMENT_KEY);
-            if (deployment.isAutoStart()) {
+            if (bundle.getState() == Bundle.STARTING || bundle.getState() == Bundle.ACTIVE) {
                 try {
-                    // Server shutdown should not modify the persistent start setting
-                    bundle.stop(Bundle.STOP_TRANSIENT);
+                    BundleManager bundleManager = depUnit.getAttachment(OSGiConstants.BUNDLE_MANAGER_KEY);
+                    bundleManager.stopBundle(bundle, Bundle.STOP_TRANSIENT);
                     depUnit.putAttachment(Attachments.BUNDLE_STATE_KEY, BundleState.RESOLVED);
                 } catch (BundleException ex) {
                     LOGGER.debugf(ex, "Cannot stop bundle: %s", bundle);
@@ -156,7 +145,7 @@ public class BundleActivateProcessor implements DeploymentUnitProcessor {
 
         @Override
         public XBundle getValue() {
-            return injectedBundle.getValue();
+            return bundle;
         }
     }
 }

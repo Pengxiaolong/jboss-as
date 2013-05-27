@@ -22,12 +22,6 @@
 
 package org.jboss.as.webservices.webserviceref;
 
-import static org.jboss.as.webservices.webserviceref.SecurityActions.getContextClassLoader;
-import static org.jboss.as.webservices.webserviceref.SecurityActions.setContextClassLoader;
-
-import javax.naming.Referenceable;
-import javax.naming.spi.ObjectFactory;
-
 import org.jboss.as.ee.component.InjectionSource;
 import org.jboss.as.naming.ManagedReferenceFactory;
 import org.jboss.as.naming.ValueManagedReferenceFactory;
@@ -41,9 +35,9 @@ import org.jboss.wsf.spi.SPIProvider;
 import org.jboss.wsf.spi.SPIProviderResolver;
 import org.jboss.wsf.spi.classloading.ClassLoaderProvider;
 import org.jboss.wsf.spi.metadata.j2ee.serviceref.UnifiedServiceRefMetaData;
-import org.jboss.wsf.spi.serviceref.ServiceRefHandler;
-import org.jboss.wsf.spi.serviceref.ServiceRefHandler.Type;
-import org.jboss.wsf.spi.serviceref.ServiceRefHandlerFactory;
+import org.jboss.wsf.spi.serviceref.ServiceRefFactory;
+import org.jboss.wsf.spi.serviceref.ServiceRefFactoryFactory;
+import org.wildfly.security.manager.WildFlySecurityManager;
 
 /**
  * WebServiceRef injection source.
@@ -64,35 +58,21 @@ final class WSRefValueSource extends InjectionSource implements Value<Object> {
         serviceBuilder.addInjection(injector, factory);
     }
 
-    public Object getValue() throws IllegalStateException, IllegalArgumentException {
-        final ClassLoader oldCL = getContextClassLoader();
+    public Object getValue() {
+        final ClassLoader oldCL = WildFlySecurityManager.getCurrentContextClassLoaderPrivileged();
         try {
-            final ClassLoader integrationCL = new DelegateClassLoader(getClassLoader(), classLoader);
-            setContextClassLoader(integrationCL);
-            final Referenceable referenceable = getReferenceable(integrationCL);
-            final Class<?> clazz = Class.forName(referenceable.getReference().getFactoryClassName(), true, integrationCL);
-            final ObjectFactory factory = (ObjectFactory)clazz.newInstance();
-            return factory.getObjectInstance(referenceable.getReference(), null, null, null);
-        } catch (final Exception e) {
-            throw new RuntimeException(e);
+            final ClassLoader integrationCL = new DelegateClassLoader(ClassLoaderProvider.getDefaultProvider().getServerIntegrationClassLoader(), classLoader);
+            WildFlySecurityManager.setCurrentContextClassLoaderPrivileged(integrationCL);
+            final ServiceRefFactory serviceRefFactory = getServiceRefFactory();
+            return serviceRefFactory.newServiceRef(serviceRef);
         } finally {
-            setContextClassLoader(oldCL);
+            WildFlySecurityManager.setCurrentContextClassLoaderPrivileged(oldCL);
         }
     }
 
-    private ClassLoader getClassLoader() {
-        ClassLoaderProvider provider = ClassLoaderProvider.getDefaultProvider();
-        if (!Type.JAXRPC.equals(serviceRef.getType())) {
-            return provider.getServerIntegrationClassLoader();
-        } else {
-            return provider.getServerJAXRPCIntegrationClassLoader();
-        }
-    }
-
-    private Referenceable getReferenceable(final ClassLoader loader) {
+    private ServiceRefFactory getServiceRefFactory() {
         final SPIProvider spiProvider = SPIProviderResolver.getInstance().getProvider();
-        final ServiceRefHandler serviceRefHandler = spiProvider.getSPI(ServiceRefHandlerFactory.class, loader).getServiceRefHandler();
-        return serviceRefHandler.createReferenceable(serviceRef);
+        return spiProvider.getSPI(ServiceRefFactoryFactory.class).newServiceRefFactory();
     }
 
 }

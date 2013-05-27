@@ -44,10 +44,13 @@ import org.jboss.as.ejb3.cache.EJBBoundCacheParser;
 import org.jboss.as.ejb3.clustering.EJBBoundClusteringMetaDataParser;
 import org.jboss.as.ejb3.deployment.EjbDeploymentAttachmentKeys;
 import org.jboss.as.ejb3.deployment.EjbJarDescription;
+import org.jboss.as.ejb3.interceptor.ContainerInterceptorsParser;
 import org.jboss.as.ejb3.pool.EJBBoundPoolParser;
 import org.jboss.as.ejb3.resourceadapterbinding.parser.EJBBoundResourceAdapterBindingMetaDataParser;
 import org.jboss.as.ejb3.security.parser.EJBBoundSecurityMetaDataParser;
+import org.jboss.as.ejb3.security.parser.EJBBoundSecurityMetaDataParser11;
 import org.jboss.as.ejb3.security.parser.SecurityRoleMetaDataParser;
+import org.jboss.as.ejb3.timerservice.TimerServiceMetaDataParser;
 import org.jboss.as.server.deployment.Attachments;
 import org.jboss.as.server.deployment.DeploymentPhaseContext;
 import org.jboss.as.server.deployment.DeploymentUnit;
@@ -55,7 +58,6 @@ import org.jboss.as.server.deployment.DeploymentUnitProcessingException;
 import org.jboss.as.server.deployment.DeploymentUnitProcessor;
 import org.jboss.as.server.deployment.EjbDeploymentMarker;
 import org.jboss.as.server.deployment.module.ResourceRoot;
-import org.jboss.logging.Logger;
 import org.jboss.metadata.ejb.parser.jboss.ejb3.IIOPMetaDataParser;
 import org.jboss.metadata.ejb.parser.jboss.ejb3.JBossEjb3MetaDataParser;
 import org.jboss.metadata.ejb.parser.jboss.ejb3.TransactionTimeoutMetaDataParser;
@@ -64,6 +66,8 @@ import org.jboss.metadata.ejb.parser.spec.EjbJarMetaDataParser;
 import org.jboss.metadata.ejb.spec.EjbJarMetaData;
 import org.jboss.metadata.parser.util.MetaDataElementParser;
 import org.jboss.vfs.VirtualFile;
+
+import static org.jboss.as.ejb3.EjbMessages.MESSAGES;
 
 /**
  * Processes a {@link DeploymentUnit} containing a ejb-jar.xml and creates {@link EjbJarMetaData}
@@ -199,7 +203,7 @@ public class EjbJarParsingDeploymentUnitProcessor implements DeploymentUnitProce
             XMLStreamReader xmlReader = inputFactory.createXMLStreamReader(stream);
             return xmlReader;
         } catch (XMLStreamException xmlse) {
-            throw EjbLogger.EJB3_LOGGER.failedToParse(xmlse, "ejb-jar.xml: " + ejbJarXml.getPathName());
+            throw MESSAGES.failedToParse(xmlse, "ejb-jar.xml: " + ejbJarXml.getPathName());
         }
     }
 
@@ -243,7 +247,7 @@ public class EjbJarParsingDeploymentUnitProcessor implements DeploymentUnitProce
             EjbJarMetaData ejbJarMetaData = EjbJarMetaDataParser.parse(reader, dtdInfo, SpecDescriptorPropertyReplacement.propertyReplacer(deploymentUnit));
             return ejbJarMetaData;
         } catch (XMLStreamException xmlse) {
-            throw EjbLogger.EJB3_LOGGER.failedToParse(xmlse, "ejb-jar.xml: " + descriptor.getPathName());
+            throw MESSAGES.failedToParse(xmlse, "ejb-jar.xml: " + descriptor.getPathName());
         } finally {
             try {
                 stream.close();
@@ -275,7 +279,7 @@ public class EjbJarParsingDeploymentUnitProcessor implements DeploymentUnitProce
             final EjbJarMetaData ejbJarMetaData = parser.parse(reader, dtdInfo, JBossDescriptorPropertyReplacement.propertyReplacer(deploymentUnit));
             return ejbJarMetaData;
         } catch (XMLStreamException xmlse) {
-            throw EjbLogger.EJB3_LOGGER.failedToParse(xmlse, JBOSS_EJB3_XML + ": " + descriptor.getPathName());
+            throw MESSAGES.failedToParse(xmlse, JBOSS_EJB3_XML + ": " + descriptor.getPathName());
         } finally {
             try {
                 stream.close();
@@ -288,13 +292,21 @@ public class EjbJarParsingDeploymentUnitProcessor implements DeploymentUnitProce
     static Map<String, AbstractMetaDataParser<?>> createJbossEjbJarParsers() {
         Map<String, AbstractMetaDataParser<?>> parsers = new HashMap<String, AbstractMetaDataParser<?>>();
         parsers.put(EJBBoundClusteringMetaDataParser.NAMESPACE_URI, new EJBBoundClusteringMetaDataParser());
-        parsers.put("urn:security", new EJBBoundSecurityMetaDataParser());
-        parsers.put("urn:security-role", new SecurityRoleMetaDataParser());
-        parsers.put("urn:resource-adapter-binding", new EJBBoundResourceAdapterBindingMetaDataParser());
+        parsers.put(EJBBoundSecurityMetaDataParser.LEGACY_NAMESPACE_URI, EJBBoundSecurityMetaDataParser.INSTANCE);
+        parsers.put(EJBBoundSecurityMetaDataParser.NAMESPACE_URI_1_0, EJBBoundSecurityMetaDataParser.INSTANCE);
+        parsers.put(EJBBoundSecurityMetaDataParser11.NAMESPACE_URI_1_1, EJBBoundSecurityMetaDataParser11.INSTANCE);
+        parsers.put(SecurityRoleMetaDataParser.LEGACY_NAMESPACE_URI, SecurityRoleMetaDataParser.INSTANCE);
+        parsers.put(SecurityRoleMetaDataParser.NAMESPACE_URI, SecurityRoleMetaDataParser.INSTANCE);
+        parsers.put(EJBBoundResourceAdapterBindingMetaDataParser.LEGACY_NAMESPACE_URI, EJBBoundResourceAdapterBindingMetaDataParser.INSTANCE);
+        parsers.put(EJBBoundResourceAdapterBindingMetaDataParser.NAMESPACE_URI, EJBBoundResourceAdapterBindingMetaDataParser.INSTANCE);
         parsers.put("urn:iiop", new IIOPMetaDataParser());
+        parsers.put("urn:iiop:1.0", new IIOPMetaDataParser());
         parsers.put("urn:trans-timeout", new TransactionTimeoutMetaDataParser());
+        parsers.put("urn:trans-timeout:1.0", new TransactionTimeoutMetaDataParser());
         parsers.put(EJBBoundPoolParser.NAMESPACE_URI, new EJBBoundPoolParser());
         parsers.put(EJBBoundCacheParser.NAMESPACE_URI, new EJBBoundCacheParser());
+        parsers.put(ContainerInterceptorsParser.NAMESPACE_URI_1_0, ContainerInterceptorsParser.INSTANCE);
+        parsers.put(TimerServiceMetaDataParser.NAMESPACE_URI, TimerServiceMetaDataParser.INSTANCE);
         return parsers;
     }
 }

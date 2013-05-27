@@ -20,60 +20,29 @@ package org.jboss.as.host.controller;
 
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.HOST;
 
-import java.util.EnumSet;
-
 import org.jboss.as.controller.CompositeOperationHandler;
 import org.jboss.as.controller.ControlledProcessState;
+import org.jboss.as.controller.PathAddress;
 import org.jboss.as.controller.ProcessType;
 import org.jboss.as.controller.descriptions.StandardResourceDescriptionResolver;
 import org.jboss.as.controller.extension.ExtensionRegistry;
-import org.jboss.as.controller.operations.common.ProcessReloadHandler;
-import org.jboss.as.controller.operations.common.SnapshotDeleteHandler;
-import org.jboss.as.controller.operations.common.SnapshotListHandler;
-import org.jboss.as.controller.operations.common.SnapshotTakeHandler;
 import org.jboss.as.controller.operations.common.ValidateOperationHandler;
-import org.jboss.as.controller.operations.common.XmlMarshallingHandler;
 import org.jboss.as.controller.operations.global.GlobalOperationHandlers;
 import org.jboss.as.controller.registry.ManagementResourceRegistration;
-import org.jboss.as.controller.registry.OperationEntry;
-import org.jboss.as.controller.registry.OperationEntry.EntryType;
-import org.jboss.as.controller.registry.OperationEntry.Flag;
-import org.jboss.as.controller.resource.InterfaceDefinition;
 import org.jboss.as.controller.services.path.PathManagerService;
-import org.jboss.as.controller.services.path.PathResourceDefinition;
 import org.jboss.as.domain.controller.DomainController;
-import org.jboss.as.domain.controller.operations.DomainServerLifecycleHandlers;
-import org.jboss.as.domain.controller.operations.DomainSocketBindingGroupRemoveHandler;
-import org.jboss.as.domain.controller.operations.deployment.HostProcessReloadHandler;
-import org.jboss.as.domain.management.connections.ldap.LdapConnectionResourceDefinition;
-import org.jboss.as.domain.management.security.SecurityRealmResourceDefinition;
 import org.jboss.as.domain.management.security.WhoAmIOperation;
-import org.jboss.as.host.controller.descriptions.HostEnvironmentResourceDescription;
+import org.jboss.as.host.controller.descriptions.HostEnvironmentResourceDefinition;
 import org.jboss.as.host.controller.ignored.IgnoredDomainResourceRegistry;
-import org.jboss.as.host.controller.model.host.CoreServiceResourceDefinition;
 import org.jboss.as.host.controller.model.host.HostResourceDefinition;
-import org.jboss.as.host.controller.model.jvm.JvmResourceDefinition;
 import org.jboss.as.host.controller.operations.HostModelRegistrationHandler;
-import org.jboss.as.host.controller.operations.HostShutdownHandler;
-import org.jboss.as.host.controller.operations.HostSpecifiedInterfaceAddHandler;
-import org.jboss.as.host.controller.operations.HostSpecifiedInterfaceRemoveHandler;
-import org.jboss.as.host.controller.operations.HostXmlMarshallingHandler;
 import org.jboss.as.host.controller.operations.LocalDomainControllerAddHandler;
 import org.jboss.as.host.controller.operations.LocalDomainControllerRemoveHandler;
 import org.jboss.as.host.controller.operations.LocalHostControllerInfoImpl;
 import org.jboss.as.host.controller.operations.RemoteDomainControllerAddHandler;
 import org.jboss.as.host.controller.operations.RemoteDomainControllerRemoveHandler;
-import org.jboss.as.host.controller.operations.StartServersHandler;
-import org.jboss.as.host.controller.resources.HttpManagementResourceDefinition;
-import org.jboss.as.host.controller.resources.NativeManagementResourceDefinition;
-import org.jboss.as.host.controller.resources.ServerConfigResourceDefinition;
-import org.jboss.as.platform.mbean.PlatformMBeanResourceRegistrar;
 import org.jboss.as.repository.ContentRepository;
 import org.jboss.as.repository.HostFileRepository;
-import org.jboss.as.server.controller.resources.SystemPropertyResourceDefinition;
-import org.jboss.as.server.controller.resources.SystemPropertyResourceDefinition.Location;
-import org.jboss.as.server.controller.resources.VaultResourceDefinition;
-import org.jboss.as.server.services.net.SpecifiedInterfaceResolveHandler;
 import org.jboss.as.server.services.security.AbstractVaultReader;
 
 /**
@@ -86,7 +55,7 @@ import org.jboss.as.server.services.security.AbstractVaultReader;
  */
 public class HostModelUtil {
 
-    public static interface HostModelRegistrar {
+    public interface HostModelRegistrar {
         void registerHostModel(final String hostName, final ManagementResourceRegistration root);
     }
 
@@ -95,7 +64,7 @@ public class HostModelUtil {
         for (String kp : keyPrefix) {
             prefix.append('.').append(kp);
         }
-        return new StandardResourceDescriptionResolver(prefix.toString(), HostEnvironmentResourceDescription.class.getPackage().getName() + ".LocalDescriptions", HostModelUtil.class.getClassLoader(), true, false);
+        return new StandardResourceDescriptionResolver(prefix.toString(), HostEnvironmentResourceDefinition.class.getPackage().getName() + ".LocalDescriptions", HostModelUtil.class.getClassLoader(), true, false);
     }
 
 
@@ -105,17 +74,18 @@ public class HostModelUtil {
 
         // Add of the host itself
         final HostModelRegistrationHandler hostModelRegistratorHandler = new HostModelRegistrationHandler(environment, ignoredDomainResourceRegistry, hostModelRegistrar);
-        root.registerOperationHandler(HostModelRegistrationHandler.OPERATION_NAME, hostModelRegistratorHandler, hostModelRegistratorHandler, false, OperationEntry.EntryType.PRIVATE);
+        root.registerOperationHandler(HostModelRegistrationHandler.DEFINITION, hostModelRegistratorHandler);
 
         // Global operations
         GlobalOperationHandlers.registerGlobalOperations(root, processType);
 
-
-        root.registerOperationHandler(ValidateOperationHandler.OPERATION_NAME, ValidateOperationHandler.INSTANCE, ValidateOperationHandler.INSTANCE, false, EntryType.PUBLIC, EnumSet.of(Flag.READ_ONLY));
-        root.registerOperationHandler(WhoAmIOperation.OPERATION_NAME, WhoAmIOperation.INSTANCE, WhoAmIOperation.INSTANCE, true);
+        if (root.getOperationEntry(PathAddress.EMPTY_ADDRESS, ValidateOperationHandler.DEFINITION.getName())==null){//this is hack
+            root.registerOperationHandler(ValidateOperationHandler.DEFINITION, ValidateOperationHandler.INSTANCE);
+        }
+        root.registerOperationHandler(WhoAmIOperation.DEFINITION, WhoAmIOperation.INSTANCE, true);
 
         // Other root resource operations
-        root.registerOperationHandler(CompositeOperationHandler.NAME, CompositeOperationHandler.INSTANCE, CompositeOperationHandler.INSTANCE, false, OperationEntry.EntryType.PRIVATE);
+        root.registerOperationHandler(CompositeOperationHandler.DEFINITION, CompositeOperationHandler.INSTANCE);
     }
 
     public static void createHostRegistry(final String hostName,
@@ -132,7 +102,6 @@ public class HostModelUtil {
                                           final ControlledProcessState processState,
                                           final PathManagerService pathManager) {
         // Add of the host itself
-        //ManagementResourceRegistration hostRegistration = root.registerSubModel(PathElement.pathElement(HOST, hostName), HostDescriptionProviders.HOST_ROOT_PROVIDER);
         ManagementResourceRegistration hostRegistration = root.registerSubModel(
                 new HostResourceDefinition(hostName, configurationPersister,
                         environment, runningModeControl, localFileRepository,
@@ -140,112 +109,14 @@ public class HostModelUtil {
                         contentRepository, domainController, extensionRegistry,
                         vaultReader, ignoredRegistry, processState, pathManager));
 
-        createHostRegistry(hostName, root, hostRegistration, configurationPersister, environment, runningModeControl, localFileRepository, hostControllerInfo,
-                serverInventory, remoteFileRepository, contentRepository, domainController, extensionRegistry, vaultReader, ignoredRegistry, processState, pathManager);
-    }
-
-    public static void createHostRegistry(final String hostName,
-                                          final ManagementResourceRegistration rootRegistration,
-                                          final ManagementResourceRegistration hostRegistration, final HostControllerConfigurationPersister configurationPersister,
-                                          final HostControllerEnvironment environment, final HostRunningModeControl runningModeControl,
-                                          final HostFileRepository localFileRepository,
-                                          final LocalHostControllerInfoImpl hostControllerInfo, final ServerInventory serverInventory,
-                                          final HostFileRepository remoteFileRepository,
-                                          final ContentRepository contentRepository,
-                                          final DomainController domainController,
-                                          final ExtensionRegistry extensionRegistry,
-                                          final AbstractVaultReader vaultReader,
-                                          final IgnoredDomainResourceRegistry ignoredRegistry,
-                                          final ControlledProcessState processState,
-                                          final PathManagerService pathManager) {
-        // Global operations
-        EnumSet<OperationEntry.Flag> flags = EnumSet.of(OperationEntry.Flag.READ_ONLY);
-
-        // Host root resource operations
-        XmlMarshallingHandler xmh = new HostXmlMarshallingHandler(configurationPersister.getHostPersister(), hostControllerInfo);
-        hostRegistration.registerOperationHandler(XmlMarshallingHandler.OPERATION_NAME, xmh, xmh, false, OperationEntry.EntryType.PUBLIC, flags);
-
-
-        StartServersHandler ssh = new StartServersHandler(environment, serverInventory, runningModeControl);
-        hostRegistration.registerOperationHandler(StartServersHandler.OPERATION_NAME, ssh, ssh, false, OperationEntry.EntryType.PRIVATE);
-
-        HostShutdownHandler hsh = new HostShutdownHandler(domainController);
-        hostRegistration.registerOperationHandler(HostShutdownHandler.OPERATION_NAME, hsh, hsh, EnumSet.of(Flag.HOST_CONTROLLER_ONLY));
-
-        HostProcessReloadHandler reloadHandler = new HostProcessReloadHandler(HostControllerService.HC_SERVICE_NAME, runningModeControl, processState,
-                getResourceDescriptionResolver(), hostControllerInfo);
-        hostRegistration.registerOperationHandler(ProcessReloadHandler.OPERATION_NAME, reloadHandler, reloadHandler, EnumSet.of(Flag.HOST_CONTROLLER_ONLY));
-
-
-        DomainServerLifecycleHandlers.initializeServerInventory(serverInventory);
-        DomainSocketBindingGroupRemoveHandler.INSTANCE.initializeServerInventory(serverInventory);
-
-        ValidateOperationHandler validateOperationHandler = hostControllerInfo.isMasterDomainController() ? ValidateOperationHandler.INSTANCE : ValidateOperationHandler.SLAVE_HC_INSTANCE;
-        hostRegistration.registerOperationHandler(ValidateOperationHandler.OPERATION_NAME, validateOperationHandler, validateOperationHandler, false, EntryType.PRIVATE, EnumSet.of(Flag.READ_ONLY));
-
         //TODO See if some of all these parameters can come from domain controller
-        LocalDomainControllerAddHandler localDcAddHandler = LocalDomainControllerAddHandler.getInstance(rootRegistration, hostControllerInfo,
+        LocalDomainControllerAddHandler localDcAddHandler = LocalDomainControllerAddHandler.getInstance(root, hostControllerInfo,
                 configurationPersister, localFileRepository, contentRepository, domainController, extensionRegistry, pathManager);
-        hostRegistration.registerOperationHandler(LocalDomainControllerAddHandler.OPERATION_NAME, localDcAddHandler, localDcAddHandler, false);
-        hostRegistration.registerOperationHandler(LocalDomainControllerRemoveHandler.OPERATION_NAME, LocalDomainControllerRemoveHandler.INSTANCE, LocalDomainControllerRemoveHandler.INSTANCE, false);
-        RemoteDomainControllerAddHandler remoteDcAddHandler = new RemoteDomainControllerAddHandler(rootRegistration, hostControllerInfo, domainController,
+        hostRegistration.registerOperationHandler(LocalDomainControllerAddHandler.DEFINITION, localDcAddHandler);
+        hostRegistration.registerOperationHandler(LocalDomainControllerRemoveHandler.DEFINITION, LocalDomainControllerRemoveHandler.INSTANCE);
+        RemoteDomainControllerAddHandler remoteDcAddHandler = new RemoteDomainControllerAddHandler(root, hostControllerInfo, domainController,
                 configurationPersister, contentRepository, remoteFileRepository, extensionRegistry, ignoredRegistry, pathManager);
-        hostRegistration.registerOperationHandler(RemoteDomainControllerAddHandler.OPERATION_NAME, remoteDcAddHandler, remoteDcAddHandler, false);
-        hostRegistration.registerOperationHandler(RemoteDomainControllerRemoveHandler.OPERATION_NAME, RemoteDomainControllerRemoveHandler.INSTANCE, RemoteDomainControllerRemoveHandler.INSTANCE, false);
-
-
-        SnapshotDeleteHandler snapshotDelete = new SnapshotDeleteHandler(configurationPersister.getHostPersister());
-        hostRegistration.registerOperationHandler(SnapshotDeleteHandler.OPERATION_NAME, snapshotDelete, snapshotDelete, false);
-        SnapshotListHandler snapshotList = new SnapshotListHandler(configurationPersister.getHostPersister());
-        hostRegistration.registerOperationHandler(SnapshotListHandler.OPERATION_NAME, snapshotList, snapshotList, false);
-        SnapshotTakeHandler snapshotTake = new SnapshotTakeHandler(configurationPersister.getHostPersister());
-        hostRegistration.registerOperationHandler(SnapshotTakeHandler.OPERATION_NAME, snapshotTake, snapshotTake, false);
-
-        ignoredRegistry.registerResources(hostRegistration);
-
-        // System Properties
-        hostRegistration.registerSubModel(SystemPropertyResourceDefinition.createForDomainOrHost(Location.HOST));
-
-        /////////////////////////////////////////
-        // Core Services
-
-        //vault
-        hostRegistration.registerSubModel(new VaultResourceDefinition(vaultReader));
-
-        // Central Management
-        ManagementResourceRegistration management = hostRegistration.registerSubModel(CoreServiceResourceDefinition.INSTANCE);
-        management.registerSubModel(SecurityRealmResourceDefinition.INSTANCE);
-        management.registerSubModel(LdapConnectionResourceDefinition.INSTANCE);
-        management.registerSubModel(new NativeManagementResourceDefinition(hostControllerInfo));
-        management.registerSubModel(new HttpManagementResourceDefinition(hostControllerInfo, environment));
-
-        // Other core services
-        // TODO get a DumpServicesHandler that works on the domain
-//        ManagementResourceRegistration serviceContainer = hostRegistration.registerSubModel(PathElement.pathElement(CORE_SERVICE, SERVICE_CONTAINER), CommonProviders.SERVICE_CONTAINER_PROVIDER);
-//        serviceContainer.registerOperationHandler(DumpServicesHandler.OPERATION_NAME, DumpServicesHandler.INSTANCE, DumpServicesHandler.INSTANCE, false);
-
-        // Platform MBeans
-        PlatformMBeanResourceRegistrar.registerPlatformMBeanResources(hostRegistration);
-
-        //host-environment
-        hostRegistration.registerSubModel(HostEnvironmentResourceDescription.of(environment));
-
-
-        // Jvms
-        final ManagementResourceRegistration jvms = hostRegistration.registerSubModel(JvmResourceDefinition.GLOBAL);
-
-        //Paths
-        hostRegistration.registerSubModel(PathResourceDefinition.createSpecified(pathManager));
-
-        //interface
-        ManagementResourceRegistration interfaces = hostRegistration.registerSubModel(new InterfaceDefinition(
-                new HostSpecifiedInterfaceAddHandler(),
-                new HostSpecifiedInterfaceRemoveHandler(),
-                true
-        ));
-        interfaces.registerOperationHandler(SpecifiedInterfaceResolveHandler.DEFINITION, SpecifiedInterfaceResolveHandler.INSTANCE);
-
-        //server configurations
-        hostRegistration.registerSubModel(new ServerConfigResourceDefinition(serverInventory, pathManager));
+        hostRegistration.registerOperationHandler(RemoteDomainControllerAddHandler.DEFINITION, remoteDcAddHandler);
+        hostRegistration.registerOperationHandler(RemoteDomainControllerRemoveHandler.DEFINITION, RemoteDomainControllerRemoveHandler.INSTANCE);
     }
 }

@@ -66,6 +66,7 @@ import org.jboss.vfs.VirtualFile;
  * </ul>
  *
  * @author Stuart Douglas
+ * @author Ales Justin
  */
 public final class ManifestClassPathProcessor implements DeploymentUnitProcessor {
 
@@ -152,9 +153,13 @@ public final class ManifestClassPathProcessor implements DeploymentUnitProcessor
                 //then resolve relative to the deployment root
                 final VirtualFile topLevelClassPathFile = deploymentRoot.getRoot().getParent().getChild(item);
                 if (item.startsWith("/")) {
-                    final ModuleIdentifier moduleIdentifier = externalModuleService.addExternalModule(item);
-                    target.addToAttachmentList(Attachments.CLASS_PATH_ENTRIES, moduleIdentifier);
-                    ServerLogger.DEPLOYMENT_LOGGER.debugf("Resource %s added as external jar %s", classPathFile, resourceRoot.getRoot());
+                    if (externalModuleService.isValid(item)) {
+                        final ModuleIdentifier moduleIdentifier = externalModuleService.addExternalModule(item);
+                        target.addToAttachmentList(Attachments.CLASS_PATH_ENTRIES, moduleIdentifier);
+                        ServerLogger.DEPLOYMENT_LOGGER.debugf("Resource %s added as external jar %s", classPathFile, resourceRoot.getRoot());
+                    } else {
+                        ServerLogger.DEPLOYMENT_LOGGER.classPathEntryNotValid(item, resourceRoot.getRoot().getPathName());
+                    }
                 } else {
                     if (classPathFile.exists()) {
                         //we need to check that this class path item actually lies within the deployment
@@ -207,12 +212,13 @@ public final class ManifestClassPathProcessor implements DeploymentUnitProcessor
             final ResourceRoot otherRoot = subDeployments.get(classPathFile);
             target.addToAttachmentList(Attachments.CLASS_PATH_ENTRIES, ModuleIdentifierProcessor.createModuleIdentifier(otherRoot.getRootName(), otherRoot, topLevelDeployment, topLevelRoot, false));
         } else {
-            createAdditionalModule(deploymentUnit, resourceRoot, topLevelDeployment, topLevelRoot, additionalModules, classPathFile, resourceRoots);
+            ModuleIdentifier identifier = createAdditionalModule(resourceRoot, topLevelDeployment, topLevelRoot, additionalModules, classPathFile, resourceRoots);
+            target.addToAttachmentList(Attachments.CLASS_PATH_ENTRIES, identifier);
         }
     }
 
-    private void createAdditionalModule(final DeploymentUnit deploymentUnit, final ResourceRoot resourceRoot, final DeploymentUnit topLevelDeployment, final VirtualFile topLevelRoot, final Map<VirtualFile, AdditionalModuleSpecification> additionalModules, final VirtualFile classPathFile, final ArrayDeque<RootEntry> resourceRoots) throws DeploymentUnitProcessingException {
-        final ResourceRoot root = createResourceRoot(deploymentUnit, classPathFile);
+    private ModuleIdentifier createAdditionalModule(final ResourceRoot resourceRoot, final DeploymentUnit topLevelDeployment, final VirtualFile topLevelRoot, final Map<VirtualFile, AdditionalModuleSpecification> additionalModules, final VirtualFile classPathFile, final ArrayDeque<RootEntry> resourceRoots) throws DeploymentUnitProcessingException {
+        final ResourceRoot root = createResourceRoot(classPathFile);
 
 
         final String pathName = root.getRoot().getPathNameRelativeTo(topLevelRoot);
@@ -224,6 +230,7 @@ public final class ManifestClassPathProcessor implements DeploymentUnitProcessor
 
         //add this to the list of roots to be processed, so transitive class path entries will be respected
         resourceRoots.add(new RootEntry(module, root));
+        return identifier;
 
     }
 
@@ -251,17 +258,16 @@ public final class ManifestClassPathProcessor implements DeploymentUnitProcessor
      * Creates a {@link ResourceRoot} for the passed {@link VirtualFile file} and adds it to the list of {@link ResourceRoot}s
      * in the {@link DeploymentUnit deploymentUnit}
      *
-     * @param deploymentUnit The deployment unit
+     *
      * @param file           The file for which the resource root will be created
      * @return Returns the created {@link ResourceRoot}
      * @throws java.io.IOException
      */
-    private synchronized ResourceRoot createResourceRoot(final DeploymentUnit deploymentUnit, final VirtualFile file) throws DeploymentUnitProcessingException {
+    private synchronized ResourceRoot createResourceRoot(final VirtualFile file) throws DeploymentUnitProcessingException {
         try {
             final Closeable closable = file.isFile() ? VFS.mountZip(file, file, TempFileProviderService.provider()) : null;
             final MountHandle mountHandle = new MountHandle(closable);
             final ResourceRoot resourceRoot = new ResourceRoot(file, mountHandle);
-            deploymentUnit.addToAttachmentList(Attachments.RESOURCE_ROOTS, resourceRoot);
             ModuleRootMarker.mark(resourceRoot);
             ResourceRootIndexer.indexResourceRoot(resourceRoot);
             return resourceRoot;

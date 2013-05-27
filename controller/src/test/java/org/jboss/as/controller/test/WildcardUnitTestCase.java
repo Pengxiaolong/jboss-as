@@ -34,7 +34,7 @@ import org.jboss.as.controller.OperationStepHandler;
 import org.jboss.as.controller.PathAddress;
 import org.jboss.as.controller.PathElement;
 import org.jboss.as.controller.descriptions.DescriptionProvider;
-import org.jboss.as.controller.operations.global.GlobalOperationHandlers;
+import org.jboss.as.controller.operations.global.ReadResourceHandler;
 import org.jboss.as.controller.registry.ImmutableManagementResourceRegistration;
 import org.jboss.as.controller.registry.ManagementResourceRegistration;
 import org.jboss.as.controller.registry.Resource;
@@ -87,13 +87,8 @@ public class WildcardUnitTestCase extends AbstractControllerTestBase {
     }
 
     @Override
-    protected DescriptionProvider getRootDescriptionProvider() {
-        return NULL;
-    }
-
-    @Override
     protected void initModel(Resource rootResource, ManagementResourceRegistration root) {
-            root.registerOperationHandler("read-resource", GlobalOperationHandlers.READ_RESOURCE, NULL, true);
+            root.registerOperationHandler("read-resource", ReadResourceHandler.INSTANCE, NULL, true);
             root.registerOperationHandler("describe", new DescribeHandler(), NULL, true);
 
             root.registerOperationHandler("setup", new OperationStepHandler() {

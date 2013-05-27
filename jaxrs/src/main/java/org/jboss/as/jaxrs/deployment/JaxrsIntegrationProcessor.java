@@ -1,3 +1,25 @@
+/*
+ * JBoss, Home of Professional Open Source.
+ * Copyright 2012, Red Hat, Inc., and individual contributors
+ * as indicated by the @author tags. See the copyright.txt file in the
+ * distribution for a full listing of individual contributors.
+ *
+ * This is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU Lesser General Public License as
+ * published by the Free Software Foundation; either version 2.1 of
+ * the License, or (at your option) any later version.
+ *
+ * This software is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with this software; if not, write to the Free
+ * Software Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA
+ * 02110-1301 USA, or see the FSF site: http://www.fsf.org.
+ */
+
 package org.jboss.as.jaxrs.deployment;
 
 import java.util.ArrayList;
@@ -8,6 +30,7 @@ import java.util.Map;
 import java.util.Set;
 
 import javax.ws.rs.ApplicationPath;
+import javax.ws.rs.core.Application;
 
 import org.jboss.as.ee.structure.DeploymentType;
 import org.jboss.as.ee.structure.DeploymentTypeMarker;
@@ -18,7 +41,7 @@ import org.jboss.as.server.deployment.DeploymentUnitProcessingException;
 import org.jboss.as.server.deployment.DeploymentUnitProcessor;
 import org.jboss.as.server.deployment.module.ModuleDependency;
 import org.jboss.as.server.deployment.module.ModuleSpecification;
-import org.jboss.as.web.deployment.WarMetaData;
+import org.jboss.as.web.common.WarMetaData;
 import org.jboss.metadata.javaee.spec.ParamValueMetaData;
 import org.jboss.metadata.web.jboss.JBossServletMetaData;
 import org.jboss.metadata.web.jboss.JBossServletsMetaData;
@@ -150,9 +173,29 @@ public class JaxrsIntegrationProcessor implements DeploymentUnitProcessor {
         if (resteasy.hasBootClasses() || resteasy.isDispatcherCreated())
             return;
 
-        boolean useScannedClass = false;
-        String servletName;
-        if (resteasy.getScannedApplicationClass() == null) {
+        // ignore any non-annotated Application class that doesn't have a servlet mapping
+        Set<Class> applicationClassSet = new HashSet<>();
+        for (Class<? extends Application> clazz : resteasy.getScannedApplicationClasses())
+        {
+            if (clazz.isAnnotationPresent(ApplicationPath.class) || servletMappingsExist(webdata, clazz.getName()))  {
+                applicationClassSet.add(clazz);
+            }
+        }
+
+        Class<? extends Application> applicationClass = null;
+        if (applicationClassSet.size() > 1) {
+            StringBuilder builder = new StringBuilder();
+            for (Class c : applicationClassSet) {
+                builder.append(" ").append(c.getName());
+            }
+            throw new DeploymentUnitProcessingException(MESSAGES.onlyOneApplicationClassAllowed(builder));
+        } else if (applicationClassSet.size() == 1) {
+            applicationClass = applicationClassSet.iterator().next();
+        }
+
+        String servletName = null;
+        boolean mappingSet = false;
+        if (applicationClass == null) {
             //if there is no scanned application we must add a servlet with a name of
             //javax.ws.rs.core.Application
             JBossServletMetaData servlet = new JBossServletMetaData();
@@ -161,63 +204,29 @@ public class JaxrsIntegrationProcessor implements DeploymentUnitProcessor {
             servlet.setAsyncSupported(true);
             addServlet(webdata, servlet);
             servletName = JAX_RS_SERVLET_NAME;
-
         } else {
-            if (servletMappingsExist(webdata, JAX_RS_SERVLET_NAME)) {
-                throw new DeploymentUnitProcessingException(MESSAGES.conflictUrlMapping());
-
-            }
-
-            //now there are two options.
-            //if there is already a servlet defined with an init param
-            //we don't do anything.
-            //Otherwise we install our filter
-            //JAVA-RS seems somewhat confused about the difference between a context param
-            //and an init param.
-            ParamValueMetaData param = findInitParam(webdata, SERVLET_INIT_PARAM);
-            if (param != null) {
-                //we need to promote the init param to a context param
-                servletName = param.getParamValue();
-                setContextParameter(webdata, "javax.ws.rs.Application", servletName);
-            } else {
-                ParamValueMetaData contextParam = findContextParam(webdata, "javax.ws.rs.Application");
-                if (contextParam == null) {
-                    setContextParameter(webdata, "javax.ws.rs.Application", resteasy.getScannedApplicationClass().getName());
-                    useScannedClass = true;
-                    servletName = resteasy.getScannedApplicationClass().getName();
-                } else {
-                    servletName = contextParam.getParamValue();
-                }
-            }
-        }
-
-        boolean mappingSet = false;
-
-        if (useScannedClass) {
-
-            //look for servlet mappings
+            servletName = applicationClass.getName();
+            JBossServletMetaData servlet = new JBossServletMetaData();
+            servlet.setName(servletName);
+            servlet.setServletClass(HttpServlet30Dispatcher.class.getName());
+            servlet.setAsyncSupported(true);
+            addServlet(webdata, servlet);
             if (!servletMappingsExist(webdata, servletName)) {
                 //no mappings, add our own
                 List<String> patterns = new ArrayList<String>();
-                if (resteasy.getScannedApplicationClass().isAnnotationPresent(ApplicationPath.class)) {
-                    ApplicationPath path = resteasy.getScannedApplicationClass().getAnnotation(ApplicationPath.class);
-                    String pathValue = path.value().trim();
-                    if (!pathValue.startsWith("/")) {
-                        pathValue = "/" + pathValue;
-                    }
-                    String prefix = pathValue;
-                    if (pathValue.endsWith("/")) {
-                        pathValue += "*";
-                    } else {
-                        pathValue += "/*";
-                    }
-                    patterns.add(pathValue);
-                    setContextParameter(webdata, "resteasy.servlet.mapping.prefix", prefix);
-                    mappingSet = true;
-                } else {
-                    JAXRS_LOGGER.noServletMappingFound(servletName);
-                    return;
+                ApplicationPath path = applicationClass.getAnnotation(ApplicationPath.class);
+                String pathValue = path.value().trim();
+                if (!pathValue.startsWith("/")) {
+                    pathValue = "/" + pathValue;
                 }
+                String prefix = pathValue;
+                if (pathValue.endsWith("/")) {
+                    pathValue += "*";
+                } else {
+                    pathValue += "/*";
+                }
+                patterns.add(pathValue);
+                setContextParameter(webdata, "resteasy.servlet.mapping.prefix", prefix);
                 ServletMappingMetaData mapping = new ServletMappingMetaData();
                 mapping.setServletName(servletName);
                 mapping.setUrlPatterns(patterns);
@@ -225,15 +234,8 @@ public class JaxrsIntegrationProcessor implements DeploymentUnitProcessor {
                     webdata.setServletMappings(new ArrayList<ServletMappingMetaData>());
                 }
                 webdata.getServletMappings().add(mapping);
+                mappingSet = true;
             }
-
-            //add a servlet named after the application class
-            JBossServletMetaData servlet = new JBossServletMetaData();
-            servlet.setName(servletName);
-            servlet.setServletClass(HttpServlet30Dispatcher.class.getName());
-            servlet.setAsyncSupported(true);
-            addServlet(webdata, servlet);
-
         }
 
         if (!mappingSet) {
@@ -260,7 +262,6 @@ public class JaxrsIntegrationProcessor implements DeploymentUnitProcessor {
                 }
             }
         }
-
     }
 
     private void addServlet(JBossWebMetaData webdata, JBossServletMetaData servlet) {

@@ -22,6 +22,7 @@
 
 package org.jboss.as.test.integration.ejb.security;
 
+import org.jboss.as.test.categories.CommonCriteria;
 import org.jboss.arquillian.container.test.api.Deployment;
 import org.jboss.arquillian.junit.Arquillian;
 import org.jboss.shrinkwrap.api.ShrinkWrap;
@@ -31,6 +32,7 @@ import org.junit.Assert;
 import org.junit.BeforeClass;
 import org.junit.Test;
 import org.junit.runner.RunWith;
+import org.junit.experimental.categories.Category;
 
 import javax.ejb.EJBAccessException;
 import javax.naming.Context;
@@ -43,6 +45,7 @@ import static org.junit.Assert.assertEquals;
  * User: jpai
  */
 @RunWith(Arquillian.class)
+@Category(CommonCriteria.class)
 public class EJBSecurityTestCase {
     private static Context ctx;
 
@@ -61,7 +64,9 @@ public class EJBSecurityTestCase {
     public static JavaArchive createDeployment() {
         final JavaArchive jar = ShrinkWrap.create(JavaArchive.class, "ejb-security-test.jar");
         jar.addPackage(AnnotatedSLSB.class.getPackage());
-        jar.addAsManifestResource("ejb/security/ejb-jar.xml", "ejb-jar.xml");
+        jar.addAsManifestResource(EJBSecurityTestCase.class.getPackage(), "ejb-jar.xml", "ejb-jar.xml");
+        jar.addAsManifestResource(EJBSecurityTestCase.class.getPackage(), "jboss-ejb3.xml", "jboss-ejb3.xml");
+        jar.addPackage(CommonCriteria.class.getPackage());
         return jar;
     }
 
@@ -179,5 +184,25 @@ public class EJBSecurityTestCase {
             // expected
         }
 
+    }
+
+    /**
+     * Tests that if a method of a EJB is annotated with a {@link javax.annotation.security.RolesAllowed} with empty value for the annotation
+     * <code>@RolesAllowed({})</code> then access to that method by any user MUST throw an EJBAccessException. i.e. it should
+     * behave like a @DenyAll
+     *
+     * @throws Exception
+     */
+    @Test
+    public void testEmptyRolesAllowedAnnotationValue() throws Exception {
+        final Context ctx = new InitialContext();
+
+        final AnnotatedSLSB annotatedBean = (AnnotatedSLSB) ctx.lookup("java:module/" + AnnotatedSLSB.class.getSimpleName() + "!" + AnnotatedSLSB.class.getName());
+        try {
+            annotatedBean.methodWithEmptyRolesAllowedAnnotation();
+            Assert.fail("Call to methodWithEmptyRolesAllowedAnnotation() method was expected to fail");
+        } catch (EJBAccessException ejbae) {
+            //expected
+        }
     }
 }

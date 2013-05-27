@@ -24,13 +24,15 @@ package org.jboss.as.threads;
 
 import org.jboss.as.controller.OperationStepHandler;
 import org.jboss.as.controller.PathElement;
-import org.jboss.as.controller.ResourceDefinition;
+import org.jboss.as.controller.ReadResourceNameOperationStepHandler;
 import org.jboss.as.controller.SimpleResourceDefinition;
 import org.jboss.as.controller.registry.ManagementResourceRegistration;
+import org.jboss.as.controller.transform.description.RejectAttributeChecker;
+import org.jboss.as.controller.transform.description.ResourceTransformationDescriptionBuilder;
 import org.jboss.msc.service.ServiceName;
 
 /**
- * {@link ResourceDefinition} for a bounded queue thread pool resource.
+ * {@link org.jboss.as.controller.ResourceDefinition} for a bounded queue thread pool resource.
  *
  * @author Brian Stansberry (c) 2011 Red Hat Inc.
  */
@@ -82,11 +84,24 @@ public class BoundedQueueThreadPoolResourceDefinition extends SimpleResourceDefi
 
     @Override
     public void registerAttributes(ManagementResourceRegistration resourceRegistration) {
-        resourceRegistration.registerReadOnlyAttribute(PoolAttributeDefinitions.NAME, null);
+        resourceRegistration.registerReadOnlyAttribute(PoolAttributeDefinitions.NAME, ReadResourceNameOperationStepHandler.INSTANCE);
         BoundedQueueThreadPoolWriteAttributeHandler writeHandler = new BoundedQueueThreadPoolWriteAttributeHandler(blocking, serviceNameBase);
         writeHandler.registerAttributes(resourceRegistration);
         if (registerRuntimeOnly) {
             new BoundedQueueThreadPoolMetricsHandler(serviceNameBase).registerAttributes(resourceRegistration);
         }
     }
+
+    public static void registerTransformers1_0(ResourceTransformationDescriptionBuilder parent) {
+        registerTransformers1_0(parent, CommonAttributes.BLOCKING_BOUNDED_QUEUE_THREAD_POOL);
+        registerTransformers1_0(parent, CommonAttributes.BOUNDED_QUEUE_THREAD_POOL);
+    }
+
+    public static void registerTransformers1_0(ResourceTransformationDescriptionBuilder parent, String type) {
+        parent.addChildResource(PathElement.pathElement(type))
+            .getAttributeBuilder()
+                .addRejectCheck(RejectAttributeChecker.SIMPLE_EXPRESSIONS, PoolAttributeDefinitions.ALLOW_CORE_TIMEOUT)
+                .addRejectCheck(KeepAliveTimeAttributeDefinition.TRANSFORMATION_CHECKER, PoolAttributeDefinitions.KEEPALIVE_TIME);
+    }
+
 }

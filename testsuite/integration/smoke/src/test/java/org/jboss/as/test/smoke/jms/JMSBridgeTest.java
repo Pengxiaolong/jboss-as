@@ -22,6 +22,7 @@
 
 package org.jboss.as.test.smoke.jms;
 
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
@@ -48,6 +49,7 @@ import org.jboss.logging.Logger;
 import org.jboss.shrinkwrap.api.ArchivePaths;
 import org.jboss.shrinkwrap.api.ShrinkWrap;
 import org.jboss.shrinkwrap.api.asset.EmptyAsset;
+import org.jboss.shrinkwrap.api.asset.StringAsset;
 import org.jboss.shrinkwrap.api.spec.JavaArchive;
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -82,7 +84,8 @@ public class JMSBridgeTest {
                 .addClass(CreateQueueSetupTask.class)
                 .addAsManifestResource(
                         EmptyAsset.INSTANCE,
-                        ArchivePaths.create("beans.xml"));
+                        ArchivePaths.create("beans.xml"))
+                .addAsManifestResource(new StringAsset("Dependencies: org.jboss.as.controller-client,org.jboss.dmr,org.jboss.as.cli\n"), "MANIFEST.MF");
     }
 
     /**
@@ -119,7 +122,7 @@ public class JMSBridgeTest {
             // ASSERTIONS
             assertNotNull("did not receive expected message", receivedMessage);
             assertTrue(receivedMessage instanceof TextMessage);
-            assertTrue(((TextMessage) receivedMessage).getText().equals(text));
+            assertEquals(text, ((TextMessage) receivedMessage).getText());
             assertNotNull("did not get header set by the JMS bridge", receivedMessage.getStringProperty(HornetQJMSConstants.JBOSS_MESSAGING_BRIDGE_MESSAGE_ID_LIST));
         } catch (Exception e) {
             e.printStackTrace();

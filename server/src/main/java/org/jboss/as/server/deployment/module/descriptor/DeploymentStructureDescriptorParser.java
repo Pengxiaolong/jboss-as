@@ -27,6 +27,7 @@ import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
@@ -113,7 +114,7 @@ public class DeploymentStructureDescriptorParser implements DeploymentUnitProces
         mapper.registerRootElement(ROOT_1_0, JBossDeploymentStructureParser10.INSTANCE);
         mapper.registerRootElement(ROOT_1_1, JBossDeploymentStructureParser11.INSTANCE);
         mapper.registerRootElement(ROOT_1_2, JBossDeploymentStructureParser12.INSTANCE);
-        mapper.registerRootElement(ROOT_NO_NAMESPACE, JBossDeploymentStructureParser11.INSTANCE);
+        mapper.registerRootElement(ROOT_NO_NAMESPACE, JBossDeploymentStructureParser12.INSTANCE);
     }
 
     @Override
@@ -193,7 +194,8 @@ public class DeploymentStructureDescriptorParser implements DeploymentUnitProces
                     ServerLogger.DEPLOYMENT_LOGGER.annotationImportIgnored(identifier, additionalModule.getModuleIdentifier());
                 }
                 //log a warning if the resource root is wrong
-                final ListIterator<ResourceRoot> itr = additionalModule.getResourceRoots().listIterator();
+                final List<ResourceRoot> additionalModuleResourceRoots = new ArrayList<ResourceRoot>(additionalModule.getResourceRoots());
+                final ListIterator<ResourceRoot> itr = additionalModuleResourceRoots.listIterator();
                 while (itr.hasNext()) {
                     final ResourceRoot resourceRoot = itr.next();
                     if(!resourceRoot.getRoot().exists()) {
@@ -201,11 +203,11 @@ public class DeploymentStructureDescriptorParser implements DeploymentUnitProces
                         itr.remove();
                     }
                 }
-                final AdditionalModuleSpecification additional = new AdditionalModuleSpecification(additionalModule.getModuleIdentifier(), additionalModule.getResourceRoots());
+                final AdditionalModuleSpecification additional = new AdditionalModuleSpecification(additionalModule.getModuleIdentifier(), additionalModuleResourceRoots);
                 additional.addAliases(additionalModule.getAliases());
                 additional.addSystemDependencies(additionalModule.getModuleDependencies());
                 deploymentUnit.addToAttachmentList(Attachments.ADDITIONAL_MODULES, additional);
-                for (final ResourceRoot root : additionalModule.getResourceRoots()) {
+                for (final ResourceRoot root : additionalModuleResourceRoots) {
                     ResourceRootIndexer.indexResourceRoot(root);
                 }
             }

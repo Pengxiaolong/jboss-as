@@ -22,7 +22,7 @@
 
 <project name="module-repository" basedir="." default="all">
 
-    <property name="output.dir" value="target/jboss-as-${jboss.as.release.version}"/>
+    <property name="output.dir" value="../${wildfly.build.output.dir}"/>
 
     <target name="generate-configs" description="Generate standard standalone configurations">
     	<!-- make output file directory -->
@@ -44,12 +44,16 @@
     	<!--  See src/resources/configuration/ReadMe.txt for how the configuration assembly works -->
     	
     	<!-- Core configs -->
-      <generate-server-config 
-           paramTemplateFile="configuration/standalone/template.xml" 
+      <generate-server-config
+           paramTemplateFile="configuration/standalone/template.xml"
            paramSubsystemsFile="configuration/standalone/subsystems.xml"
            paramOutputFile="${generated.configs.standalone}/standalone.xml"/>
-      <generate-server-config 
-           paramTemplateFile="configuration/standalone/template.xml" 
+      <generate-server-config
+           paramTemplateFile="configuration/standalone/template.xml"
+           paramSubsystemsFile="configuration/standalone/subsystems-osgi.xml"
+           paramOutputFile="${generated.configs.standalone}/standalone-osgi.xml"/>
+      <generate-server-config
+           paramTemplateFile="configuration/standalone/template.xml"
            paramSubsystemsFile="configuration/standalone/subsystems-full.xml"
            paramOutputFile="${generated.configs.standalone}/standalone-full.xml"/>
       <generate-server-config 
@@ -65,7 +69,17 @@
            paramSubsystemsFile="configuration/domain/subsystems.xml"
            paramOutputFile="${generated.configs.domain}/domain.xml"/>
 
+        <!-- configuration with web subsystem instead of undertow-->
+      <generate-server-config
+                  paramTemplateFile="configuration/standalone/template.xml"
+                  paramSubsystemsFile="configuration/standalone/subsystems-jbossweb.xml"
+                  paramOutputFile="${generated.configs.standalone}/standalone-jbossweb.xml"/>
+
       <!-- Example configs -->
+      <generate-server-config 
+		   paramTemplateFile="configuration/standalone/template-osgi.xml" 
+		   paramSubsystemsFile="configuration/examples/subsystems-osgi-only.xml"
+		   paramOutputFile="${generated.configs.examples}/standalone-osgi-only.xml"/>
       <generate-server-config 
            paramTemplateFile="configuration/standalone/template.xml" 
            paramSubsystemsFile="configuration/examples/subsystems-hornetq-colocated.xml"
@@ -74,10 +88,6 @@
            paramTemplateFile="configuration/standalone/template.xml" 
            paramSubsystemsFile="configuration/examples/subsystems-jts.xml"
            paramOutputFile="${generated.configs.examples}/standalone-jts.xml"/>
-      <generate-server-config 
-           paramTemplateFile="configuration/standalone/template.xml" 
-           paramSubsystemsFile="configuration/examples/subsystems-osgi-only.xml"
-           paramOutputFile="${generated.configs.examples}/standalone-osgi-only.xml"/>
       <generate-server-config 
            paramTemplateFile="configuration/standalone/template.xml" 
            paramSubsystemsFile="configuration/examples/subsystems-xts.xml"

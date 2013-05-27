@@ -23,10 +23,11 @@
 package org.jboss.as.connector.subsystems.datasources;
 
 import static org.jboss.as.connector.logging.ConnectorMessages.MESSAGES;
-import static org.jboss.as.connector.subsystems.datasources.Constants.JNDINAME;
+import static org.jboss.as.connector.subsystems.datasources.Constants.JNDI_NAME;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.ENABLED;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.OP_ADDR;
 
+import java.util.LinkedList;
 import java.util.List;
 
 import org.jboss.as.controller.OperationContext;
@@ -69,7 +70,7 @@ public class DataSourceDisable implements OperationStepHandler {
 
                         final ModelNode address = operation.require(OP_ADDR);
                         final String dsName = PathAddress.pathAddress(address).getLastElement().getValue();
-                        final String jndiName = model.get(JNDINAME.getName()).asString();
+                        final String jndiName = model.get(JNDI_NAME.getName()).asString();
 
                         final ServiceRegistry registry = context.getServiceRegistry(true);
 
@@ -179,7 +180,7 @@ public class DataSourceDisable implements OperationStepHandler {
             for (PathElement element : addr) {
                 resource = resource.getChild(element);
             }
-            DataSourceEnable.addServices(context, operation, null, Resource.Tools.readModel(resource), isXa());
+            DataSourceEnable.addServices(context, operation, null, Resource.Tools.readModel(resource), isXa(), new LinkedList<ServiceController<?>>());
         }
     }
 

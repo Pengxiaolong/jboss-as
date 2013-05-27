@@ -34,6 +34,7 @@ import org.jboss.as.protocol.mgmt.ActiveOperation;
 import org.jboss.as.protocol.mgmt.FlushableDataOutput;
 import org.jboss.as.protocol.mgmt.FutureManagementChannel;
 import org.jboss.as.protocol.mgmt.ManagementChannelHandler;
+import org.jboss.as.protocol.mgmt.ManagementPingRequest;
 import org.jboss.as.protocol.mgmt.ManagementRequestContext;
 import org.jboss.as.remoting.management.ManagementRemotingServices;
 import org.jboss.as.server.ServerLogger;
@@ -50,9 +51,13 @@ import javax.security.sasl.RealmCallback;
 import javax.security.sasl.RealmChoiceCallback;
 import java.io.DataInput;
 import java.io.IOException;
+import java.io.InterruptedIOException;
 import java.net.URI;
 import java.nio.charset.Charset;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 
 /**
  * The connection to the host-controller. In case the channel is closed it's the host-controllers responsibility
@@ -69,13 +74,16 @@ class HostControllerConnection extends FutureManagementChannel {
     private final String serverProcessName;
     private final ProtocolConnectionManager connectionManager;
     private final ManagementChannelHandler channelHandler;
+    private final int initialOperationID;
 
     private ProtocolConnectionConfiguration configuration;
 
-    HostControllerConnection(final String serverProcessName, final String userName, final ProtocolConnectionConfiguration configuration, final ExecutorService executorService) {
+    HostControllerConnection(final String serverProcessName, final String userName, final int initialOperationID,
+                             final ProtocolConnectionConfiguration configuration, final ExecutorService executorService) {
         this.userName = userName;
         this.serverProcessName = serverProcessName;
         this.configuration = configuration;
+        this.initialOperationID = initialOperationID;
         this.channelHandler = new ManagementChannelHandler(this, executorService);
         this.connectionManager = ProtocolConnectionManager.create(configuration, this, new ReconnectTask());
     }
@@ -121,20 +129,52 @@ class HostControllerConnection extends FutureManagementChannel {
      *
      * @param reconnectUri the reconnection uri
      * @param authKey the auth key
+     * @return whether the server is still in sync
      * @throws IOException
      */
-    synchronized void reConnect(final URI reconnectUri, byte[] authKey) throws IOException {
-        // Tweak the configuration
+    synchronized boolean reConnect(final URI reconnectUri, byte[] authKey) throws IOException {
+        // In case we are still connected, test the connection and see if we can reuse it
+        if(connectionManager.isConnected()) {
+            try {
+                final Future<Long> result = channelHandler.executeRequest(ManagementPingRequest.INSTANCE, null).getResult();
+                result.get(15, TimeUnit.SECONDS); // Hmm, perhaps 15 is already too much
+                return true;
+            } catch (Exception e) {
+                ServerLogger.AS_ROOT_LOGGER.debugf(e, "failed to ping the host-controller, going to reconnect");
+            }
+            // Disconnect - the HC might have closed the connection without us noticing and is asking for a reconnect
+            final Connection connection = connectionManager.getConnection();
+            StreamUtils.safeClose(connection);
+            if(connection != null) {
+                try {
+                    // Wait for the connection to be closed
+                    connection.awaitClosed();
+                } catch (InterruptedException e) {
+                    throw new InterruptedIOException();
+                }
+            }
+        }
+
+        // Tweak the configuration with the new credentials
         final ProtocolConnectionConfiguration config = ProtocolConnectionConfiguration.copy(configuration);
         config.setCallbackHandler(createClientCallbackHandler(userName, authKey));
         config.setUri(reconnectUri);
         this.configuration = config;
-        // Reconnect
-        boolean ok = connectionManager.isConnected();
+
+        boolean ok = false;
         final Connection connection = connectionManager.connect();
         try {
-            channelHandler.executeRequest(new ServerReconnectRequest(), null);
-            ok = true;
+            // Reconnect to the host-controller
+            final ActiveOperation<Boolean, Void> result = channelHandler.executeRequest(new ServerReconnectRequest(), null);
+            try {
+                boolean inSync = result.getResult().get();
+                ok = true;
+                return inSync;
+            } catch (ExecutionException e) {
+                throw new IOException(e);
+            } catch (InterruptedException e) {
+                throw new InterruptedIOException();
+            }
         } finally {
             if(!ok) {
                 StreamUtils.safeClose(connection);
@@ -187,8 +227,8 @@ class HostControllerConnection extends FutureManagementChannel {
 
         @Override
         protected void sendRequest(final ActiveOperation.ResultHandler<ModelNode> resultHandler, final ManagementRequestContext<Void> context, final FlushableDataOutput output) throws IOException {
-            // output.write(DomainServerProtocol.PARAM_SERVER_NAME);
             output.writeUTF(serverProcessName);
+            output.writeInt(initialOperationID);
         }
 
         @Override

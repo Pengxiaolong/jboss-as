@@ -23,7 +23,6 @@ import com.sun.tools.jconsole.JConsolePlugin;
 import java.awt.BorderLayout;
 import java.awt.Component;
 import java.io.IOException;
-import java.security.AccessController;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
@@ -42,7 +41,8 @@ import org.jboss.as.cli.CliInitializationException;
 import org.jboss.as.cli.CommandContext;
 import org.jboss.as.cli.CommandContextFactory;
 import org.jboss.as.controller.client.ModelControllerClient;
-import org.jboss.as.controller.remote.ExistingChannelModelControllerClient;
+import org.jboss.as.controller.client.impl.ExistingChannelModelControllerClient;
+import org.wildfly.security.manager.GetAccessControlContextAction;
 import org.jboss.dmr.ModelNode;
 import org.jboss.remoting3.Channel;
 import org.jboss.remoting3.Connection;
@@ -50,6 +50,8 @@ import org.jboss.remotingjmx.RemotingMBeanServerConnection;
 import org.jboss.threads.JBossThreadFactory;
 import org.xnio.IoFuture;
 import org.xnio.OptionMap;
+
+import static java.security.AccessController.doPrivileged;
 
 /**
  *
@@ -99,14 +101,14 @@ public class JConsoleCLIPlugin extends JConsolePlugin {
             return connectUsingRemoting(cmdCtx, (RemotingMBeanServerConnection)mbeanServerConn);
         } else {
             try {
-                connectUsingDefaults(cmdCtx);
+                cmdCtx.connectController("http-remoting", "localhost", 9990);
             } catch (Exception e) {
-                String message = "Unable to connect to JBoss AS. \n";
+                String message = "CLI GUI unable to connect to JBoss AS with localhost:9999 \n";
                 message += "Go to Connection -> New Connection and enter a Remote Process \n";
                 message += "of the form service:jmx:remoting-jmx://{host_name}:{port}  where \n";
                 message += "{host_name} and {port} are the address of the native management \n";
                 message += "interface of the AS7 installation being monitored.";
-                JOptionPane.showMessageDialog(cliGuiCtx.getMainWindow(), message);
+                JOptionPane.showMessageDialog(null, message);
                 return false;
             }
         }
@@ -134,12 +136,8 @@ public class JConsoleCLIPlugin extends JConsolePlugin {
 
     private ExecutorService createExecutor() {
         final ThreadGroup group = new ThreadGroup("management-client-thread");
-        final ThreadFactory threadFactory = new JBossThreadFactory(group, Boolean.FALSE, null, "%G " + executorCount.incrementAndGet() + "-%t", null, null, AccessController.getContext());
+        final ThreadFactory threadFactory = new JBossThreadFactory(group, Boolean.FALSE, null, "%G " + executorCount.incrementAndGet() + "-%t", null, null, doPrivileged(GetAccessControlContextAction.getInstance()));
         return new ThreadPoolExecutor(2, DEFAULT_MAX_THREADS, 60, TimeUnit.SECONDS, new LinkedBlockingQueue<Runnable>(), threadFactory);
-    }
-
-    private void connectUsingDefaults(CommandContext cmdCtx) throws Exception {
-        cmdCtx.connectController("localhost", 9999);
     }
 
     @Override
@@ -161,7 +159,6 @@ public class JConsoleCLIPlugin extends JConsolePlugin {
             if (component instanceof JInternalFrame) {
                 JInternalFrame frame = (JInternalFrame)component;
                 frame.setFrameIcon(icon);
-                frame.setTitle(getJBossServerName());
                 return;
             }
         }

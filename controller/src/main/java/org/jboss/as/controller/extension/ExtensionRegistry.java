@@ -36,12 +36,11 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
-
 import javax.xml.namespace.QName;
 
 import org.jboss.as.controller.AttributeDefinition;
+import org.jboss.as.controller.ControllerLogger;
 import org.jboss.as.controller.ControllerMessages;
-import org.jboss.as.controller.Extension;
 import org.jboss.as.controller.ExtensionContext;
 import org.jboss.as.controller.ModelVersionRange;
 import org.jboss.as.controller.OperationDefinition;
@@ -68,21 +67,22 @@ import org.jboss.as.controller.registry.ManagementResourceRegistration;
 import org.jboss.as.controller.registry.OperationEntry;
 import org.jboss.as.controller.registry.Resource;
 import org.jboss.as.controller.services.path.PathManager;
+import org.jboss.as.controller.transform.CombinedTransformer;
+import org.jboss.as.controller.transform.OperationTransformer;
 import org.jboss.as.controller.transform.ResourceTransformer;
-import org.jboss.as.controller.transform.SubsystemTransformer;
 import org.jboss.as.controller.transform.TransformerRegistry;
 import org.jboss.as.controller.transform.TransformersSubRegistration;
 import org.jboss.dmr.ModelNode;
-import org.jboss.dmr.ModelType;
 import org.jboss.staxmapper.XMLElementReader;
 import org.jboss.staxmapper.XMLElementWriter;
 import org.jboss.staxmapper.XMLMapper;
 
 /**
- * A registry for information about {@link Extension}s to the core application server.
+ * A registry for information about {@link org.jboss.as.controller.Extension}s to the core application server.
  *
  * @author Brian Stansberry (c) 2011 Red Hat Inc.
  */
+@SuppressWarnings("deprecation")
 public class ExtensionRegistry {
 
     private final ProcessType processType;
@@ -99,8 +99,6 @@ public class ExtensionRegistry {
     // protected by extensions
     private boolean unnamedMerged;
     private final ConcurrentHashMap<String, SubsystemInformation> subsystemsInfo = new ConcurrentHashMap<String, SubsystemInformation>();
-    /*private ModelTransformer modelTransformer = new SimpleModelTransformer();
-    private Map<String,SubsystemModelTransformer> subsystemTransformers = new HashMap<String, SubsystemModelTransformer>();*/
     private volatile TransformerRegistry transformerRegistry = TransformerRegistry.Factory.create(this);
 
     public ExtensionRegistry(ProcessType processType, RunningModeControl runningModeControl) {
@@ -171,7 +169,7 @@ public class ExtensionRegistry {
     }
 
     /**
-     * Gets the module names of all known {@link Extension}s.
+     * Gets the module names of all known {@link org.jboss.as.controller.Extension}s.
      *
      * @return the names. Will not return {@code null}
      */
@@ -180,7 +178,7 @@ public class ExtensionRegistry {
     }
 
     /**
-     * Gets information about the subsystems provided by a given {@link Extension}.
+     * Gets information about the subsystems provided by a given {@link org.jboss.as.controller.Extension}.
      *
      * @param moduleName the name of the extension's module. Cannot be {@code null}
      * @return map of subsystem names to information about the subsystem.
@@ -199,7 +197,7 @@ public class ExtensionRegistry {
 
     /**
      * Gets an {@link ExtensionParsingContext} for use when
-     * {@link Extension#initializeParsers(ExtensionParsingContext) initializing the extension's parsers}.
+     * {@link org.jboss.as.controller.Extension#initializeParsers(ExtensionParsingContext) initializing the extension's parsers}.
      *
      * @param moduleName the name of the extension's module. Cannot be {@code null}
      * @param xmlMapper  the {@link XMLMapper} handling the extension parsing. Can be {@code null} if there won't
@@ -212,17 +210,31 @@ public class ExtensionRegistry {
 
     /**
      * Gets an {@link ExtensionContext} for use when handling an {@code add} operation for
-     * a resource representing an {@link Extension}.
+     * a resource representing an {@link org.jboss.as.controller.Extension}.
      *
      * @param moduleName the name of the extension's module. Cannot be {@code null}
+     * @param isMasterDomainController set to {@code true} if we are the master domain controller, in which case transformers get registered
      *
      * @return  the {@link ExtensionContext}.  Will not return {@code null}
      *
      * @throws IllegalStateException if no {@link #setSubsystemParentResourceRegistrations(ManagementResourceRegistration, ManagementResourceRegistration)} profile resource registration has been set}
      */
-    public ExtensionContext getExtensionContext(final String moduleName) {
-        return new ExtensionContextImpl(moduleName, pathManager);
+    public ExtensionContext getExtensionContext(final String moduleName, boolean isMasterDomainController) {
+        return new ExtensionContextImpl(moduleName, pathManager, isMasterDomainController);
     }
+
+    /**
+     * Calls {@link #getExtensionContext(String, boolean) with {@code true} for the {@code isMasterDomainControllerAttribute}
+     *
+     * @param moduleName the name of the extension's module. Cannot be {@code null}
+     * @return  the {@link ExtensionContext}.  Will not return {@code null}
+     * @deprecated Use {@link #getExtensionContext(String, boolean)}
+     */
+    @Deprecated
+    public ExtensionContext getExtensionContext(final String moduleName) {
+        return getExtensionContext(moduleName, true);
+    }
+
 
     /**
      * Gets the URIs (in string form) of any XML namespaces
@@ -332,13 +344,17 @@ public class ExtensionRegistry {
      * a string composed of the subsystem major version dot appended to its minor version.
      *
      * @param moduleName the name of the extension module
-     * @param subsystems a model node of type {@link ModelType#UNDEFINED} or type {@link ModelType#OBJECT}
+     * @param subsystems a model node of type {@link org.jboss.dmr.ModelType#UNDEFINED} or type {@link org.jboss.dmr.ModelType#OBJECT}
      */
     public void recordSubsystemVersions(String moduleName, ModelNode subsystems) {
         final Map<String, SubsystemInformation> subsystemsInfo = getAvailableSubsystems(moduleName);
         if(subsystemsInfo != null && ! subsystemsInfo.isEmpty()) {
             for(final Map.Entry<String, SubsystemInformation> entry : subsystemsInfo.entrySet()) {
-                subsystems.add(entry.getKey(), entry.getValue().getManagementInterfaceMajorVersion() +"."+ entry.getValue().getManagementInterfaceMinorVersion());
+                SubsystemInformation subsystem = entry.getValue();
+                subsystems.add(entry.getKey(),
+                        subsystem.getManagementInterfaceMajorVersion() + "."
+                        + subsystem.getManagementInterfaceMinorVersion()
+                        + "." + subsystem.getManagementInterfaceMicroVersion());
             }
         }
     }
@@ -401,8 +417,14 @@ public class ExtensionRegistry {
             }
         }
 
+        @Override
+        public ProcessType getProcessType() {
+            return processType;
+        }
+
 
         @Override
+        @SuppressWarnings("deprecation")
         public void setSubsystemXmlMapping(String namespaceUri, XMLElementReader<List<ModelNode>> reader) {
             assert namespaceUri != null : "namespaceUri is null";
             synchronized (extensions) { // we synchronize just to protect unnamedMerged
@@ -429,11 +451,13 @@ public class ExtensionRegistry {
         }
 
         @Override
+        @SuppressWarnings("deprecation")
         public void setDeploymentXmlMapping(String namespaceUri, XMLElementReader<ModelNode> reader) {
             // ignored
         }
 
         @Override
+        @SuppressWarnings("deprecation")
         public void setDeploymentXmlMapping(String subsystemName, String namespaceUri, XMLElementReader<ModelNode> reader) {
             // ignored
         }
@@ -451,13 +475,14 @@ public class ExtensionRegistry {
 
         private final ExtensionInfo extension;
         private final PathManager pathManager;
+        private final boolean registerTransformers;
 
-        private ExtensionContextImpl(String extensionName, PathManager pathManager) {
+        private ExtensionContextImpl(String extensionName, PathManager pathManager, boolean registerTransformers) {
             assert pathManager != null || !processType.isServer() : "pathManager is null";
             this.pathManager = pathManager;
             this.extension = getExtensionInfo(extensionName);
+            this.registerTransformers = registerTransformers;
         }
-
 
         @Override
         public SubsystemRegistration registerSubsystem(String name, int majorVersion, int minorVersion) throws IllegalArgumentException, IllegalStateException {
@@ -466,13 +491,22 @@ public class ExtensionRegistry {
 
         @Override
         public SubsystemRegistration registerSubsystem(String name, int majorVersion, int minorVersion, int microVersion) {
+            return registerSubsystem(name, majorVersion, minorVersion, microVersion, false);
+        }
+
+        @Override
+        public SubsystemRegistration registerSubsystem(String name, int majorVersion, int minorVersion, int microVersion, boolean deprecated) {
             assert name != null : "name is null";
             checkNewSubystem(extension.extensionModuleName, name);
             SubsystemInformationImpl info = extension.getSubsystemInfo(name);
             info.setMajorVersion(majorVersion);
             info.setMinorVersion(minorVersion);
             info.setMicroVersion(microVersion);
+            info.setDeprecated(deprecated);
             subsystemsInfo.put(name, info);
+            if (deprecated){
+                ControllerLogger.DEPRECATED_LOGGER.extensionDeprecated(name);
+            }
             return new SubsystemRegistrationImpl(name);
         }
 
@@ -498,6 +532,12 @@ public class ExtensionRegistry {
             }
             return pathManager;
         }
+
+
+        @Override
+        public boolean isRegisterTransformers() {
+            return registerTransformers;
+        }
     }
 
     private class SubsystemInformationImpl implements SubsystemInformation {
@@ -505,6 +545,7 @@ public class ExtensionRegistry {
         private Integer majorVersion;
         private Integer minorVersion;
         private Integer microVersion;
+        private boolean deprecated = false;
         private final List<String> parsingNamespaces = new ArrayList<String>();
 
         @Override
@@ -542,6 +583,14 @@ public class ExtensionRegistry {
         private void setMicroVersion(Integer microVersion) {
             this.microVersion = microVersion;
         }
+
+        public boolean isDeprecated() {
+            return deprecated;
+        }
+
+        private void setDeprecated(boolean deprecated) {
+            this.deprecated = deprecated;
+        }
     }
 
     public class SubsystemRegistrationImpl implements SubsystemRegistration {
@@ -552,6 +601,7 @@ public class ExtensionRegistry {
         }
 
         @Override
+        @SuppressWarnings("deprecation")
         public ManagementResourceRegistration registerSubsystemModel(final DescriptionProvider descriptionProvider) {
             assert descriptionProvider != null : "descriptionProvider is null";
             PathElement pathElement = PathElement.pathElement(ModelDescriptionConstants.SUBSYSTEM, name);
@@ -573,6 +623,7 @@ public class ExtensionRegistry {
         }
 
         @Override
+        @SuppressWarnings("deprecation")
         public ManagementResourceRegistration registerDeploymentModel(final DescriptionProvider descriptionProvider) {
             assert descriptionProvider != null : "descriptionProvider is null";
             PathElement pathElement = PathElement.pathElement(ModelDescriptionConstants.SUBSYSTEM, name);
@@ -597,6 +648,16 @@ public class ExtensionRegistry {
         @Override
         public TransformersSubRegistration registerModelTransformers(final ModelVersionRange range, final ResourceTransformer subsystemTransformer) {
             return transformerRegistry.registerSubsystemTransformers(name, range, subsystemTransformer);
+        }
+
+        @Override
+        public TransformersSubRegistration registerModelTransformers(ModelVersionRange version, ResourceTransformer resourceTransformer, OperationTransformer operationTransformer) {
+            return transformerRegistry.registerSubsystemTransformers(name, version, resourceTransformer, operationTransformer);
+        }
+
+        @Override
+        public TransformersSubRegistration registerModelTransformers(ModelVersionRange version, CombinedTransformer combinedTransformer) {
+            return transformerRegistry.registerSubsystemTransformers(name, version, combinedTransformer, combinedTransformer);
         }
 
         private ManagementResourceRegistration getDummyRegistration() {
@@ -774,36 +835,42 @@ public class ExtensionRegistry {
         }
 
         @Override
+        @SuppressWarnings("deprecation")
         public void registerOperationHandler(String operationName, OperationStepHandler handler, DescriptionProvider descriptionProvider) {
             deployments.registerOperationHandler(operationName, handler, descriptionProvider);
             subdeployments.registerOperationHandler(operationName, handler, descriptionProvider);
         }
 
         @Override
+        @SuppressWarnings("deprecation")
         public void registerOperationHandler(String operationName, OperationStepHandler handler, DescriptionProvider descriptionProvider, EnumSet<OperationEntry.Flag> flags) {
             deployments.registerOperationHandler(operationName, handler, descriptionProvider, flags);
             subdeployments.registerOperationHandler(operationName, handler, descriptionProvider, flags);
         }
 
         @Override
+        @SuppressWarnings("deprecation")
         public void registerOperationHandler(String operationName, OperationStepHandler handler, DescriptionProvider descriptionProvider, boolean inherited) {
             deployments.registerOperationHandler(operationName, handler, descriptionProvider, inherited);
             subdeployments.registerOperationHandler(operationName, handler, descriptionProvider, inherited);
         }
 
         @Override
+        @SuppressWarnings("deprecation")
         public void registerOperationHandler(String operationName, OperationStepHandler handler, DescriptionProvider descriptionProvider, boolean inherited, OperationEntry.EntryType entryType) {
             deployments.registerOperationHandler(operationName, handler, descriptionProvider, inherited, entryType);
             subdeployments.registerOperationHandler(operationName, handler, descriptionProvider, inherited, entryType);
         }
 
         @Override
+        @SuppressWarnings("deprecation")
         public void registerOperationHandler(String operationName, OperationStepHandler handler, DescriptionProvider descriptionProvider, boolean inherited, OperationEntry.EntryType entryType, EnumSet<OperationEntry.Flag> flags) {
             deployments.registerOperationHandler(operationName, handler, descriptionProvider, inherited, entryType, flags);
             subdeployments.registerOperationHandler(operationName, handler, descriptionProvider, inherited, entryType, flags);
         }
 
         @Override
+        @SuppressWarnings("deprecation")
         public void registerOperationHandler(String operationName, OperationStepHandler handler, DescriptionProvider descriptionProvider, boolean inherited, EnumSet<OperationEntry.Flag> flags) {
             deployments.registerOperationHandler(operationName, handler, descriptionProvider, inherited, flags);
             subdeployments.registerOperationHandler(operationName, handler, descriptionProvider, inherited, flags);
@@ -811,7 +878,7 @@ public class ExtensionRegistry {
 
         @Override
         public void registerOperationHandler(OperationDefinition definition, OperationStepHandler handler) {
-            registerOperationHandler(definition,handler,false);
+            registerOperationHandler(definition, handler, false);
         }
 
         @Override
