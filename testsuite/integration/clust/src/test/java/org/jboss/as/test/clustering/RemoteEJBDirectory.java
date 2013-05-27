@@ -29,22 +29,22 @@ import javax.naming.NamingException;
 
 /**
  * @author Paul Ferraro
- *
  */
 public class RemoteEJBDirectory extends AbstractEJBDirectory {
     private static final Properties env = new Properties();
+
     static {
         env.setProperty(Context.URL_PKG_PREFIXES, "org.jboss.ejb.client.naming");
     }
 
     private final String module;
-    
+
     public RemoteEJBDirectory(String module) throws NamingException {
         super(env);
         this.module = module;
     }
 
-    protected <T> String createJndiName(Class<? extends T> beanClass, Class<T> beanInterface, Type type) {
-        return String.format("ejb:/%s/%s!%s%s", this.module, beanClass.getSimpleName(), beanInterface.getName(), (type == Type.STATEFUL) ? "?stateful" : "");
+    protected <T> String createJndiName(String beanName, Class<T> beanInterface, Type type) {
+        return String.format("ejb:/%s/%s!%s%s", this.module, beanName, beanInterface.getName(), (type == Type.STATEFUL) ? "?stateful" : "");
     }
 }

@@ -52,6 +52,7 @@ import javax.management.loading.ClassLoaderRepository;
 
 import org.jboss.as.server.jmx.MBeanServerPlugin;
 import org.jboss.as.server.jmx.PluggableMBeanServer;
+import org.wildfly.security.manager.WildFlySecurityManager;
 
 /**
  * An MBeanServer supporting {@link MBeanServerPlugin}s. At it's core is the original platform mbean server wrapped in TCCL behaviour.
@@ -77,9 +78,26 @@ class PluggableMBeanServerImpl implements PluggableMBeanServer {
         delegates.remove(delegate);
     }
 
-    private MBeanServer findDelegate(ObjectName name) {
+    private MBeanServer findDelegate(ObjectName name) throws InstanceNotFoundException {
         if (name == null) {
-            throw new IllegalArgumentException("Object name can't be null");
+            throw JmxMessages.MESSAGES.objectNameCantBeNull();
+        }
+        if (delegates.size() > 0) {
+            for (MBeanServerPlugin delegate : delegates) {
+                if (delegate.accepts(name) && delegate.isRegistered(name)) {
+                    return delegate;
+                }
+            }
+        }
+        if (rootMBeanServer.isRegistered(name)) {
+            return rootMBeanServer;
+        }
+        throw new InstanceNotFoundException(name.toString());
+    }
+
+    private MBeanServer findDelegateForNewObject(ObjectName name) {
+        if (name == null) {
+            throw JmxMessages.MESSAGES.objectNameCantBeNull();
         }
         if (delegates.size() > 0) {
             for (MBeanServerPlugin delegate : delegates) {
@@ -107,7 +125,7 @@ class PluggableMBeanServerImpl implements PluggableMBeanServer {
     public ObjectInstance createMBean(String className, ObjectName name, Object[] params, String[] signature)
             throws ReflectionException, InstanceAlreadyExistsException, MBeanException,
             NotCompliantMBeanException {
-        return findDelegate(name).createMBean(className, name, params, signature);
+        return findDelegateForNewObject(name).createMBean(className, name, params, signature);
     }
 
     @Override
@@ -127,7 +145,7 @@ class PluggableMBeanServerImpl implements PluggableMBeanServer {
     @Override
     public ObjectInstance createMBean(String className, ObjectName name) throws ReflectionException,
             InstanceAlreadyExistsException, MBeanException, NotCompliantMBeanException {
-        return findDelegate(name).createMBean(className, name);
+        return findDelegateForNewObject(name).createMBean(className, name);
     }
 
     @Override
@@ -257,7 +275,15 @@ class PluggableMBeanServerImpl implements PluggableMBeanServer {
 
     @Override
     public boolean isRegistered(ObjectName name) {
-        return findDelegate(name).isRegistered(name);
+        if (delegates.size() > 0) {
+            for (MBeanServerPlugin delegate : delegates) {
+                if (delegate.accepts(name) && delegate.isRegistered(name)) {
+                    return true;
+                }
+            }
+        }
+        // check if it's registered with the root (a.k.a platform) MBean server
+        return rootMBeanServer.isRegistered(name);
     }
 
     @Override
@@ -291,7 +317,7 @@ class PluggableMBeanServerImpl implements PluggableMBeanServer {
     @Override
     public ObjectInstance registerMBean(Object object, ObjectName name) throws InstanceAlreadyExistsException,
             MBeanRegistrationException, NotCompliantMBeanException {
-        return findDelegate(name).registerMBean(object, name);
+        return findDelegateForNewObject(name).registerMBean(object, name);
     }
 
     @Override
@@ -590,16 +616,16 @@ class PluggableMBeanServerImpl implements PluggableMBeanServer {
 
         private ClassLoader pushClassLoader(ObjectName name) throws InstanceNotFoundException {
             ClassLoader mbeanCl = delegate.getClassLoaderFor(name);
-            return SecurityActions.setThreadContextClassLoader(mbeanCl);
+            return WildFlySecurityManager.setCurrentContextClassLoaderPrivileged(mbeanCl);
         }
 
         private ClassLoader pushClassLoaderByName(ObjectName loaderName) throws InstanceNotFoundException {
             ClassLoader mbeanCl = delegate.getClassLoader(loaderName);
-            return SecurityActions.setThreadContextClassLoader(mbeanCl);
+            return WildFlySecurityManager.setCurrentContextClassLoaderPrivileged(mbeanCl);
         }
 
         private void resetClassLoader(ClassLoader cl) {
-            SecurityActions.resetThreadContextClassLoader(cl);
+            WildFlySecurityManager.setCurrentContextClassLoaderPrivileged(cl);
         }
     }
 

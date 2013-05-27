@@ -23,6 +23,7 @@
 package org.jboss.as.test.integration.naming;
 
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.ADD;
+import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.ALLOW_RESOURCE_SERVICE_RESTART;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.FAILURE_DESCRIPTION;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.OP;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.OP_ADDR;
@@ -33,7 +34,7 @@ import static org.jboss.as.naming.subsystem.NamingSubsystemModel.BINDING_TYPE;
 import static org.jboss.as.naming.subsystem.NamingSubsystemModel.CLASS;
 import static org.jboss.as.naming.subsystem.NamingSubsystemModel.MODULE;
 import static org.jboss.as.naming.subsystem.NamingSubsystemModel.OBJECT_FACTORY;
-import static org.jboss.as.naming.subsystem.NamingSubsystemModel.OBJECT_FACTORY_ENV;
+import static org.jboss.as.naming.subsystem.NamingSubsystemModel.ENVIRONMENT;
 
 import java.io.BufferedOutputStream;
 import java.io.File;
@@ -46,12 +47,15 @@ import java.util.HashMap;
 import java.util.Hashtable;
 import java.util.Map;
 
+import javax.naming.InitialContext;
 import javax.naming.spi.ObjectFactory;
 
-import junit.framework.Assert;
+import org.junit.Assert;
 
+import org.jboss.arquillian.container.test.api.Deployment;
 import org.jboss.arquillian.junit.Arquillian;
-import org.jboss.as.arquillian.api.ContainerResource;
+import org.jboss.as.arquillian.api.ServerSetup;
+import org.jboss.as.arquillian.api.ServerSetupTask;
 import org.jboss.as.arquillian.container.ManagementClient;
 import org.jboss.as.naming.subsystem.NamingExtension;
 import org.jboss.dmr.ModelNode;
@@ -68,11 +72,11 @@ import org.xnio.IoUtils;
  * Test case for binding of {@link ObjectFactory} with environment properties (see AS7-4575). The test case deploys a module,
  * containing the object factory class, and then uses the {@link ManagementClient} to bind it. The factory, when invoked to
  * retrieve an instance, verifies that the env properties are the ones used in the binding management operation.
- * 
+ *
  * @author Eduardo Martins
- * 
  */
 @RunWith(Arquillian.class)
+@ServerSetup(ObjectFactoryWithEnvironmentBindingTestCase.ObjectFactoryWithEnvironmentBindingTestCaseServerSetup.class)
 public class ObjectFactoryWithEnvironmentBindingTestCase {
 
     private static Logger LOGGER = Logger.getLogger(ObjectFactoryWithEnvironmentBindingTestCase.class);
@@ -101,18 +105,14 @@ public class ObjectFactoryWithEnvironmentBindingTestCase {
         }
     }
 
-    @ContainerResource
-    private ManagementClient managementClient;
+    static class ObjectFactoryWithEnvironmentBindingTestCaseServerSetup implements ServerSetupTask {
 
-    @Test
-    public void testBindingWithEnvironment() throws Exception {
-        deployModule();
-        LOGGER.info("Module deployed.");
-        try {
+        @Override
+        public void setup(final ManagementClient managementClient, final String containerId) throws Exception {
+
+            deployModule();
             // bind the object factory
-            final ModelNode address = new ModelNode();
-            address.add(SUBSYSTEM, NamingExtension.SUBSYSTEM_NAME);
-            address.add(BINDING, "java:global/b");
+            final ModelNode address = createAddress();
             final ModelNode bindingAdd = new ModelNode();
             bindingAdd.get(OP).set(ADD);
             bindingAdd.get(OP_ADDR).set(address);
@@ -123,25 +123,53 @@ public class ObjectFactoryWithEnvironmentBindingTestCase {
             for (Map.Entry<String, String> property : ENVIRONMENT_PROPERTIES.entrySet()) {
                 environment.add(property.getKey(), property.getValue());
             }
-            bindingAdd.get(OBJECT_FACTORY_ENV).set(environment);
+            bindingAdd.get(ENVIRONMENT).set(environment);
             final ModelNode addResult = managementClient.getControllerClient().execute(bindingAdd);
             Assert.assertFalse(addResult.get(FAILURE_DESCRIPTION).toString(), addResult.get(FAILURE_DESCRIPTION).isDefined());
             LOGGER.info("Object factory bound.");
-            // unbind the object factory
-            final ModelNode bindingRemove = new ModelNode();
-            bindingRemove.get(OP).set(REMOVE);
-            bindingRemove.get(OP_ADDR).set(address);
-            final ModelNode removeResult = managementClient.getControllerClient().execute(bindingRemove);
-            Assert.assertFalse(removeResult.get(FAILURE_DESCRIPTION).toString(), removeResult.get(FAILURE_DESCRIPTION)
-                    .isDefined());
-            LOGGER.info("Object factory unbound.");
-        } finally {
-            undeployModule();
-            LOGGER.info("Module undeployed.");
+
+        }
+
+        private ModelNode createAddress() {
+            final ModelNode address = new ModelNode();
+            address.add(SUBSYSTEM, NamingExtension.SUBSYSTEM_NAME);
+            address.add(BINDING, "java:global/b");
+            return address;
+        }
+
+        @Override
+        public void tearDown(final ManagementClient managementClient, final String containerId) throws Exception {
+            try {
+                // unbind the object factory
+                final ModelNode bindingRemove = new ModelNode();
+                bindingRemove.get(OP).set(REMOVE);
+                bindingRemove.get(OP_ADDR).set(createAddress());
+                bindingRemove.get(ALLOW_RESOURCE_SERVICE_RESTART).set(true);
+                final ModelNode removeResult = managementClient.getControllerClient().execute(bindingRemove);
+                Assert.assertFalse(removeResult.get(FAILURE_DESCRIPTION).toString(), removeResult.get(FAILURE_DESCRIPTION)
+                        .isDefined());
+                LOGGER.info("Object factory unbound.");
+            } finally {
+                undeployModule();
+                LOGGER.info("Module undeployed.");
+            }
         }
     }
 
-    private void deployModule() throws IOException {
+
+    @Deployment
+    public static JavaArchive deploy() {
+        return ShrinkWrap.create(JavaArchive.class, "ObjectFactoryWithEnvironmentBindingTestCase.jar")
+                .addClass(ObjectFactoryWithEnvironmentBindingTestCase.class);
+    }
+
+    @Test
+    public void testBindingWithEnvironment() throws Exception {
+        InitialContext context = new InitialContext();
+        Assert.assertEquals("v1", context.lookup("java:global/b"));
+    }
+
+    private static void deployModule() throws IOException {
         File testModuleRoot = new File(getModulesHome(), MODULE_NAME);
         if (testModuleRoot.exists()) {
             throw new IllegalArgumentException(testModuleRoot + " already exists");
@@ -160,7 +188,7 @@ public class ObjectFactoryWithEnvironmentBindingTestCase {
             IoUtils.safeClose(moduleJarInputStream);
         }
 
-        URL moduleXmlURL = this.getClass().getResource(
+        URL moduleXmlURL = ObjectFactoryWithEnvironmentBindingTestCase.class.getResource(
                 ObjectFactoryWithEnvironmentBindingTestCase.class.getSimpleName() + "-module.xml");
         if (moduleXmlURL == null) {
             throw new IllegalStateException("Could not find module.xml");
@@ -168,12 +196,12 @@ public class ObjectFactoryWithEnvironmentBindingTestCase {
         copyFile(new File(testModuleMainDir, "module.xml"), moduleXmlURL.openStream());
     }
 
-    private void undeployModule() {
+    private static void undeployModule() {
         File testModuleRoot = new File(getModulesHome(), MODULE_NAME);
         deleteRecursively(testModuleRoot);
     }
 
-    private File getModulesHome() {
+    private static File getModulesHome() {
         String modulePath = System.getProperty("module.path", null);
         if (modulePath == null) {
             String jbossHome = System.getProperty("jboss.home", null);
@@ -181,7 +209,7 @@ public class ObjectFactoryWithEnvironmentBindingTestCase {
                 throw new IllegalStateException("Neither -Dmodule.path nor -Djboss.home were set");
             }
             modulePath = jbossHome + File.separatorChar + "modules";
-        }else{
+        } else {
             modulePath = modulePath.split(File.pathSeparator)[0];
         }
         File moduleDir = new File(modulePath);
@@ -194,7 +222,7 @@ public class ObjectFactoryWithEnvironmentBindingTestCase {
         return moduleDir;
     }
 
-    private void copyFile(File target, InputStream src) throws IOException {
+    private static void copyFile(File target, InputStream src) throws IOException {
         final BufferedOutputStream out = new BufferedOutputStream(new FileOutputStream(target));
         try {
             int i = src.read();
@@ -207,7 +235,7 @@ public class ObjectFactoryWithEnvironmentBindingTestCase {
         }
     }
 
-    private void deleteRecursively(File file) {
+    private static void deleteRecursively(File file) {
         if (file.exists()) {
             if (file.isDirectory()) {
                 for (String name : file.list()) {

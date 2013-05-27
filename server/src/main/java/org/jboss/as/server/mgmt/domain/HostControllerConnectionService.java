@@ -28,6 +28,7 @@ import org.jboss.as.network.NetworkUtils;
 import org.jboss.as.protocol.ProtocolConnectionConfiguration;
 import org.jboss.as.protocol.StreamUtils;
 import org.jboss.as.server.ServerMessages;
+import org.wildfly.security.manager.GetAccessControlContextAction;
 import org.jboss.msc.service.Service;
 import org.jboss.msc.service.ServiceName;
 import org.jboss.msc.service.StartContext;
@@ -36,6 +37,7 @@ import org.jboss.msc.service.StopContext;
 import org.jboss.msc.value.InjectedValue;
 import org.jboss.remoting3.Endpoint;
 import org.jboss.threads.JBossThreadFactory;
+import org.xnio.IoUtils;
 import org.xnio.OptionMap;
 import org.xnio.Options;
 import org.xnio.Sequence;
@@ -47,13 +49,14 @@ import java.beans.PropertyChangeEvent;
 import java.beans.PropertyChangeListener;
 import java.io.IOException;
 import java.net.URI;
-import java.security.AccessController;
 import java.security.GeneralSecurityException;
 import java.security.cert.CertificateException;
 import java.security.cert.X509Certificate;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadFactory;
+
+import static java.security.AccessController.doPrivileged;
 
 /**
  * Service setting up the connection to the local host controller.
@@ -65,7 +68,7 @@ public class HostControllerConnectionService implements Service<HostControllerCl
     public static final ServiceName SERVICE_NAME = ServiceName.JBOSS.append("host", "controller", "client");
 
     private static final String JBOSS_LOCAL_USER = "JBOSS-LOCAL-USER";
-    private static long SERVER_CONNECTION_TIMEOUT = 60000;
+    private static final long SERVER_CONNECTION_TIMEOUT = 60000;
 
     private final InjectedValue<Endpoint> endpointInjector = new InjectedValue<Endpoint>();
     private final InjectedValue<ControlledProcessStateService> processStateServiceInjectedValue = new InjectedValue<ControlledProcessStateService>();
@@ -76,21 +79,28 @@ public class HostControllerConnectionService implements Service<HostControllerCl
     private final String userName;
     private final String serverProcessName;
     private final byte[] initialAuthKey;
-    private final ThreadFactory threadFactory = new JBossThreadFactory(new ThreadGroup("host-controller-connection-threads"), Boolean.FALSE, null, "%G - %t", null, null, AccessController.getContext());
+    private final ThreadFactory threadFactory = new JBossThreadFactory(new ThreadGroup("host-controller-connection-threads"), Boolean.FALSE, null, "%G - %t", null, null, doPrivileged(GetAccessControlContextAction.getInstance()));
     private final ExecutorService executor = Executors.newCachedThreadPool(threadFactory);
+    private final int connectOperationID;
+    private final boolean managementSubsystemEndpoint;
 
     private HostControllerClient client;
 
-    public HostControllerConnectionService(final String hostName, final int port, final String serverName, final String serverProcessName, final byte[] authKey) {
+    public HostControllerConnectionService(final String hostName, final int port, final String serverName, final String serverProcessName,
+                                           final byte[] authKey, final int connectOperationID,
+                                           final boolean managementSubsystemEndpoint) {
         this.port = port;
         this.hostName = hostName;
         this.serverName = serverName;
         this.userName = "=" + serverName;
         this.serverProcessName = serverProcessName;
         this.initialAuthKey = authKey;
+        this.connectOperationID = connectOperationID;
+        this.managementSubsystemEndpoint = managementSubsystemEndpoint;
     }
 
     @Override
+    @SuppressWarnings("deprecation")
     public synchronized void start(final StartContext context) throws StartException {
         final Endpoint endpoint = endpointInjector.getValue();
         try {
@@ -102,22 +112,26 @@ public class HostControllerConnectionService implements Service<HostControllerCl
             configuration.setConnectionTimeout(SERVER_CONNECTION_TIMEOUT);
             configuration.setSslContext(getAcceptingSSLContext());
             // Create the connection
-            final HostControllerConnection connection = new HostControllerConnection(serverProcessName, userName, configuration, executor);
+            final HostControllerConnection connection = new HostControllerConnection(serverProcessName, userName, connectOperationID, configuration, executor);
             // Trigger the started notification based on the process state listener
             final ControlledProcessStateService processService = processStateServiceInjectedValue.getValue();
             processService.addPropertyChangeListener(new PropertyChangeListener() {
                 @Override
                 public void propertyChange(final PropertyChangeEvent evt) {
+                    final ControlledProcessState.State old = (ControlledProcessState.State) evt.getOldValue();
                     final ControlledProcessState.State current = (ControlledProcessState.State) evt.getNewValue();
-                    if(current == ControlledProcessState.State.RUNNING) {
-                        // Send the started notification
-                        connection.started();
-                    } else {
-                        // TODO send a stopping message
+                    if (old == ControlledProcessState.State.STARTING) {
+                        // After starting reload has to be cleared, may still require a restart
+                        if(current == ControlledProcessState.State.RUNNING
+                                || current == ControlledProcessState.State.RESTART_REQUIRED) {
+                            connection.started();
+                        } else {
+                            IoUtils.safeClose(connection);
+                        }
                     }
                 }
             });
-            this.client = new HostControllerClient(serverName, connection.getChannelHandler(), connection);
+            this.client = new HostControllerClient(serverName, connection.getChannelHandler(), connection, managementSubsystemEndpoint);
         } catch (Exception e) {
             throw new StartException(e);
         }

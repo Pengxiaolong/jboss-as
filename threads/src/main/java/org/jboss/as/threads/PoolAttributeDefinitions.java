@@ -38,7 +38,9 @@ import org.jboss.dmr.ModelType;
  */
 public interface PoolAttributeDefinitions {
 
-    SimpleAttributeDefinition NAME = new SimpleAttributeDefinition(CommonAttributes.NAME, ModelType.STRING, true);
+    SimpleAttributeDefinition NAME = new SimpleAttributeDefinitionBuilder(CommonAttributes.NAME, ModelType.STRING, true)
+            .setResourceOnly()
+            .build();
 
     SimpleAttributeDefinition THREAD_FACTORY = new SimpleAttributeDefinitionBuilder(CommonAttributes.THREAD_FACTORY, ModelType.STRING, true)
             .setFlags(AttributeAccess.Flag.RESTART_ALL_SERVICES).build();
@@ -46,7 +48,7 @@ public interface PoolAttributeDefinitions {
     SimpleAttributeDefinition MAX_THREADS = new SimpleAttributeDefinitionBuilder(CommonAttributes.MAX_THREADS, ModelType.INT, false)
             .setValidator(new IntRangeValidator(0, Integer.MAX_VALUE, false, true)).setAllowExpression(true).build();
 
-    SimpleAttributeDefinition KEEPALIVE_TIME = new KeepAliveTimeAttributeDefinition();
+    KeepAliveTimeAttributeDefinition KEEPALIVE_TIME = new KeepAliveTimeAttributeDefinition();
 
     SimpleAttributeDefinition CORE_THREADS = new SimpleAttributeDefinitionBuilder(CommonAttributes.CORE_THREADS, ModelType.INT, true)
             .setValidator(new IntRangeValidator(0, Integer.MAX_VALUE, true, true)).setAllowExpression(true).build();
@@ -58,14 +60,20 @@ public interface PoolAttributeDefinitions {
             .setValidator(new IntRangeValidator(0, Integer.MAX_VALUE, false, true)).setAllowExpression(true).setFlags(AttributeAccess.Flag.RESTART_ALL_SERVICES).build();
 
     SimpleAttributeDefinition ALLOW_CORE_TIMEOUT = new SimpleAttributeDefinitionBuilder(CommonAttributes.ALLOW_CORE_TIMEOUT, ModelType.BOOLEAN, true)
-            .setDefaultValue(new ModelNode().set(false)).build();
+            .setAllowExpression(true)
+            .setDefaultValue(new ModelNode(false))
+            .build();
 
-    SimpleAttributeDefinition GROUP_NAME = new SimpleAttributeDefinition(CommonAttributes.GROUP_NAME, ModelType.STRING, true);
+    SimpleAttributeDefinition GROUP_NAME = new SimpleAttributeDefinitionBuilder(CommonAttributes.GROUP_NAME, ModelType.STRING, true)
+            .setAllowExpression(true)
+            .build();
 
-    SimpleAttributeDefinition THREAD_NAME_PATTERN = new SimpleAttributeDefinition(CommonAttributes.THREAD_NAME_PATTERN, ModelType.STRING, true);
+    SimpleAttributeDefinition THREAD_NAME_PATTERN = new SimpleAttributeDefinitionBuilder(CommonAttributes.THREAD_NAME_PATTERN, ModelType.STRING, true)
+            .setAllowExpression(true)
+            .build();
 
-    SimpleAttributeDefinition PRIORITY = new SimpleAttributeDefinition(CommonAttributes.PRIORITY, CommonAttributes.PRIORITY, new ModelNode().set(-1),
-            ModelType.INT, true, true, MeasurementUnit.NONE, new IntRangeValidator(-1, 10, true, true));
+    SimpleAttributeDefinition PRIORITY = new SimpleAttributeDefinition(CommonAttributes.PRIORITY, CommonAttributes.PRIORITY, null,
+            ModelType.INT, true, true, MeasurementUnit.NONE, new IntRangeValidator(Thread.MIN_PRIORITY, Thread.MAX_PRIORITY, true, true));
 
     // Metrics
 
@@ -75,4 +83,5 @@ public interface PoolAttributeDefinitions {
     AttributeDefinition ACTIVE_COUNT = new SimpleAttributeDefinition(CommonAttributes.ACTIVE_COUNT, ModelType.INT, false);
     AttributeDefinition COMPLETED_TASK_COUNT = new SimpleAttributeDefinition(CommonAttributes.COMPLETED_TASK_COUNT, ModelType.INT, false);
     AttributeDefinition TASK_COUNT = new SimpleAttributeDefinition(CommonAttributes.TASK_COUNT, ModelType.INT, false);
+    AttributeDefinition QUEUE_SIZE = new SimpleAttributeDefinition(CommonAttributes.QUEUE_SIZE, ModelType.INT, false);
 }

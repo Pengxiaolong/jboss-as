@@ -55,7 +55,7 @@ public class StandardConfigsXMLValidationUnitTestCase extends AbstractValidation
     @BeforeClass
     public static void setUp() {
         final List<Source> sources = new LinkedList<Source>();
-        for (File file : jbossSchemaFiles()) {
+        for (File file : jbossSchemaFiles(true)) {
             sources.add(new StreamSource(file));
         }
         SCHEMAS = sources.toArray(new StreamSource[0]);
@@ -107,6 +107,11 @@ public class StandardConfigsXMLValidationUnitTestCase extends AbstractValidation
         parseXml("standalone/configuration/standalone-full.xml");
     }
 
+    @Test
+    public void testStandaloneOSGi() throws Exception {
+        parseXml("docs/examples/configs/standalone-osgi-only.xml");
+    }
+
   //TODO Leave commented out until domain-osgi-only.xml and domain-jts.xml are definitely removed from the configuration
 //    @Test
 //    public void testDomainJTS() throws Exception {
@@ -129,11 +134,6 @@ public class StandardConfigsXMLValidationUnitTestCase extends AbstractValidation
     }
 
     @Test
-    public void testStandaloneOSGiOnly() throws Exception {
-        parseXml("docs/examples/configs/standalone-osgi-only.xml");
-    }
-
-    @Test
     public void testStandaloneMinimalistic() throws Exception {
         parseXml("docs/examples/configs/standalone-minimalistic.xml");
     }
@@ -149,6 +149,7 @@ public class StandardConfigsXMLValidationUnitTestCase extends AbstractValidation
         schemaFactory.setResourceResolver(DEFAULT_RESOURCE_RESOLVER);
         Schema schema = schemaFactory.newSchema(SCHEMAS);
         Validator validator = schema.newValidator();
+        validator.setErrorHandler(new ErrorHandlerImpl());
         validator.setFeature("http://apache.org/xml/features/validation/schema", true);
         validator.setResourceResolver(DEFAULT_RESOURCE_RESOLVER);
         validator.validate(new StreamSource(getXmlFile(xmlName)));
@@ -186,6 +187,10 @@ public class StandardConfigsXMLValidationUnitTestCase extends AbstractValidation
         result = result.replace("${jboss.domain.master.port:9999}", "9999");
         result = result.replace("${jboss.messaging.group.port:9876}", "9876");
         result = result.replace("${jboss.socket.binding.port-offset:0}", "0");
+        result = result.replace("${jboss.http.port:8080}", "8080");
+        result = result.replace("${jboss.https.port:8443}", "8443");
+        result = result.replace("${jboss.remoting.port:4447}", "4447");
+        result = result.replace("${jboss.ajp.port:8009}", "8009");
         return result;
     }
 }

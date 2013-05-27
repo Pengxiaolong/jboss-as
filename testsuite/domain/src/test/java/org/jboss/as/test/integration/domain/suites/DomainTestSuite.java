@@ -22,7 +22,7 @@
 
 package org.jboss.as.test.integration.domain.suites;
 
-import org.jboss.as.test.integration.domain.DomainTestSupport;
+import org.jboss.as.test.integration.domain.management.util.DomainTestSupport;
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
 import org.junit.runner.RunWith;
@@ -37,35 +37,40 @@ import org.junit.runners.Suite;
 @RunWith(Suite.class)
 @Suite.SuiteClasses ({
         CoreResourceManagementTestCase.class,
-        ManagementReadsTestCase.class,
+        DatasourceTestCase.class,
         DeploymentManagementTestCase.class,
         DeploymentOverlayTestCase.class,
-        ServerManagementTestCase.class,
-        ServerRestartRequiredTestCase.class,
+        DirectoryGroupingByTypeTestCase.class,
+        ExtensionManagementTestCase.class,
+        IgnoredResourcesTestCase.class,
         ManagementAccessTestCase.class,
         ManagementClientContentTestCase.class,
-        ValidateOperationOperationTestCase.class,
+        ManagementReadsTestCase.class,
+        ManagementVersionTestCase.class,
+        ModelPersistenceTestCase.class,
+        ModuleLoadingManagementTestCase.class,
+        OperationTransformationTestCase.class,
         ReadEnvironmentVariablesTestCase.class,
-        ExtensionManagementTestCase.class
+        ServerManagementTestCase.class,
+        ServerRestartRequiredTestCase.class,
+        ValidateAddressOperationTestCase.class,
+        ValidateOperationOperationTestCase.class
 })
 public class DomainTestSuite {
 
-    private static final DomainTestSupport.Configuration CONFIGURATION;
     private static boolean initializedLocally = false;
     private static volatile DomainTestSupport support;
 
-    static {
-        CONFIGURATION = DomainTestSupport.Configuration.create("domain-configs/domain-standard.xml", "host-configs/host-master.xml", "host-configs/host-slave.xml");
-    }
-
-    public static synchronized DomainTestSupport createSupport(final String testName) {
+    // This can only be called from tests as part of this suite
+    static synchronized DomainTestSupport createSupport(final String testName) {
         if(support == null) {
             start(testName);
         }
         return support;
     }
 
-    public static synchronized void stopSupport() {
+    // This can only be called from tests as part of this suite
+    static synchronized void stopSupport() {
         if(! initializedLocally) {
             stop();
         }
@@ -73,10 +78,7 @@ public class DomainTestSuite {
 
     private synchronized static void start(final String name) {
         try {
-            final DomainTestSupport testSupport = new DomainTestSupport(name, CONFIGURATION);
-            // Start!
-            testSupport.start();
-            support = testSupport;
+            support = DomainTestSupport.createAndStartDefaultSupport(name);
         } catch (Exception e) {
             throw new RuntimeException(e);
         }

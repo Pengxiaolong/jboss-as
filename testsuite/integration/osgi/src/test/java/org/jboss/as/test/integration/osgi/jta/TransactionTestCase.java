@@ -27,7 +27,6 @@ import static org.junit.Assert.assertNull;
 
 import java.io.InputStream;
 
-import javax.inject.Inject;
 import javax.transaction.Status;
 import javax.transaction.Synchronization;
 import javax.transaction.Transaction;
@@ -36,7 +35,9 @@ import javax.transaction.UserTransaction;
 
 import org.jboss.arquillian.container.test.api.Deployment;
 import org.jboss.arquillian.junit.Arquillian;
-import org.jboss.osgi.spi.OSGiManifestBuilder;
+import org.jboss.arquillian.test.api.ArquillianResource;
+import org.jboss.as.test.osgi.FrameworkUtils;
+import org.jboss.osgi.metadata.OSGiManifestBuilder;
 import org.jboss.shrinkwrap.api.ShrinkWrap;
 import org.jboss.shrinkwrap.api.asset.Asset;
 import org.jboss.shrinkwrap.api.spec.JavaArchive;
@@ -44,7 +45,7 @@ import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.osgi.framework.Bundle;
 import org.osgi.framework.BundleContext;
-import org.osgi.framework.ServiceReference;
+import org.osgi.util.tracker.ServiceTracker;
 
 /**
  * An example of OSGi JTA.
@@ -55,18 +56,20 @@ import org.osgi.framework.ServiceReference;
 @RunWith(Arquillian.class)
 public class TransactionTestCase {
 
-    @Inject
-    public Bundle bundle;
+    @ArquillianResource
+    Bundle bundle;
 
     @Deployment
     public static JavaArchive createdeployment() {
         final JavaArchive archive = ShrinkWrap.create(JavaArchive.class, "example-jta");
+        archive.addClasses(FrameworkUtils.class);
         archive.setManifest(new Asset() {
             public InputStream openStream() {
                 OSGiManifestBuilder builder = OSGiManifestBuilder.newInstance();
                 builder.addBundleSymbolicName(archive.getName());
                 builder.addBundleManifestVersion(2);
                 builder.addImportPackages(TransactionManager.class);
+                builder.addImportPackages(ServiceTracker.class);
                 return builder.openStream();
             }
         });
@@ -80,18 +83,12 @@ public class TransactionTestCase {
 
         Transactional txObj = new Transactional();
 
-        ServiceReference userTxRef = context.getServiceReference(UserTransaction.class.getName());
-        assertNotNull("UserTransaction service not null", userTxRef);
-
-        UserTransaction userTx = (UserTransaction) context.getService(userTxRef);
+        UserTransaction userTx = FrameworkUtils.waitForService(context, UserTransaction.class);
         assertNotNull("UserTransaction not null", userTx);
 
         userTx.begin();
         try {
-            ServiceReference tmRef = context.getServiceReference(TransactionManager.class.getName());
-            assertNotNull("TransactionManager service not null", tmRef);
-
-            TransactionManager tm = (TransactionManager) context.getService(tmRef);
+            TransactionManager tm = FrameworkUtils.waitForService(context, TransactionManager.class);
             assertNotNull("TransactionManager not null", tm);
 
             Transaction tx = tm.getTransaction();

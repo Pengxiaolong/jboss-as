@@ -55,17 +55,17 @@
     <modelVersion>4.0.0</modelVersion>
 
     <parent>
-        <groupId>org.jboss.as</groupId>
-        <artifactId>jboss-as-parent</artifactId>
-        <version>7.2.0.Alpha1-SNAPSHOT</version>
+        <groupId>org.wildfly</groupId>
+        <artifactId>wildfly-parent</artifactId>
+        <version>8.0.0.Alpha2-SNAPSHOT</version>
     </parent>
 
-    <groupId>org.jboss.as</groupId>
-    <artifactId>jboss-as-testsuite</artifactId>
-    <version>7.2.0.Alpha1-SNAPSHOT</version>
+    <groupId>org.wildfly</groupId>
+    <artifactId>wildfly-testsuite</artifactId>
+    <version>8.0.0.Alpha2-SNAPSHOT</version>
     <packaging>pom</packaging>
 
-    <name>JBoss Application Server Test Suite: Aggregator</name>
+    <name>WildFly Test Suite: Aggregator</name>
 
     <modules>
         <module>integration</module>
@@ -87,7 +87,7 @@
 
         <!-- Used to provide an absolute location for the distribution under test. -->
         <!-- This value is overridden in modules with the correct relative pathname. -->
-        <jboss.dist>${project.basedir}/../build/target/jboss-as-${jboss.as.release.version}</jboss.dist>
+        <jboss.dist>${project.basedir}/../${wildfly.build.output.dir}</jboss.dist>
         <jboss.home>${jboss.dist}</jboss.home>
 
         <!-- Used to provide an absolute location for the XSLT scripts. -->
@@ -109,9 +109,9 @@
         <jvm.args.securityPolicy></jvm.args.securityPolicy>
         <jvm.args.securityManagerOther></jvm.args.securityManagerOther>
         <jvm.args.security>${jvm.args.securityManager} ${jvm.args.securityPolicy} ${jvm.args.securityManagerOther}</jvm.args.security>
-        
+
         <!-- Additional JVM args, like those for EC2. -->
-        <jvm.args.other></jvm.args.other>
+        <jvm.args.other>-server</jvm.args.other>
 
 
         <!-- JaCoCo - Code coverage (-Dcoverage). -->
@@ -172,27 +172,23 @@
 
     <dependencies>
         <dependency>
-            <groupId>org.jboss.as</groupId>
-            <artifactId>jboss-as-testsuite-shared</artifactId>
+            <groupId>io.netty</groupId>
+            <artifactId>netty</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.wildfly</groupId>
+            <artifactId>wildfly-testsuite-shared</artifactId>
             <scope>test</scope>
         </dependency>
         <dependency>
-            <groupId>org.jboss.as</groupId>
-            <artifactId>jboss-as-build</artifactId>
+            <groupId>org.wildfly</groupId>
+            <artifactId>wildfly-build</artifactId>
             <type>pom</type>
-        </dependency>
-        <dependency>
-            <groupId>org.projectodd.stilts</groupId>
-            <artifactId>stilts-stomp-client</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>org.projectodd.stilts</groupId>
-            <artifactId>stilts-stomplet-server-core</artifactId>
         </dependency>
         <!-- Needed for @Resource(lookup=). -->
         <dependency>
             <groupId>org.jboss.spec.javax.annotation</groupId>
-            <artifactId>jboss-annotations-api_1.1_spec</artifactId>
+            <artifactId>jboss-annotations-api_1.2_spec</artifactId>
         </dependency>
         <dependency>
             <groupId>org.jboss.arquillian.junit</groupId>
@@ -204,8 +200,8 @@
             <artifactId>arquillian-testenricher-initialcontext</artifactId>
         </dependency>
         <dependency>
-            <groupId>org.jboss.as</groupId>
-            <artifactId>jboss-as-arquillian-container-managed</artifactId>
+            <groupId>org.wildfly</groupId>
+            <artifactId>wildfly-arquillian-container-managed</artifactId>
             <version>${version.arquillian_as7}</version>
         </dependency>
         <dependency>
@@ -234,7 +230,6 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-help-plugin</artifactId>
-                <version>2.1.1</version>
                 <inherited>true</inherited>
                 <executions>
                     <execution><id>help.active-profiles</id>
@@ -261,9 +256,8 @@
             </plugin>
 
             <plugin>
-                <groupId>org.codehaus.mojo</groupId>
+                <groupId>org.kuali.maven.plugins</groupId>
                 <artifactId>properties-maven-plugin</artifactId>
-                <version>1.0-alpha-2</version>
                 <executions>
                     <execution>
                         <phase>initialize</phase>
@@ -273,36 +267,10 @@
                 </executions>
             </plugin>
 
-            <!--
-                Provide jboss-annotations-api_1.1_spec to compiler as endorsed.
-                Big complex hack just to get @Resource(lookup="foo").  AS7-3123
-            -->
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-dependency-plugin</artifactId>
-                <inherited>true</inherited>  <!-- Needed for compilation of all submodules. -->
-                <executions combine.children="append">
-                    <execution>
-                        <id>copy-annotations-endorsed</id>
-                        <goals><goal>copy</goal></goals>
-                        <configuration>
-                            <artifactItems>
-                                <artifactItem>
-                                    <groupId>org.jboss.spec.javax.annotation</groupId>
-                                    <artifactId>jboss-annotations-api_1.1_spec</artifactId>
-                                </artifactItem>
-                            </artifactItems>
-                            <outputDirectory>${project.build.directory}/endorsed</outputDirectory>
-                        </configuration>
-                    </execution>
-                </executions>
-            </plugin>
+
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
-                <configuration>
-                    <compilerArgument>-Djava.endorsed.dirs=${project.build.directory}/endorsed</compilerArgument>
-                </configuration>
                 <!-- Don't compile src/main/java - nothing to do. -->
                 <executions><execution><id>default-compile</id><phase>none</phase></execution></executions>
             </plugin>
@@ -429,7 +397,6 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-site-plugin</artifactId>
-                <version>3.0</version>
                 <executions><execution><id>default-site</id><phase>none</phase></execution></executions>
             </plugin>
 
@@ -474,11 +441,10 @@
 
                 </executions>
                 <dependencies>
-                    <!-- Todo: Move to <pluginManagement>. -->
                     <dependency>
-                        <groupId>ant</groupId>
+                        <groupId>org.apache.ant</groupId>
                         <artifactId>ant-junit</artifactId>
-                        <version>1.6.5</version>
+                        <version>${version.ant.junit}</version>
                     </dependency>
                 </dependencies>
             </plugin>
@@ -510,7 +476,6 @@
                 <artifactId>maven-install-plugin</artifactId>
                 <executions><execution><id>default-install</id><phase>none</phase></execution></executions>
             </plugin>
-
         </plugins>
     </build>
 
@@ -529,8 +494,14 @@
                 <module>integration</module>
                 <module>compat</module>
                 <module>domain</module>
-                <module>benchmark</module>
-                <module>stress</module>
+            </modules>
+        </profile>
+        
+        <profile>
+            <id>mixed-domain.module.profile</id>
+            <activation><property><name>jboss.test.mixed.domain.dir</name></property></activation>
+            <modules>
+                <module>mixed-domain</module>
             </modules>
         </profile>
 
@@ -615,14 +586,14 @@
             <id>jpda.profile</id>
             <activation><property><name>jpda</name></property></activation>
             <properties>
-                <surefire.jpda.args>-Xrunjdwp:transport=dt_socket,address=${as.debug.port},server=y,suspend=y</surefire.jpda.args>
+                <surefire.jpda.args>-agentlib:jdwp=transport=dt_socket,address=${as.debug.port},server=y,suspend=y</surefire.jpda.args>
             </properties>
         </profile>
         <profile>
             <id>debug.profile</id>
             <activation><property><name>debug</name></property></activation>
             <properties>
-                <surefire.jpda.args>-Xrunjdwp:transport=dt_socket,address=${as.debug.port},server=y,suspend=n</surefire.jpda.args>
+                <surefire.jpda.args>-agentlib:jdwp=transport=dt_socket,address=${as.debug.port},server=y,suspend=y</surefire.jpda.args>
             </properties>
         </profile>
 
@@ -1121,7 +1092,6 @@
                                                         <!-- AS7-3390 -->
                                                         <exclude name="org/apache/commons/beanutils/**/*"/>
                                                         <!-- AS7-3389 -->
-                                                        <exclude name="org/python/jython/standalone/**/*"/>
                                                     </fileset>
                                                 </classfiles>
                                                 <sourcefiles encoding="UTF-8">
@@ -1163,7 +1133,6 @@
                                                     <fileset dir="../domain-http/interface/src/main/java"><include name="**/*.java"/></fileset>
                                                     <fileset dir="../domain-management/src/main/java"><include name="**/*.java"/></fileset>
                                                     <fileset dir="../ee/src/main/java"><include name="**/*.java"/></fileset>
-                                                    <fileset dir="../ee-deployment/src/main/java"><include name="**/*.java"/></fileset>
                                                     <fileset dir="../ejb3/src/main/java"><include name="**/*.java"/></fileset>
                                                     <fileset dir="../embedded/src/main/java"><include name="**/*.java"/></fileset>
                                                     <fileset dir="../host-controller/src/main/java"><include name="**/*.java"/></fileset>

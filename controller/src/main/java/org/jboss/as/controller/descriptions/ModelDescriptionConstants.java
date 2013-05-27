@@ -21,7 +21,7 @@
  */
 package org.jboss.as.controller.descriptions;
 
-import org.jboss.as.controller.registry.AttributeAccess;
+
 
 /**
  * String constants frequently used in model descriptions.
@@ -32,13 +32,14 @@ public class ModelDescriptionConstants {
 
     // KEEP THESE IN ALPHABETICAL ORDER!
 
-    /** The key for {@link AttributeAccess.AccessType} fields. */
+    /** The key for {@link org.jboss.as.controller.registry.AttributeAccess.AccessType} fields. */
     public static final String ACCESS_TYPE = "access-type";
     public static final String ADD = "add";
     public static final String ADDRESS = "address";
     public static final String ADMIN_ONLY = "admin-only";
     public static final String ADVANCED_FILTER = "advanced-filter";
     public static final String ALLOWED = "allowed";
+    public static final String ALLOW_EMPTY_PASSWORDS = "allow-empty-passwords";
     public static final String ALLOW_RESOURCE_SERVICE_RESTART = "allow-resource-service-restart";
     public static final String ALTERNATIVES = "alternatives";
     public static final String ANY = "any";
@@ -53,6 +54,7 @@ public class ModelDescriptionConstants {
     public static final String AUTHORIZATION = "authorization";
     public static final String AUTO_START = "auto-start";
     public static final String BASE_DN = "base-dn";
+    public static final String BLOCKING = "blocking";
     public static final String BOOT_TIME = "boot-time";
     public static final String BYTES = "bytes";
     public static final String CALLER_TYPE = "caller-type";
@@ -83,6 +85,8 @@ public class ModelDescriptionConstants {
     public static final String DIRECTORY = "directory";
     public static final String DIRECTORY_GROUPING = "directory-grouping";
     public static final String DISABLE = "disable";
+    public static final String DISCOVERY_OPTION = "discovery-option";
+    public static final String DISCOVERY_OPTIONS = "discovery-options";
     public static final String DOMAIN = "domain";
     public static final String DOMAIN_FAILURE_DESCRIPTION = "domain-failure-description";
     public static final String DOMAIN_CONTROLLER = "domain-controller";
@@ -109,10 +113,12 @@ public class ModelDescriptionConstants {
     public static final String HOST_FAILURE_DESCRIPTION = "host-failure-description";
     public static final String HOST_FAILURE_DESCRIPTIONS = "host-failure-descriptions";
     public static final String HOST_STATE = "host-state";
+    public static final String HTTP_UPGRADE_ENABLED = "http-upgrade-enabled";
     public static final String HTTP_INTERFACE = "http-interface";
     public static final String IGNORED = "ignored-by-unaffected-host-controller";
     public static final String IGNORED_RESOURCES = "ignored-resources";
     public static final String IGNORED_RESOURCE_TYPE = "ignored-resource-type";
+    public static final String IGNORE_UNUSED_CONFIG = "ignore-unused-configuration";
     public static final String IN_SERIES = "in-series";
     public static final String INCLUDE = "include";
     public static final String INCLUDES = "includes";
@@ -122,6 +128,7 @@ public class ModelDescriptionConstants {
     public static final String INET_ADDRESS = "inet-address";
     public static final String INHERITED = "inherited";
     public static final String INITIAL_CONTEXT_FACTORY = "initial-context-factory";
+    public static final String INITIAL_SERVER_GROUPS = "initial-server-groups";
     public static final String INPUT_STREAM_INDEX = "input-stream-index";
     public static final String INTERFACE = "interface";
     public static final String JAAS = "jaas";
@@ -152,6 +159,7 @@ public class ModelDescriptionConstants {
     public static final String MIN_OCCURS = "min-occurs";
     public static final String MODEL_DESCRIPTION = "model-description";
     public static final String MODULE = "module";
+    public static final String MODULE_LOADING = "module-loading";
     public static final String MULTICAST_ADDRESS = "multicast-address";
     public static final String MULTICAST_PORT = "multicast-port";
     public static final String NAME = "name";
@@ -190,6 +198,7 @@ public class ModelDescriptionConstants {
     public static final String PROFILE = "profile";
     public static final String PROFILE_NAME = "profile-name";
     public static final String PROPERTIES = "properties";
+    public static final String PROPERTY = "property";
     public static final String PROTOCOL = "protocol";
     public static final String PROXIES = "proxies";
     public static final String READ_ATTRIBUTE_OPERATION = "read-attribute";
@@ -208,7 +217,6 @@ public class ModelDescriptionConstants {
     public static final String RECURSIVE = "recursive";
     public static final String RECURSIVE_DEPTH = "recursive-depth";
     public static final String REDEPLOY = "redeploy";
-    public static final String REGULAR_EXPRESSION = "regular-expression";
     public static final String RELATIVE_TO = "relative-to";
     public static final String RELEASE_CODENAME = "release-codename";
     public static final String RELEASE_VERSION = "release-version";
@@ -259,6 +267,7 @@ public class ModelDescriptionConstants {
     public static final String SINCE = "since";
     public static final String OPERATION_REQUIRES_RELOAD = "operation-requires-reload";
     public static final String OPERATION_REQUIRES_RESTART = "operation-requires-restart";
+    public static final String RELOAD_SERVERS = "reload-servers";
     public static final String RESTART_SERVERS = "restart-servers";
     public static final String SHUTDOWN = "shutdown";
     public static final String SOCKET_BINDING = "socket-binding";
@@ -271,11 +280,12 @@ public class ModelDescriptionConstants {
     public static final String SSL = "ssl";
     public static final String START = "start";
     public static final String START_SERVERS = "start-servers";
+    public static final String STATIC_DISCOVERY = "static-discovery";
     public static final String STATUS = "status";
     public static final String STEPS = "steps";
     public static final String STOP = "stop";
     public static final String STOP_SERVERS = "stop-servers";
-    /** The key for {@link AttributeAccess.Storage} fields. */
+    /** The key for {@link org.jboss.as.controller.registry.AttributeAccess.Storage} fields. */
     public static final String STORAGE = "storage";
     public static final String SUBDEPLOYMENT = "subdeployment";
     public static final String SUBSYSTEM = "subsystem";

@@ -22,16 +22,13 @@
 
 package org.jboss.as.controller.test;
 
-import static junit.framework.Assert.assertEquals;
-import static junit.framework.Assert.assertFalse;
-import org.jboss.as.controller.ModelController;
-import org.jboss.as.controller.PathAddress;
-import org.jboss.as.controller.ProxyOperationAddressTranslator;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.FAILED;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.FAILURE_DESCRIPTION;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.OUTCOME;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.RESULT;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.SUCCESS;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
@@ -47,10 +44,11 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
-import junit.framework.Assert;
-
+import org.jboss.as.controller.ModelController;
 import org.jboss.as.controller.ModelController.OperationTransaction;
+import org.jboss.as.controller.PathAddress;
 import org.jboss.as.controller.ProxyController.ProxyOperationControl;
+import org.jboss.as.controller.ProxyOperationAddressTranslator;
 import org.jboss.as.controller.client.MessageSeverity;
 import org.jboss.as.controller.client.ModelControllerClient;
 import org.jboss.as.controller.client.OperationAttachments;
@@ -63,9 +61,9 @@ import org.jboss.as.protocol.mgmt.support.ManagementChannelInitialization;
 import org.jboss.dmr.ModelNode;
 import org.jboss.remoting3.Channel;
 import org.jboss.remoting3.CloseHandler;
-import org.jboss.remoting3.HandleableCloseable;
 import org.jboss.threads.AsyncFutureTask;
 import org.junit.After;
+import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Ignore;
 import org.junit.Test;
@@ -557,7 +555,7 @@ public class RemoteProxyControllerProtocolTestCase {
             channels = new RemoteChannelPairSetup();
             channels.setupRemoting(new ManagementChannelInitialization() {
                 @Override
-                public HandleableCloseable.Key startReceiving(Channel channel) {
+                public ManagementChannelHandler startReceiving(Channel channel) {
                     final ManagementChannelHandler support = new ManagementChannelHandler(channel, channels.getExecutorService());
                     support.addHandlerFactory(new TransactionalProtocolOperationHandler(proxiedController, support));
                     channel.addCloseHandler(new CloseHandler<Channel>() {
@@ -567,7 +565,7 @@ public class RemoteProxyControllerProtocolTestCase {
                         }
                     });
                     channel.receiveMessage(support.getReceiver());
-                    return null;
+                    return support;
                 }
             });
             channels.startClientConnetion();

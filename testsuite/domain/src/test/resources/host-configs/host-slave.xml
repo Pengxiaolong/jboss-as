@@ -20,9 +20,9 @@
   ~ 02110-1301 USA, or see the FSF site: http://www.fsf.org.
   -->
 
-<host xmlns="urn:jboss:domain:1.4"
+<host xmlns="urn:jboss:domain:2.0"
       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-      xsi:schemaLocation="urn:jboss:domain:1.4 jboss-as-config_1_4.xsd"
+      xsi:schemaLocation="urn:jboss:domain:2.0 jboss-as-config_2_0.xsd"
       name="slave">
 
     <paths>
@@ -33,7 +33,7 @@
         <security-realms>
             <security-realm name="ManagementRealm">
                 <server-identities>
-                     <secret value="c2xhdmVfdXNlcl9wYXNzd29yZA==" />
+                     <secret value="c2xhdmVfdXMzcl9wYXNzd29yZA==" />
                 </server-identities>
                 <authentication>
                      <local default-user="$local" />
@@ -51,7 +51,7 @@
             <native-interface security-realm="ManagementRealm">
                 <socket interface="management" port="19999"/>
             </native-interface>
-            <http-interface security-realm="ManagementRealm" console-enabled="false">
+            <http-interface security-realm="ManagementRealm" console-enabled="false"  http-upgrade-enabled="true">
                 <socket interface="management" port="19990"/>
             </http-interface>
         </management-interfaces>
@@ -61,7 +61,7 @@
         <!-- Remote domain controller configuration with a host and port -->
         <remote host="${jboss.test.host.master.address}" port="9999" security-realm="ManagementRealm">
             <ignored-resources type="extension">
-                <instance name="ignored"/>
+                <instance name="org.jboss.as.jsr77"/>
             </ignored-resources>
             <ignored-resources type="profile">
                 <instance name="ignored"/>
@@ -111,6 +111,8 @@
             </interfaces>
             <socket-bindings socket-binding-group="osgi-sockets" port-offset="550"/>
         </server>
-        <server name="reload-two" group="reload-test-group"  auto-start="false"/>
+        <server name="reload-two" group="reload-test-group"  auto-start="false">
+            <jvm name="default" />
+        </server>
     </servers>
 </host>

@@ -22,63 +22,40 @@
 
 package org.jboss.as.messaging;
 
-import static org.jboss.as.messaging.MessagingMessages.MESSAGES;
+import static org.jboss.as.controller.OperationContext.Stage.MODEL;
 
-import java.util.HashMap;
-import java.util.Map;
-
-import org.jboss.as.controller.AttributeDefinition;
 import org.jboss.as.controller.OperationContext;
 import org.jboss.as.controller.OperationFailedException;
-import org.jboss.as.controller.OperationStepHandler;
-import org.jboss.as.controller.PathAddress;
-import org.jboss.as.controller.operations.global.WriteAttributeHandlers;
+import org.jboss.as.controller.ReloadRequiredWriteAttributeHandler;
 import org.jboss.as.controller.registry.Resource;
 import org.jboss.dmr.ModelNode;
-
 /**
  * Write attribute handler for attributes that update a broadcast group resource.
  *
  * @author Brian Stansberry (c) 2011 Red Hat Inc.
  */
-public class BroadcastGroupWriteAttributeHandler extends WriteAttributeHandlers.WriteAttributeOperationHandler {
+public class BroadcastGroupWriteAttributeHandler extends ReloadRequiredWriteAttributeHandler {
 
     public static final BroadcastGroupWriteAttributeHandler INSTANCE = new BroadcastGroupWriteAttributeHandler();
 
-    private final Map<String, AttributeDefinition> attributes = new HashMap<String, AttributeDefinition>();
     private BroadcastGroupWriteAttributeHandler() {
-        for (AttributeDefinition attr : BroadcastGroupDefinition.ATTRIBUTES) {
-            attributes.put(attr.getName(), attr);
-        }
+        super(BroadcastGroupDefinition.ATTRIBUTES);
     }
 
     @Override
-    protected void modelChanged(final OperationContext context, final ModelNode operation, final String attributeName,
-                                final ModelNode newValue, final ModelNode currentValue) throws OperationFailedException {
-        context.addStep(new OperationStepHandler() {
-            @Override
-            public void execute(final OperationContext context, final ModelNode operation) throws OperationFailedException {
-                final AttributeDefinition attr = attributes.get(attributeName);
-                final Resource resource = context.readResource(PathAddress.EMPTY_ADDRESS);
-                if(attr.hasAlternative(resource.getModel())) {
-                    context.setRollbackOnly();
-                    throw new OperationFailedException(new ModelNode().set(MESSAGES.altAttributeAlreadyDefined(attributeName)));
-                }
-                context.completeStep();
+    public void execute(OperationContext context, ModelNode operation) throws OperationFailedException {
+        context.addStep(new AlternativeAttributeCheckHandler(BroadcastGroupDefinition.ATTRIBUTES), MODEL);
+
+        super.execute(context, operation);
+    }
+
+    @Override
+    protected void finishModelStage(final OperationContext context,final ModelNode operation,final String attributeName,final ModelNode newValue,
+            final ModelNode oldValue,final Resource model) throws OperationFailedException {
+            if(attributeName.equals(BroadcastGroupDefinition.CONNECTOR_REFS.getName())){
+                BroadcastGroupDefinition.validateConnectors(context, operation, newValue);
             }
-        }, OperationContext.Stage.VERIFY);
-
-        context.reloadRequired();
-
-        if (context.completeStep() != OperationContext.ResultAction.KEEP) {
-            context.revertReloadRequired();
-        }
-    }
-
-    @Override
-    protected void validateValue(String name, ModelNode value) throws OperationFailedException {
-        AttributeDefinition attr = attributes.get(name);
-        attr.getValidator().validateParameter(name, value);
+        super.finishModelStage(context, operation, attributeName, newValue, oldValue, model);
     }
 
 }

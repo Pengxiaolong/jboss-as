@@ -23,6 +23,7 @@ package org.jboss.as.cli;
 
 import java.io.InputStream;
 import java.io.OutputStream;
+import org.wildfly.security.manager.WildFlySecurityManager;
 
 /**
  *
@@ -35,7 +36,7 @@ public abstract class CommandContextFactory {
     public static CommandContextFactory getInstance() throws CliInitializationException {
         Class<?> factoryCls;
         try {
-            factoryCls = SecurityActions.getContextClassLoader().loadClass(DEFAULT_FACTORY_CLASS);
+            factoryCls = WildFlySecurityManager.getCurrentContextClassLoaderPrivileged().loadClass(DEFAULT_FACTORY_CLASS);
         } catch (ClassNotFoundException e) {
             throw new CliInitializationException("Failed to load " + DEFAULT_FACTORY_CLASS, e);
         }
@@ -53,11 +54,11 @@ public abstract class CommandContextFactory {
 
     public abstract CommandContext newCommandContext(String username, char[] password) throws CliInitializationException;
 
-    public abstract CommandContext newCommandContext(String controllerHost, int controllerPort,
+    public abstract CommandContext newCommandContext(String controllerProtocol, String controllerHost, int controllerPort,
             String username, char[] password) throws CliInitializationException;
 
-    public abstract CommandContext newCommandContext(String controllerHost, int controllerPort,
-            String username, char[] password, boolean initConsole) throws CliInitializationException;
+    public abstract CommandContext newCommandContext(String controllerProtocol, String controllerHost, int controllerPort,
+            String username, char[] password, boolean initConsole, final int connectionTimeout) throws CliInitializationException;
 
     public abstract CommandContext newCommandContext(String controllerHost, int controllerPort,
             String username, char[] password,

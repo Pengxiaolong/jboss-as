@@ -39,16 +39,12 @@ import java.io.InputStream;
 import java.lang.management.ManagementFactory;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Locale;
 import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
 import javax.management.ObjectName;
 import javax.xml.namespace.QName;
-
-import junit.framework.Assert;
-import junit.framework.AssertionFailedError;
 
 import org.jboss.arquillian.container.test.api.ContainerController;
 import org.jboss.arquillian.container.test.api.Deployer;
@@ -59,8 +55,8 @@ import org.jboss.arquillian.junit.Arquillian;
 import org.jboss.arquillian.junit.InSequence;
 import org.jboss.arquillian.test.api.ArquillianResource;
 import org.jboss.as.controller.AbstractControllerService;
-import org.jboss.as.controller.BootContext;
 import org.jboss.as.controller.ControlledProcessState;
+import org.jboss.as.controller.ControlledProcessState.State;
 import org.jboss.as.controller.ExpressionResolver;
 import org.jboss.as.controller.ModelController;
 import org.jboss.as.controller.OperationContext;
@@ -70,10 +66,12 @@ import org.jboss.as.controller.PathAddress;
 import org.jboss.as.controller.PathElement;
 import org.jboss.as.controller.ProcessType;
 import org.jboss.as.controller.ProxyController;
+import org.jboss.as.controller.ResourceBuilder;
 import org.jboss.as.controller.RunningMode;
 import org.jboss.as.controller.RunningModeControl;
-import org.jboss.as.controller.descriptions.DescriptionProvider;
+import org.jboss.as.controller.SimpleOperationDefinitionBuilder;
 import org.jboss.as.controller.descriptions.ModelDescriptionConstants;
+import org.jboss.as.controller.descriptions.NonResolvingResourceDescriptionResolver;
 import org.jboss.as.controller.descriptions.common.CoreManagementDefinition;
 import org.jboss.as.controller.extension.ExtensionRegistry;
 import org.jboss.as.controller.operations.common.NamespaceAddHandler;
@@ -82,13 +80,11 @@ import org.jboss.as.controller.operations.common.Util;
 import org.jboss.as.controller.operations.common.XmlMarshallingHandler;
 import org.jboss.as.controller.operations.global.WriteAttributeHandlers;
 import org.jboss.as.controller.parsing.Namespace;
-import org.jboss.as.controller.persistence.ConfigurationPersistenceException;
 import org.jboss.as.controller.persistence.ExtensibleConfigurationPersister;
 import org.jboss.as.controller.persistence.NullConfigurationPersister;
 import org.jboss.as.controller.persistence.XmlConfigurationPersister;
 import org.jboss.as.controller.registry.AttributeAccess;
 import org.jboss.as.controller.registry.ManagementResourceRegistration;
-import org.jboss.as.controller.registry.OperationEntry;
 import org.jboss.as.controller.registry.Resource;
 import org.jboss.as.controller.resource.InterfaceDefinition;
 import org.jboss.as.controller.services.path.PathManagerService;
@@ -100,7 +96,9 @@ import org.jboss.as.domain.controller.SlaveRegistrationException;
 import org.jboss.as.domain.controller.resources.DomainRootDefinition;
 import org.jboss.as.domain.management.connections.ldap.LdapConnectionResourceDefinition;
 import org.jboss.as.domain.management.security.SecurityRealmResourceDefinition;
+import org.jboss.as.host.controller.discovery.DiscoveryOption;
 import org.jboss.as.host.controller.ignored.IgnoredDomainResourceRegistry;
+import org.jboss.as.host.controller.mgmt.DomainControllerRuntimeIgnoreTransformationEntry;
 import org.jboss.as.host.controller.model.jvm.JvmResourceDefinition;
 import org.jboss.as.host.controller.operations.HostSpecifiedInterfaceAddHandler;
 import org.jboss.as.host.controller.operations.HostSpecifiedInterfaceRemoveHandler;
@@ -118,7 +116,7 @@ import org.jboss.as.repository.ContentRepository;
 import org.jboss.as.repository.HostFileRepository;
 import org.jboss.as.security.vault.RuntimeVaultReader;
 import org.jboss.as.server.RuntimeExpressionResolver;
-import org.jboss.as.server.ServerControllerModelUtil;
+import org.jboss.as.server.controller.resources.ServerRootResourceDefinition;
 import org.jboss.as.server.controller.resources.SystemPropertyResourceDefinition;
 import org.jboss.as.server.controller.resources.SystemPropertyResourceDefinition.Location;
 import org.jboss.as.server.controller.resources.VaultResourceDefinition;
@@ -135,12 +133,15 @@ import org.jboss.msc.service.ServiceContainer;
 import org.jboss.msc.service.ServiceController;
 import org.jboss.msc.service.ServiceName;
 import org.jboss.msc.service.ServiceTarget;
+import org.jboss.msc.service.StartContext;
+import org.jboss.msc.service.StartException;
 import org.jboss.shrinkwrap.api.Archive;
 import org.jboss.shrinkwrap.api.ShrinkWrap;
 import org.jboss.shrinkwrap.api.asset.Asset;
 import org.jboss.shrinkwrap.api.spec.JavaArchive;
 import org.jboss.vfs.VirtualFile;
 import org.junit.After;
+import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -148,10 +149,9 @@ import org.junit.runner.RunWith;
 /**
  * Tests the ability to parse the config files we ship or have shipped in the past, as well as the ability
  * to marshal them back to xml in a manner such that reparsing them produces a consistent in-memory configuration model.
- * <p>
+ * <p/>
  * <b>Note:</b>The standard {@code build/src/main/resources/standalone/configuration} and
  * {@code build/src/main/resources/domain/configuration} files are tested in the smoke integration module ParseAndMarshalModelsTestCase.
- *
  *
  * @author <a href="kabir.khan@jboss.com">Kabir Khan</a>
  * @author <a href="mailto:darran.lofthouse@jboss.com">Darran Lofthouse</a>
@@ -160,17 +160,17 @@ import org.junit.runner.RunWith;
 @RunWith(Arquillian.class)
 public class ParseAndMarshalModelsTestCase {
 
-    @Deployment(name="test", managed=false, testable=true)
+    @Deployment(name = "test", managed = false, testable = true)
     public static Archive<?> getDeployment() {
 
         JavaArchive archive = ShrinkWrap.create(JavaArchive.class, "bogus.jar");
         archive.addPackage(ParseAndMarshalModelsTestCase.class.getPackage());
         archive.addClass(FileUtils.class);
         archive.add(new Asset() {
-                    public InputStream openStream() {
-                        return new ByteArrayInputStream("Dependencies: org.jboss.staxmapper,org.jboss.as.controller,org.jboss.as.deployment-repository,org.jboss.as.server,org.jboss.as.host-controller,org.jboss.as.domain-management,org.jboss.as.security\n\n".getBytes());
-                    }
-                 }, "META-INF/MANIFEST.MF");
+            public InputStream openStream() {
+                return new ByteArrayInputStream("Dependencies: org.jboss.staxmapper,org.jboss.as.controller,org.jboss.as.deployment-repository,org.jboss.as.server,org.jboss.as.host-controller,org.jboss.as.domain-management,org.jboss.as.security\n\n".getBytes());
+            }
+        }, "META-INF/MANIFEST.MF");
         return archive;
     }
 
@@ -178,7 +178,7 @@ public class ParseAndMarshalModelsTestCase {
 
     @Before
     public void setupServiceContainer() {
-        if (isInContainer()){
+        if (isInContainer()) {
             serviceContainer = ServiceContainer.Factory.create("test");
         }
     }
@@ -193,8 +193,7 @@ public class ParseAndMarshalModelsTestCase {
                     serviceContainer.awaitTermination(5, TimeUnit.SECONDS);
                 } catch (InterruptedException e) {
                     e.printStackTrace();
-                }
-                finally {
+                } finally {
                     serviceContainer = null;
                 }
             }
@@ -243,7 +242,7 @@ public class ParseAndMarshalModelsTestCase {
     }
 
     @Test
-    public void testStandaloneOSGiOnlyXml() throws Exception {
+    public void testStandaloneOSGiXml() throws Exception {
         standaloneXmlTest(getGeneratedExampleConfigFile("standalone-osgi-only.xml"));
     }
 
@@ -294,35 +293,6 @@ public class ParseAndMarshalModelsTestCase {
         standaloneXmlTest(getLegacyConfigFile("standalone", "7-0-2-ha.xml"));
     }
 
-    @Test
-    public void test700StandalonePreviewXml() throws Exception {
-        standaloneXmlTest(getLegacyConfigFile("standalone", "7-0-0-preview.xml"));
-    }
-
-    @Test
-    public void test701StandalonePreviewXml() throws Exception {
-        standaloneXmlTest(getLegacyConfigFile("standalone", "7-0-1-preview.xml"));
-    }
-
-    @Test
-    public void test702StandalonePreviewXml() throws Exception {
-        standaloneXmlTest(getLegacyConfigFile("standalone", "7-0-2-preview.xml"));
-    }
-
-    @Test
-    public void test700StandalonePreviewHAXml() throws Exception {
-        standaloneXmlTest(getLegacyConfigFile("standalone", "7-0-0-preview.xml"));
-    }
-
-    @Test
-    public void test701StandalonePreviewHAXml() throws Exception {
-        standaloneXmlTest(getLegacyConfigFile("standalone", "7-0-1-preview-ha.xml"));
-    }
-
-    @Test
-    public void test702StandalonePreviewHAXml() throws Exception {
-        standaloneXmlTest(getLegacyConfigFile("standalone", "7-0-2-preview-ha.xml"));
-    }
 
     @Test
     public void test701StandaloneXtsXml() throws Exception {
@@ -457,6 +427,49 @@ public class ParseAndMarshalModelsTestCase {
         standaloneXmlTest(getLegacyConfigFile("standalone", "7-1-2-xts.xml"));
     }
 
+    @Test
+    public void test713StandaloneXml() throws Exception {
+        ModelNode model = standaloneXmlTest(getLegacyConfigFile("standalone", "7-1-3.xml"));
+        validateJsfSubsystem(model);
+    }
+
+    @Test
+    public void test713StandaloneFullHaXml() throws Exception {
+        ModelNode model = standaloneXmlTest(getLegacyConfigFile("standalone", "7-1-3-full-ha.xml"));
+        validateJsfSubsystem(model);
+    }
+
+    @Test
+    public void test713StandaloneFullXml() throws Exception {
+        ModelNode model = standaloneXmlTest(getLegacyConfigFile("standalone", "7-1-3-full.xml"));
+        validateJsfSubsystem(model);
+    }
+
+    @Test
+    public void test713StandaloneHornetQCollocatedXml() throws Exception {
+        standaloneXmlTest(getLegacyConfigFile("standalone", "7-1-3-hornetq-colocated.xml"));
+    }
+
+    @Test
+    public void test713StandaloneJtsXml() throws Exception {
+        standaloneXmlTest(getLegacyConfigFile("standalone", "7-1-3-jts.xml"));
+    }
+
+    @Test
+    public void test713StandaloneMinimalisticXml() throws Exception {
+        standaloneXmlTest(getLegacyConfigFile("standalone", "7-1-3-minimalistic.xml"));
+    }
+
+    @Test
+    public void test713StandaloneOsgiOnlyXml() throws Exception {
+        standaloneXmlTest(getLegacyConfigFile("standalone", "7-1-3-osgi-only.xml"));
+    }
+
+    @Test
+    public void test713StandaloneXtsXml() throws Exception {
+        standaloneXmlTest(getLegacyConfigFile("standalone", "7-1-3-xts.xml"));
+    }
+
     private ModelNode standaloneXmlTest(File original) throws Exception {
 
         File file = new File("target/standalone-copy.xml");
@@ -511,6 +524,11 @@ public class ParseAndMarshalModelsTestCase {
         hostXmlTest(getLegacyConfigFile("host", "7-1-2.xml"));
     }
 
+    @Test
+    public void test713HostXml() throws Exception {
+        hostXmlTest(getLegacyConfigFile("host", "7-1-3.xml"));
+    }
+
     private void hostXmlTest(final File original) throws Exception {
         File file = new File("target/host-copy.xml");
         if (file.exists()) {
@@ -534,58 +552,56 @@ public class ParseAndMarshalModelsTestCase {
 //        domainXmlTest(getExampleConfigFile("domain-jts.xml"));
 //    }
 
-    @Test @TargetsContainer("class-jbossas")
+    @Test
+    @TargetsContainer("class-jbossas")
     public void testDomainXml() throws Exception {
         domainXmlTest(getOriginalDomainXml("domain.xml"));
     }
 
-    @Test @TargetsContainer("class-jbossas")
+    @Test
+    @TargetsContainer("class-jbossas")
     public void test700DomainXml() throws Exception {
         domainXmlTest(getLegacyConfigFile("domain", "7-0-0.xml"));
     }
 
-    @Test @TargetsContainer("class-jbossas")
+    @Test
+    @TargetsContainer("class-jbossas")
     public void test701DomainXml() throws Exception {
         domainXmlTest(getLegacyConfigFile("domain", "7-0-1.xml"));
     }
 
-    @Test @TargetsContainer("class-jbossas")
+    @Test
+    @TargetsContainer("class-jbossas")
     public void test702DomainXml() throws Exception {
         domainXmlTest(getLegacyConfigFile("domain", "7-0-2.xml"));
     }
 
-    @Test @TargetsContainer("class-jbossas")
-    public void test700DomainPreviewXml() throws Exception {
-        domainXmlTest(getLegacyConfigFile("domain", "7-0-0-preview.xml"));
-    }
-
-    @Test @TargetsContainer("class-jbossas")
-    public void test701DomainPreviewXml() throws Exception {
-        domainXmlTest(getLegacyConfigFile("domain", "7-0-1-preview.xml"));
-    }
-
-    @Test @TargetsContainer("class-jbossas")
-    public void test702DomainPreviewXml() throws Exception {
-        domainXmlTest(getLegacyConfigFile("domain", "7-0-2-preview.xml"));
-    }
-
-    @Test @TargetsContainer("class-jbossas")
+    @Test
+    @TargetsContainer("class-jbossas")
     public void test710DomainXml() throws Exception {
         ModelNode model = domainXmlTest(getLegacyConfigFile("domain", "7-1-0.xml"));
         validateJsfProfiles(model);
     }
 
-    @Test @TargetsContainer("class-jbossas")
+    @Test
+    @TargetsContainer("class-jbossas")
     public void test711DomainXml() throws Exception {
         domainXmlTest(getLegacyConfigFile("domain", "7-1-1.xml"));
     }
 
-    @Test @TargetsContainer("class-jbossas")
+    @Test
+    @TargetsContainer("class-jbossas")
     public void test712DomainXml() throws Exception {
         ModelNode model = domainXmlTest(getLegacyConfigFile("domain", "7-1-2.xml"));
         validateJsfProfiles(model);
     }
 
+    @Test
+    @TargetsContainer("class-jbossas")
+    public void test713DomainXml() throws Exception {
+        ModelNode model = domainXmlTest(getLegacyConfigFile("domain", "7-1-3.xml"));
+        validateJsfProfiles(model);
+    }
 
 
     private ModelNode domainXmlTest(File original) throws Exception {
@@ -670,11 +686,7 @@ public class ParseAndMarshalModelsTestCase {
             compare(prop1.getValue(), prop2.getValue());
 
         } else {
-            try {
-                Assert.assertEquals("\n\"" + node1.asString() + "\"\n\"" + node2.asString() + "\"\n-----", node1.asString().trim(), node2.asString().trim());
-            } catch (AssertionFailedError error) {
-                throw error;
-            }
+            Assert.assertEquals("\n\"" + node1.asString() + "\"\n\"" + node2.asString() + "\"\n-----", node1.asString().trim(), node2.asString().trim());
         }
     }
 
@@ -706,7 +718,10 @@ public class ParseAndMarshalModelsTestCase {
         final ModelNode model = new ModelNode();
         final ModelController controller = createController(ProcessType.STANDALONE_SERVER, model, new Setup() {
             public void setup(Resource resource, ManagementResourceRegistration rootRegistration) {
-                ServerControllerModelUtil.initOperations(rootRegistration, new MockContentRepository(), persister, null, null, null, null, extensionRegistry, false, MOCK_PATH_MANAGER);
+                ServerRootResourceDefinition def = new ServerRootResourceDefinition(new MockContentRepository(), persister, null, null, null, null, extensionRegistry, false, MOCK_PATH_MANAGER, null);
+                def.registerAttributes(rootRegistration);
+                def.registerOperations(rootRegistration);
+                def.registerChildren(rootRegistration);
             }
         });
 
@@ -721,6 +736,7 @@ public class ParseAndMarshalModelsTestCase {
         return model;
     }
 
+    //TODO use HostInitializer & TestModelControllerService
     private ModelNode loadHostModel(final File file) throws Exception {
         final QName rootElement = new QName(Namespace.CURRENT.getUriString(), "host");
         final HostXml parser = new HostXml("host-controller");
@@ -749,17 +765,15 @@ public class ParseAndMarshalModelsTestCase {
                 final LocalHostControllerInfoImpl hostControllerInfo = new LocalHostControllerInfoImpl(new ControlledProcessState(false), "master");
 
                 // Add of the host itself
-                ManagementResourceRegistration hostRegistration = root.registerSubModel(PathElement.pathElement(HOST), new DescriptionProvider() {
-                    public ModelNode getModelDescription(Locale locale) {
-                        return new ModelNode();
-                    }
-                });
+                ManagementResourceRegistration hostRegistration = root.registerSubModel(
+                        ResourceBuilder.Factory.create(PathElement.pathElement(HOST),new NonResolvingResourceDescriptionResolver()).build());
+
 
                 // Other root resource operations
                 XmlMarshallingHandler xmh = new XmlMarshallingHandler(persister);
-                hostRegistration.registerOperationHandler(XmlMarshallingHandler.OPERATION_NAME, xmh, xmh, false, OperationEntry.EntryType.PUBLIC);
-                hostRegistration.registerOperationHandler(NamespaceAddHandler.OPERATION_NAME, NamespaceAddHandler.INSTANCE, NamespaceAddHandler.INSTANCE, false);
-                hostRegistration.registerOperationHandler(SchemaLocationAddHandler.OPERATION_NAME, SchemaLocationAddHandler.INSTANCE, SchemaLocationAddHandler.INSTANCE, false);
+                hostRegistration.registerOperationHandler(XmlMarshallingHandler.DEFINITION, xmh);
+                hostRegistration.registerOperationHandler(NamespaceAddHandler.DEFINITION, NamespaceAddHandler.INSTANCE);
+                hostRegistration.registerOperationHandler(SchemaLocationAddHandler.DEFINITION, SchemaLocationAddHandler.INSTANCE);
                 hostRegistration.registerReadWriteAttribute(NAME, null, new WriteAttributeHandlers.StringLengthValidatingHandler(1), AttributeAccess.Storage.CONFIGURATION);
                 hostRegistration.registerReadOnlyAttribute(MASTER, IsMasterHandler.INSTANCE, AttributeAccess.Storage.RUNTIME);
 
@@ -778,9 +792,9 @@ public class ParseAndMarshalModelsTestCase {
 
                 // Domain controller
                 LocalDomainControllerAddHandler localDcAddHandler = new MockLocalDomainControllerAddHandler();
-                hostRegistration.registerOperationHandler(LocalDomainControllerAddHandler.OPERATION_NAME, localDcAddHandler, localDcAddHandler, false);
+                hostRegistration.registerOperationHandler(LocalDomainControllerAddHandler.DEFINITION, localDcAddHandler, false);
                 RemoteDomainControllerAddHandler remoteDcAddHandler = new MockRemoteDomainControllerAddHandler();
-                hostRegistration.registerOperationHandler(RemoteDomainControllerAddHandler.OPERATION_NAME, remoteDcAddHandler, remoteDcAddHandler, false);
+                hostRegistration.registerOperationHandler(RemoteDomainControllerAddHandler.DEFINITION, remoteDcAddHandler, false);
 
                 // Jvms
                 final ManagementResourceRegistration jvms = hostRegistration.registerSubModel(JvmResourceDefinition.GLOBAL);
@@ -794,36 +808,9 @@ public class ParseAndMarshalModelsTestCase {
                         HostSpecifiedInterfaceRemoveHandler.INSTANCE,
                         true
                 ));
-                /*HostSpecifiedInterfaceAddHandler hsiah = new HostSpecifiedInterfaceAddHandler();
-                interfaces.registerOperationHandler(InterfaceAddHandler.OPERATION_NAME, hsiah, new DefaultResourceAddDescriptionProvider(interfaces, CommonDescriptions.getResourceDescriptionResolver()), false);*/
-
 
                 //server configurations
-                hostRegistration.registerSubModel(new ServerConfigResourceDefinition(null, MOCK_PATH_MANAGER));
-//                ManagementResourceRegistration servers = hostRegistration.registerSubModel(PathElement.pathElement(SERVER_CONFIG), HostDescriptionProviders.SERVER_PROVIDER);
-//                servers.registerOperationHandler(ServerAddHandler.OPERATION_NAME, ServerAddHandler.INSTANCE, ServerAddHandler.INSTANCE, false);
-//                servers.registerReadWriteAttribute(AUTO_START, null, new WriteAttributeHandlers.ModelTypeValidatingHandler(ModelType.BOOLEAN), AttributeAccess.Storage.CONFIGURATION);
-//                servers.registerReadWriteAttribute(SOCKET_BINDING_GROUP, null, WriteAttributeHandlers.WriteAttributeOperationHandler.INSTANCE, AttributeAccess.Storage.CONFIGURATION);
-//                servers.registerReadWriteAttribute(SOCKET_BINDING_PORT_OFFSET, null, new WriteAttributeHandlers.IntRangeValidatingHandler(0), AttributeAccess.Storage.CONFIGURATION);
-//                servers.registerReadWriteAttribute(PRIORITY, null, new WriteAttributeHandlers.IntRangeValidatingHandler(0), AttributeAccess.Storage.CONFIGURATION);
-//                servers.registerReadWriteAttribute(CPU_AFFINITY, null, new WriteAttributeHandlers.StringLengthValidatingHandler(1), AttributeAccess.Storage.CONFIGURATION);
-//
-//
-//                //server paths
-//                ManagementResourceRegistration serverPaths = servers.registerSubModel(PathResourceDefinition.createSpecifiedNoServices(MOCK_PATH_MANAGER));
-//                //server interfaces
-//                ManagementResourceRegistration serverInterfaces = servers.registerSubModel(PathElement.pathElement(INTERFACE), CommonProviders.SPECIFIED_INTERFACE_PROVIDER);
-//                serverInterfaces.registerOperationHandler(InterfaceAddHandler.OPERATION_NAME, SpecifiedInterfaceAddHandler.INSTANCE, SpecifiedInterfaceAddHandler.INSTANCE, false);
-//                InterfaceCriteriaWriteHandler.CONFIG_ONLY.register(serverInterfaces);
-//
-//                // Server system Properties
-//                ManagementResourceRegistration serverSysProps = servers.registerSubModel(PathElement.pathElement(SYSTEM_PROPERTY), HostDescriptionProviders.SERVER_SYSTEM_PROPERTIES_PROVIDER);
-//                serverSysProps.registerOperationHandler(SystemPropertyAddHandler.OPERATION_NAME, SystemPropertyAddHandler.INSTANCE_WITH_BOOTTIME, SystemPropertyAddHandler.INSTANCE_WITH_BOOTTIME, false);
-//                serverSysProps.registerReadWriteAttribute(VALUE, null, SystemPropertyValueWriteAttributeHandler.INSTANCE, AttributeAccess.Storage.CONFIGURATION);
-//                serverSysProps.registerReadWriteAttribute(BOOT_TIME, null, new WriteAttributeHandlers.ModelTypeValidatingHandler(ModelType.BOOLEAN), AttributeAccess.Storage.CONFIGURATION);
-//
-//                // Server jvm
-//                final ManagementResourceRegistration serverVMs = servers.registerSubModel(JvmResourceDefinition.SERVER);
+                hostRegistration.registerSubModel(new ServerConfigResourceDefinition(MOCK_HOST_CONTROLLER_INFO, null, MOCK_PATH_MANAGER));
             }
         });
 
@@ -860,7 +847,7 @@ public class ParseAndMarshalModelsTestCase {
         final ModelNode model = new ModelNode();
         final ModelController controller = createController(ProcessType.HOST_CONTROLLER, model, new Setup() {
             public void setup(Resource resource, ManagementResourceRegistration rootRegistration) {
-                DomainRootDefinition def = new DomainRootDefinition(null, persister, new MockContentRepository(), new MockFileRepository(), true, null, extensionRegistry, null, MOCK_PATH_MANAGER);
+                DomainRootDefinition def = new DomainRootDefinition(null, null, persister, new MockContentRepository(), new MockFileRepository(), true, null, extensionRegistry, null, MOCK_PATH_MANAGER, null);
                 def.initialize(rootRegistration);
             }
         });
@@ -898,15 +885,14 @@ public class ParseAndMarshalModelsTestCase {
         }
 
         ServiceTarget target = serviceContainer.subTarget();
-        ControlledProcessState processState = new ControlledProcessState(true);
-        ModelControllerService svc = new ModelControllerService(processType, processState, registration, model);
+        ModelControllerService svc = new ModelControllerService(processType, registration, model);
         ServiceBuilder<ModelController> builder = target.addService(ServiceName.of("ModelController"), svc);
         builder.install();
-        svc.latch.await();
+        svc.latch.await(30, TimeUnit.SECONDS);
         ModelController controller = svc.getValue();
         ModelNode setup = Util.getEmptyOperation("setup", new ModelNode());
         controller.execute(setup, null, null, null);
-        processState.setRunning();
+
         return controller;
     }
 
@@ -916,8 +902,6 @@ public class ParseAndMarshalModelsTestCase {
             controller.execute(op, null, null, null);
         }
     }
-
-
 
 
     //  Get-config methods
@@ -985,14 +969,6 @@ public class ParseAndMarshalModelsTestCase {
         );
     }
 
-    DescriptionProvider getRootDescriptionProvider() {
-        return new DescriptionProvider() {
-            public ModelNode getModelDescription(Locale locale) {
-                return new ModelNode();
-            }
-        };
-    }
-
     private boolean isInContainer() {
         return this.getClass().getClassLoader() instanceof ModuleClassLoader;
     }
@@ -1003,33 +979,38 @@ public class ParseAndMarshalModelsTestCase {
 
     class ModelControllerService extends AbstractControllerService {
 
-        private final CountDownLatch latch = new CountDownLatch(1);
+        private final CountDownLatch latch = new CountDownLatch(2);
         private final ModelNode model;
         private final Setup registration;
 
-        ModelControllerService(final ProcessType processType, final ControlledProcessState processState, final Setup registration, final ModelNode model) {
-            super(processType, new RunningModeControl(RunningMode.ADMIN_ONLY), new NullConfigurationPersister(), processState, getRootDescriptionProvider(), null, ExpressionResolver.DEFAULT);
+        ModelControllerService(final ProcessType processType, final Setup registration, final ModelNode model) {
+            super(processType, new RunningModeControl(RunningMode.ADMIN_ONLY), new NullConfigurationPersister(), new ControlledProcessState(true),
+                    ResourceBuilder.Factory.create(PathElement.pathElement("root"), new NonResolvingResourceDescriptionResolver()).build(), null, ExpressionResolver.TEST_RESOLVER);
             this.model = model;
             this.registration = registration;
         }
 
         @Override
-        protected void boot(BootContext context) throws ConfigurationPersistenceException {
-            try {
-                super.boot(context);
-            } finally {
-                latch.countDown();
-            }
+        public void start(StartContext context) throws StartException {
+            super.start(context);
+            latch.countDown();
+        }
+
+        @Override
+        protected void bootThreadDone() {
+            super.bootThreadDone();
+            latch.countDown();
         }
 
         protected void initModel(Resource rootResource, ManagementResourceRegistration rootRegistration) {
             registration.setup(rootResource, rootRegistration);
 
-            rootRegistration.registerOperationHandler("capture-model", new OperationStepHandler() {
-                        public void execute(OperationContext context, ModelNode operation) throws OperationFailedException {
-                            model.set(Resource.Tools.readModel(context.readResource(PathAddress.EMPTY_ADDRESS)));
-                        }
-                    }, getRootDescriptionProvider());
+            rootRegistration.registerOperationHandler(new SimpleOperationDefinitionBuilder("capture-model", new NonResolvingResourceDescriptionResolver()).build()
+                    , new OperationStepHandler() {
+                public void execute(OperationContext context, ModelNode operation) throws OperationFailedException {
+                    model.set(Resource.Tools.readModel(context.readResource(PathAddress.EMPTY_ADDRESS)));
+                }
+            });
             // TODO maybe make creating of empty nodes part of the MNR description
             rootResource.registerChild(PathElement.pathElement(ModelDescriptionConstants.CORE_SERVICE, ModelDescriptionConstants.MANAGEMENT), Resource.Factory.create());
             rootResource.registerChild(PathElement.pathElement(ModelDescriptionConstants.CORE_SERVICE, ModelDescriptionConstants.SERVICE_CONTAINER), Resource.Factory.create());
@@ -1061,7 +1042,11 @@ public class ParseAndMarshalModelsTestCase {
         }
 
         @Override
-        public void removeContent(byte[] hash) {
+        public void removeContent(byte[] hash, Object reference) {
+        }
+
+        @Override
+        public void addContentReference(byte[] hash, Object reference) {
         }
 
     }
@@ -1104,7 +1089,7 @@ public class ParseAndMarshalModelsTestCase {
             return null;
         }
 
-        public void registerRemoteHost(final String hostName, final ManagementChannelHandler handler, final Transformers transformers, Long remoteConnectionId) throws SlaveRegistrationException {
+        public void registerRemoteHost(final String hostName, final ManagementChannelHandler handler, final Transformers transformers, Long remoteConnectionId, DomainControllerRuntimeIgnoreTransformationEntry runtimeIgnoreTransformation) throws SlaveRegistrationException {
         }
 
         public boolean isHostRegistered(String id) {
@@ -1156,16 +1141,16 @@ public class ParseAndMarshalModelsTestCase {
 
         @Override
         public void initializeMasterDomainRegistry(ManagementResourceRegistration root,
-                ExtensibleConfigurationPersister configurationPersister, ContentRepository contentRepository,
-                HostFileRepository fileRepository, ExtensionRegistry extensionRegistry, PathManagerService pathManager) {
+                                                   ExtensibleConfigurationPersister configurationPersister, ContentRepository contentRepository,
+                                                   HostFileRepository fileRepository, ExtensionRegistry extensionRegistry, PathManagerService pathManager) {
         }
 
         @Override
         public void initializeSlaveDomainRegistry(ManagementResourceRegistration root,
-                ExtensibleConfigurationPersister configurationPersister, ContentRepository contentRepository,
-                HostFileRepository fileRepository, LocalHostControllerInfo hostControllerInfo,
-                ExtensionRegistry extensionRegistry, IgnoredDomainResourceRegistry ignoredDomainResourceRegistry,
-                PathManagerService pathManager) {
+                                                  ExtensibleConfigurationPersister configurationPersister, ContentRepository contentRepository,
+                                                  HostFileRepository fileRepository, LocalHostControllerInfo hostControllerInfo,
+                                                  ExtensionRegistry extensionRegistry, IgnoredDomainResourceRegistry ignoredDomainResourceRegistry,
+                                                  PathManagerService pathManager) {
         }
     }
 
@@ -1203,5 +1188,73 @@ public class ParseAndMarshalModelsTestCase {
     }
 
     private static PathManagerService MOCK_PATH_MANAGER = new PathManagerService() {
+    };
+
+    final static LocalHostControllerInfo MOCK_HOST_CONTROLLER_INFO = new LocalHostControllerInfo() {
+
+        @Override
+        public boolean isMasterDomainController() {
+            return true;
+        }
+
+        @Override
+        public String getRemoteDomainControllerUsername() {
+            return null;
+        }
+
+        @Override
+        public List<DiscoveryOption> getRemoteDomainControllerDiscoveryOptions() {
+            return null;
+        }
+
+        @Override
+        public State getProcessState() {
+            return null;
+        }
+
+        @Override
+        public String getNativeManagementSecurityRealm() {
+            return null;
+        }
+
+        @Override
+        public int getNativeManagementPort() {
+            return 0;
+        }
+
+        @Override
+        public String getNativeManagementInterface() {
+            return null;
+        }
+
+        @Override
+        public String getLocalHostName() {
+            return null;
+        }
+
+        @Override
+        public String getHttpManagementSecurityRealm() {
+            return null;
+        }
+
+        @Override
+        public int getHttpManagementSecurePort() {
+            return 0;
+        }
+
+        @Override
+        public int getHttpManagementPort() {
+            return 0;
+        }
+
+        @Override
+        public String getHttpManagementInterface() {
+            return null;
+        }
+
+        @Override
+        public boolean isRemoteDomainControllerIgnoreUnaffectedConfiguration() {
+            return false;
+        }
     };
 }

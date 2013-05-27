@@ -22,8 +22,6 @@
 
 package org.jboss.as.connector.subsystems.datasources;
 
-import org.jboss.as.controller.SimpleAttributeDefinition;
-
 /**
  * Operation handler responsible for removing a XA data-source.
  *
@@ -32,7 +30,4 @@ import org.jboss.as.controller.SimpleAttributeDefinition;
 public class XaDataSourceRemove extends AbstractDataSourceRemove {
     static final XaDataSourceRemove INSTANCE = new XaDataSourceRemove();
 
-    protected SimpleAttributeDefinition[] getModelProperties() {
-        return DataSourcesSubsystemProviders.XA_DATASOURCE_ATTRIBUTE;
-    }
 }

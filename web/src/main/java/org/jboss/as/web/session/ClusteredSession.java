@@ -63,10 +63,8 @@ import org.apache.catalina.Session;
 import org.apache.catalina.SessionEvent;
 import org.apache.catalina.SessionListener;
 import org.apache.catalina.security.SecurityUtil;
-import org.apache.catalina.session.StandardSession;
 import org.apache.catalina.session.StandardSessionFacade;
 import org.apache.catalina.util.Enumerator;
-import org.apache.catalina.util.StringManager;
 import org.jboss.as.clustering.web.DistributableSessionMetadata;
 import org.jboss.as.clustering.web.DistributedCacheManager;
 import org.jboss.as.clustering.web.IncomingDistributableSessionData;
@@ -128,11 +126,6 @@ public abstract class ClusteredSession<O extends OutgoingDistributableSessionDat
             return null;
         }
     };
-
-    /**
-     * The string manager for this package.
-     */
-    protected static final StringManager sm = StringManager.getManager(ClusteredSession.class.getPackage().getName());
 
     /** Length of time we do full replication as workaround to JBCACHE-1531 */
     private static final long FULL_REPLICATION_WINDOW_LENGTH = 5000;
@@ -598,7 +591,7 @@ public abstract class ClusteredSession<O extends OutgoingDistributableSessionDat
     }
 
     /**
-     * Overrides the {@link StandardSession#isValid() superclass method} to call @ #isValid(boolean) isValid(true)} .
+     * Overrides the {@link org.apache.catalina.session.StandardSession#isValid() superclass method} to call @ #isValid(boolean) isValid(true)} .
      */
     @Override
     public boolean isValid() {
@@ -811,7 +804,7 @@ public abstract class ClusteredSession<O extends OutgoingDistributableSessionDat
         }
 
         if (canAttributeBeReplicated(value) == false) {
-            throw MESSAGES.failToReplicateAttribute();
+            throw MESSAGES.failToReplicateAttribute(name, value.getClass().getCanonicalName());
         }
 
         // Construct an event with the new value
@@ -895,7 +888,7 @@ public abstract class ClusteredSession<O extends OutgoingDistributableSessionDat
     public void removeAttribute(String name) {
         // Validate our current state
         if (!isValidInternal())
-            throw new IllegalStateException(sm.getString("clusteredSession.removeAttribute.ise"));
+            throw MESSAGES.expiredSession();
 
         final boolean localCall = true;
         final boolean localOnly = false;

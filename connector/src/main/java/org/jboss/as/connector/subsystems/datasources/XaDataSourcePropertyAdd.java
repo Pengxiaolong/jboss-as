@@ -23,18 +23,15 @@
 package org.jboss.as.connector.subsystems.datasources;
 
 import static org.jboss.as.connector.subsystems.datasources.Constants.XADATASOURCE_PROPERTY_VALUE;
-import static org.jboss.as.connector.subsystems.datasources.DataSourcesSubsystemProviders.ADD_XADATASOURCE_PROPERTIES_DESC;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.OP_ADDR;
 
 import java.util.List;
-import java.util.Locale;
 
 import org.jboss.as.controller.AbstractAddStepHandler;
 import org.jboss.as.controller.OperationContext;
 import org.jboss.as.controller.OperationFailedException;
 import org.jboss.as.controller.PathAddress;
 import org.jboss.as.controller.ServiceVerificationHandler;
-import org.jboss.as.controller.descriptions.DescriptionProvider;
 import org.jboss.dmr.ModelNode;
 import org.jboss.jca.common.api.metadata.ds.XaDataSource;
 import org.jboss.msc.service.ServiceController;
@@ -46,26 +43,13 @@ import org.jboss.msc.service.ServiceTarget;
  * Adds a recovery-environment to the Transactions subsystem
  *
  */
-public class XaDataSourcePropertyAdd extends AbstractAddStepHandler implements DescriptionProvider {
+public class XaDataSourcePropertyAdd extends AbstractAddStepHandler {
 
     public static final XaDataSourcePropertyAdd INSTANCE = new XaDataSourcePropertyAdd();
 
-
-    /**
-     * Description provider for the add operation
-     */
-    @Override
-    public ModelNode getModelDescription(Locale locale) {
-        // TODO use a ResourceDefinition and StandardResourceDescriptionResolver for this resource
-        return ADD_XADATASOURCE_PROPERTIES_DESC.getModelDescription(Locale.getDefault());
-    }
-
-
     @Override
     protected void populateModel(ModelNode operation, ModelNode modelNode) throws OperationFailedException {
-
         XADATASOURCE_PROPERTY_VALUE.validateAndSet(operation, modelNode);
-
     }
 
     @Override
@@ -80,10 +64,7 @@ public class XaDataSourcePropertyAdd extends AbstractAddStepHandler implements D
         final String configPropertyName = PathAddress.pathAddress(address).getLastElement().getValue();
 
         ServiceName serviceName = XADataSourceConfigService.SERVICE_NAME_BASE.append(dsName).append("xa-datasource-properties").append(configPropertyName);
-
         final ServiceRegistry registry = context.getServiceRegistry(true);
-
-
         final ServiceName dataSourceConfigServiceName = XADataSourceConfigService.SERVICE_NAME_BASE
                 .append(dsName);
         final ServiceController<?> dataSourceConfigController = registry

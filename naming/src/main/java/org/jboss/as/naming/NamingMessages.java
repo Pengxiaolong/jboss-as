@@ -29,15 +29,14 @@ import javax.naming.InvalidNameException;
 import javax.naming.Name;
 import javax.naming.NameNotFoundException;
 import javax.naming.NamingException;
-import javax.naming.spi.ObjectFactory;
 
 import org.jboss.as.controller.OperationFailedException;
 import org.jboss.as.naming.deployment.JndiName;
 import org.jboss.as.server.deployment.DeploymentUnitProcessingException;
+import org.jboss.logging.Messages;
 import org.jboss.logging.annotations.Cause;
 import org.jboss.logging.annotations.Message;
 import org.jboss.logging.annotations.MessageBundle;
-import org.jboss.logging.Messages;
 import org.jboss.modules.ModuleIdentifier;
 import org.jboss.msc.service.ServiceName;
 
@@ -433,7 +432,7 @@ public interface NamingMessages {
     OperationFailedException couldNotInstantiateClassInstanceFromModule(String className, ModuleIdentifier moduleID);
 
     /**
-     * Creates an exception indicating that a class is not an {@link ObjectFactory} instance, from the specified module.
+     * Creates an exception indicating that a class is not an {@link javax.naming.spi.ObjectFactory} instance, from the specified module.
      * @param className the name of the class
      * @param moduleID the module id
      * @return
@@ -457,4 +456,11 @@ public interface NamingMessages {
     @Message(id = 11873, value = "Binding add operation for Object Factory With Environment not supported in Naming Subsystem model version %s")
     String failedToTransformObjectFactoryWithEnvironmentNameBindingAddOperation(String modelVersion);
 
+    /**
+     * A external context binding add operation was failed by the operation transformer.
+     * @param modelVersion the model version related with the transformer.
+     * @return
+     */
+    @Message(id = 11874, value = "Binding add operation for external context not supported in Naming Subsystem model version %s")
+    String failedToTransformExternalContext(String modelVersion);
 }

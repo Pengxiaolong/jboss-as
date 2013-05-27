@@ -23,6 +23,8 @@
 package org.jboss.as.osgi.service;
 
 
+import static org.jboss.as.osgi.OSGiLogger.LOGGER;
+
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.jboss.as.controller.ServiceVerificationHandler;
@@ -36,6 +38,8 @@ import org.jboss.msc.service.ServiceTarget;
 import org.jboss.msc.service.StartContext;
 import org.jboss.msc.service.StartException;
 import org.jboss.osgi.framework.Services;
+import org.jboss.osgi.framework.spi.FrameworkBuilder;
+import org.jboss.osgi.framework.spi.FrameworkBuilder.FrameworkPhase;
 
 /**
  * A service that activates the framework
@@ -59,10 +63,10 @@ public final class FrameworkActivator {
 
     private static FrameworkActivator INSTANCE;
     private final AtomicBoolean activated;
-    private final ServiceTarget serviceTarget;
+    private final FrameworkBuilder builder;
 
-    public static void create(ServiceTarget serviceTarget, boolean enabled) {
-        INSTANCE = new FrameworkActivator(serviceTarget, enabled);
+    public static void create(FrameworkBuilder builder) {
+        INSTANCE = new FrameworkActivator(builder);
     }
 
     /**
@@ -80,17 +84,18 @@ public final class FrameworkActivator {
         return INSTANCE.activateInternal(Activation.EAGER, verificationHandler);
     }
 
-    private FrameworkActivator(ServiceTarget serviceTarget, boolean enabled) {
-        this.serviceTarget = serviceTarget;
-        this.activated = new AtomicBoolean(!enabled);
+    private FrameworkActivator(FrameworkBuilder builder) {
+        this.activated = new AtomicBoolean(builder.getInitialMode() == Mode.ACTIVE);
+        this.builder = builder;
     }
 
     private boolean activateInternal(Activation activation, ServiceVerificationHandler verificationHandler) {
         boolean activate = activated.compareAndSet(false, true);
         if (activate) {
-
-            new BootstrapBundlesIntegration().install(serviceTarget, verificationHandler);
-            new PersistentBundlesIntegration().install(serviceTarget, verificationHandler);
+            LOGGER.debugf("Activating %sly", activation);
+            ServiceTarget serviceTarget = builder.getServiceTarget();
+            builder.installServices(FrameworkPhase.INIT, serviceTarget, verificationHandler);
+            builder.installServices(FrameworkPhase.ACTIVE, serviceTarget, verificationHandler);
 
             ServiceName serviceName = Services.FRAMEWORK_ACTIVE.getParent().append(activation.toString(), "ACTIVATOR");
             switch (activation) {
@@ -109,10 +114,10 @@ public final class FrameworkActivator {
 
         // The {@link EagerActivatorService} has a dependency on {@link Services#FRAMEWORK_ACTIVE}
         static void addService (ServiceTarget serviceTarget, ServiceName serviceName, ServiceVerificationHandler verificationHandler) {
-            ServiceBuilder<Void> eagerbuilder = serviceTarget.addService(serviceName, new EagerActivatorService());
-            eagerbuilder.addDependency(Services.FRAMEWORK_ACTIVE);
-            eagerbuilder.addListener(verificationHandler);
-            eagerbuilder.install();
+            ServiceBuilder<Void> builder = serviceTarget.addService(serviceName, new EagerActivatorService());
+            builder.addDependency(Services.FRAMEWORK_ACTIVE);
+            builder.addListener(verificationHandler);
+            builder.install();
         }
     }
 
@@ -121,9 +126,10 @@ public final class FrameworkActivator {
         // The {@link LazyActivatorService} has no framework dependency.
         // Instead it explicitly activates {@link Services#FRAMEWORK_ACTIVE}
         static void addService (ServiceTarget serviceTarget, ServiceName serviceName, ServiceVerificationHandler verificationHandler) {
-            ServiceBuilder<Void> eagerbuilder = serviceTarget.addService(serviceName, new LazyActivatorService());
-            eagerbuilder.addListener(verificationHandler);
-            eagerbuilder.install();
+            ServiceBuilder<Void> builder = serviceTarget.addService(serviceName, new LazyActivatorService());
+            builder.addDependency(FrameworkBootstrapService.SERVICE_NAME);
+            builder.addListener(verificationHandler);
+            builder.install();
         }
 
         @Override

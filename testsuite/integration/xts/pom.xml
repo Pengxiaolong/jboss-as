@@ -5,19 +5,19 @@
     <modelVersion>4.0.0</modelVersion>
 
     <parent>
-        <groupId>org.jboss.as</groupId>
-        <artifactId>jboss-as-ts-integ</artifactId>
-        <version>7.2.0.Alpha1-SNAPSHOT</version>
+        <groupId>org.wildfly</groupId>
+        <artifactId>wildfly-ts-integ</artifactId>
+        <version>8.0.0.Alpha2-SNAPSHOT</version>
     </parent>
 
     <!-- ********************************************************************************** -->
     <!-- *********************************** XTS       ************************************ -->
     <!-- ********************************************************************************** -->
-    <groupId>org.jboss.as</groupId>
-    <artifactId>jboss-as-ts-integ-xts</artifactId>
-    <version>7.2.0.Alpha1-SNAPSHOT</version>
+    <groupId>org.wildfly</groupId>
+    <artifactId>wildfly-ts-integ-xts</artifactId>
+    <version>8.0.0.Alpha2-SNAPSHOT</version>
 
-    <name>JBoss Application Server Test Suite: Integration - XTS</name>
+    <name>WildFly Test Suite: Integration - XTS</name>
 
     <properties>
         <jbossas.ts.integ.dir>${basedir}/..</jbossas.ts.integ.dir>
@@ -35,6 +35,19 @@
             <!--
                 Server configuration executions.
             -->
+            <dependencies>
+                <dependency>
+                    <groupId>org.jboss.byteman</groupId>
+                    <artifactId>byteman</artifactId>
+                    <scope>test</scope>
+                </dependency>
+                <dependency>
+                    <groupId>org.jboss.byteman</groupId>
+                    <artifactId>byteman-submit</artifactId>
+                    <scope>test</scope>
+                </dependency>
+            </dependencies>
+
             <build>
                 <plugins>
                     <plugin>
@@ -54,6 +67,25 @@
                                 </configuration>
                             </execution>
                         </executions>
+                    </plugin>
+
+                    <plugin>
+                      <groupId>org.apache.maven.plugins</groupId>
+                      <artifactId>maven-dependency-plugin</artifactId>
+                      <executions>
+                        <execution>
+                          <id>copy-dependencies</id>
+                          <phase>test-compile</phase>
+                          <goals>
+                            <goal>copy-dependencies</goal>
+                          </goals>
+                          <configuration>
+                              <stripVersion>true</stripVersion>
+                              <includeGroupIds>org.jboss.byteman</includeGroupIds>
+                            <outputDirectory>${project.build.directory}/lib</outputDirectory>
+                          </configuration>
+                        </execution>
+                      </executions>
                     </plugin>
 
                     <!--

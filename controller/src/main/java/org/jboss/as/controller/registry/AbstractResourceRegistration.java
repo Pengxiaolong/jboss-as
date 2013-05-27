@@ -32,7 +32,6 @@ import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
 
-import org.jboss.as.controller.AttributeDefinition;
 import org.jboss.as.controller.ControllerMessages;
 import org.jboss.as.controller.OperationDefinition;
 import org.jboss.as.controller.OperationStepHandler;
@@ -47,13 +46,13 @@ import org.jboss.as.controller.descriptions.OverrideDescriptionProvider;
 import org.jboss.as.controller.registry.OperationEntry.EntryType;
 import org.jboss.as.controller.registry.OperationEntry.Flag;
 import org.jboss.dmr.ModelNode;
-import org.jboss.dmr.ModelType;
 
 /**
  * A registry of model node information.  This registry is thread-safe.
  *
  * @author <a href="mailto:david.lloyd@redhat.com">David M. Lloyd</a>
  */
+@SuppressWarnings("deprecation")
 abstract class AbstractResourceRegistration implements ManagementResourceRegistration {
 
     private final String valueString;
@@ -61,8 +60,16 @@ abstract class AbstractResourceRegistration implements ManagementResourceRegistr
     private RootInvocation rootInvocation;
 
     AbstractResourceRegistration(final String valueString, final NodeSubregistry parent) {
+        checkPermission();
         this.valueString = valueString;
         this.parent = parent;
+    }
+
+    static void checkPermission() {
+        SecurityManager sm = System.getSecurityManager();
+        if (sm != null) {
+            sm.checkPermission(ImmutableManagementResourceRegistration.ACCESS_PERMISSION);
+        }
     }
 
     NodeSubregistry getParent() {
@@ -71,6 +78,7 @@ abstract class AbstractResourceRegistration implements ManagementResourceRegistr
 
     /** {@inheritDoc} */
     @Override
+    @SuppressWarnings("deprecation")
     public final ManagementResourceRegistration registerSubModel(final PathElement address, final DescriptionProvider descriptionProvider) {
         return registerSubModel(new SimpleResourceDefinition(address, descriptionProvider));
     }
@@ -81,6 +89,7 @@ abstract class AbstractResourceRegistration implements ManagementResourceRegistr
 
     @Override
     public boolean isAllowsOverride() {
+        checkPermission();
         return !isRemote() && parent != null && PathElement.WILDCARD_VALUE.equals(valueString);
     }
 
@@ -121,23 +130,27 @@ abstract class AbstractResourceRegistration implements ManagementResourceRegistr
 
     /** {@inheritDoc} */
     @Override
+    @SuppressWarnings("deprecation")
     public void registerOperationHandler(String operationName, OperationStepHandler handler, DescriptionProvider descriptionProvider) {
         registerOperationHandler(operationName, handler, descriptionProvider, false);
     }
 
     /** {@inheritDoc} */
     @Override
+    @SuppressWarnings("deprecation")
     public void registerOperationHandler(String operationName, OperationStepHandler handler, DescriptionProvider descriptionProvider, EnumSet<OperationEntry.Flag> flags) {
         registerOperationHandler(operationName, handler, descriptionProvider, false, EntryType.PUBLIC, flags);
     }
 
     /** {@inheritDoc} */
     @Override
+    @SuppressWarnings("deprecation")
     public void registerOperationHandler(final String operationName, final OperationStepHandler handler, final DescriptionProvider descriptionProvider, final boolean inherited) {
         registerOperationHandler(operationName, handler, descriptionProvider, inherited, EntryType.PUBLIC);
     }
 
     @Override
+    @SuppressWarnings("deprecation")
     public void registerOperationHandler(String operationName, OperationStepHandler handler, DescriptionProvider descriptionProvider, boolean inherited, EnumSet<Flag> flags) {
         registerOperationHandler(operationName, handler, descriptionProvider, inherited, EntryType.PUBLIC, flags);
     }
@@ -152,10 +165,12 @@ abstract class AbstractResourceRegistration implements ManagementResourceRegistr
 
     /** {@inheritDoc} */
     @Override
+    @SuppressWarnings("deprecation")
     public abstract void registerOperationHandler(String operationName, OperationStepHandler handler, DescriptionProvider descriptionProvider, boolean inherited, EntryType entryType);
 
     /** {@inheritDoc} */
     @Override
+    @SuppressWarnings("deprecation")
     public abstract void registerOperationHandler(String operationName, OperationStepHandler handler, DescriptionProvider descriptionProvider, boolean inherited, EntryType entryType, EnumSet<OperationEntry.Flag> flags);
 
     /** {@inheritDoc} */

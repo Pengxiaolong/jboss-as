@@ -22,6 +22,8 @@
 
 package org.jboss.as.naming;
 
+import static org.jboss.as.naming.NamingMessages.MESSAGES;
+
 import java.util.ArrayList;
 import java.util.Enumeration;
 import java.util.HashSet;
@@ -43,19 +45,19 @@ import javax.naming.Reference;
 import javax.naming.event.NamingListener;
 import javax.naming.spi.ResolveResult;
 
+import org.jboss.as.naming.deployment.ContextNames;
 import org.jboss.msc.service.ServiceController;
 import org.jboss.msc.service.ServiceName;
 import org.jboss.msc.service.ServiceRegistry;
 
-import static org.jboss.as.naming.NamingMessages.MESSAGES;
-
 /**
  * @author John Bailey
  * @author Jason T. Greene
+ * @author Eduardo Martins
  */
 public class ServiceBasedNamingStore implements NamingStore {
     private final Name EMPTY_NAME = new CompositeName();
-
+    private Name baseName;
     private final ServiceRegistry serviceRegistry;
     private final ServiceName serviceNameBase;
 
@@ -66,17 +68,22 @@ public class ServiceBasedNamingStore implements NamingStore {
         this.serviceNameBase = serviceNameBase;
     }
 
-    public Object lookup(final Name name) throws NamingException {
+    @Override
+    public Object lookup(Name name) throws NamingException {
+        return lookup(name, true);
+    }
+
+    public Object lookup(final Name name, boolean dereference) throws NamingException {
         if (name.isEmpty()) {
             return new NamingContext(EMPTY_NAME, this, null);
         }
         final ServiceName lookupName = buildServiceName(name);
-        Object obj = lookup(name.toString(), lookupName);
+        Object obj = lookup(name.toString(), lookupName, dereference);
         if (obj == null) {
             final ServiceName lower = boundServices.lower(lookupName);
             if (lower != null && lower.isParentOf(lookupName)) {
                 // Parent might be a reference or a link
-                obj = lookup(name.toString(), lower);
+                obj = lookup(name.toString(), lower, dereference);
                 //if the lower is a context that has been explicitly bound then
                 //we do not return a resolve result, as this will result in an
                 //infinite loop
@@ -115,7 +122,7 @@ public class ServiceBasedNamingStore implements NamingStore {
         return cpe;
     }
 
-    private Object lookup(final String name, final ServiceName lookupName) throws NamingException {
+    private Object lookup(final String name, final ServiceName lookupName, boolean dereference) throws NamingException {
         final ServiceController<?> controller = serviceRegistry.getService(lookupName);
         final Object object;
         if (controller != null) {
@@ -128,7 +135,7 @@ public class ServiceBasedNamingStore implements NamingStore {
         } else {
             return null;
         }
-        if (object instanceof ManagedReferenceFactory) {
+        if (dereference && object instanceof ManagedReferenceFactory) {
             try {
                 return ManagedReferenceFactory.class.cast(object).getReference().getInstance();
             } catch (Exception e) {
@@ -146,7 +153,7 @@ public class ServiceBasedNamingStore implements NamingStore {
         boolean isContextBinding = false;
         if (floor != null && floor.isParentOf(lookupName)) {
             // Parent might be a reference or a link
-            Object obj = lookup(name.toString(), floor);
+            Object obj = lookup(name.toString(), floor, true);
             if (obj instanceof NamingContext) {
                 isContextBinding = true;
             } else if (obj != null) {
@@ -163,8 +170,19 @@ public class ServiceBasedNamingStore implements NamingStore {
             if (childParts.length > lookupParts.length + 1) {
                 childContexts.add(childParts[lookupParts.length]);
             } else {
-                final Object binding = lookup(name.toString(), child);
-                results.add(new NameClassPair(childParts[childParts.length - 1], binding.getClass().getName()));
+                final Object binding = lookup(name.toString(), child, false);
+                final String bindingType;
+                if (binding instanceof ContextListManagedReferenceFactory) {
+                    bindingType = ContextListManagedReferenceFactory.class.cast(binding)
+                            .getInstanceClassName();
+                } else {
+                    if (binding instanceof ManagedReferenceFactory) {
+                        bindingType = ContextListManagedReferenceFactory.DEFAULT_INSTANCE_CLASS_NAME;
+                    } else {
+                        bindingType = binding.getClass().getName();
+                    }
+                }
+                results.add(new NameClassPair(childParts[childParts.length - 1],bindingType));
             }
         }
         for (String contextName : childContexts) {
@@ -179,7 +197,7 @@ public class ServiceBasedNamingStore implements NamingStore {
         boolean isContextBinding = false;
         if (floor != null && floor.isParentOf(lookupName)) {
             // Parent might be a reference or a link
-            Object obj = lookup(name.toString(), floor);
+            Object obj = lookup(name.toString(), floor, true);
             if (obj instanceof NamingContext) {
                 isContextBinding = true;
             } else if (obj != null) {
@@ -195,7 +213,7 @@ public class ServiceBasedNamingStore implements NamingStore {
             if (childParts.length > lookupParts.length + 1) {
                 childContexts.add(childParts[lookupParts.length]);
             } else {
-                final Object binding = lookup(name.toString(), child);
+                final Object binding = lookup(name.toString(), child, true);
                 results.add(new Binding(childParts[childParts.length - 1], binding));
             }
         }
@@ -261,7 +279,8 @@ public class ServiceBasedNamingStore implements NamingStore {
     private Name convert(ServiceName serviceName) {
         String[] c = serviceName.toArray();
         CompositeName name = new CompositeName();
-        for (int i = 0; i < c.length; i++) {
+        int baseIndex = serviceNameBase.toArray().length;
+        for (int i = baseIndex; i < c.length; i++) {
             try {
                 name.add(c[i]);
             } catch (InvalidNameException e) {
@@ -294,5 +313,45 @@ public class ServiceBasedNamingStore implements NamingStore {
 
     protected ServiceRegistry getServiceRegistry() {
         return serviceRegistry;
+    }
+
+    @Override
+    public Name getBaseName() throws NamingException {
+        if (baseName == null) {
+            baseName = setBaseName();
+        }
+        return baseName;
+    }
+
+    private Name setBaseName() throws NamingException {
+        if (serviceNameBase.equals(ContextNames.EXPORTED_CONTEXT_SERVICE_NAME)
+                || ContextNames.EXPORTED_CONTEXT_SERVICE_NAME.isParentOf(serviceNameBase)) {
+            return new CompositeName("java:jboss/exported");
+        }
+        if (serviceNameBase.equals(ContextNames.JBOSS_CONTEXT_SERVICE_NAME)
+                || ContextNames.JBOSS_CONTEXT_SERVICE_NAME.isParentOf(serviceNameBase)) {
+            return new CompositeName("java:jboss");
+        }
+        if (serviceNameBase.equals(ContextNames.APPLICATION_CONTEXT_SERVICE_NAME)
+                || ContextNames.APPLICATION_CONTEXT_SERVICE_NAME.isParentOf(serviceNameBase)) {
+            return new CompositeName("java:app");
+        }
+        if (serviceNameBase.equals(ContextNames.MODULE_CONTEXT_SERVICE_NAME)
+                || ContextNames.MODULE_CONTEXT_SERVICE_NAME.isParentOf(serviceNameBase)) {
+            return new CompositeName("java:module");
+        }
+        if (serviceNameBase.equals(ContextNames.COMPONENT_CONTEXT_SERVICE_NAME)
+                || ContextNames.COMPONENT_CONTEXT_SERVICE_NAME.isParentOf(serviceNameBase)) {
+            return new CompositeName("java:comp");
+        }
+        if (serviceNameBase.equals(ContextNames.GLOBAL_CONTEXT_SERVICE_NAME)
+                || ContextNames.GLOBAL_CONTEXT_SERVICE_NAME.isParentOf(serviceNameBase)) {
+            return new CompositeName("java:global");
+        }
+        if (serviceNameBase.equals(ContextNames.JAVA_CONTEXT_SERVICE_NAME)
+                || ContextNames.JAVA_CONTEXT_SERVICE_NAME.isParentOf(serviceNameBase)) {
+            return new CompositeName("java:");
+        }
+        return new CompositeName();
     }
 }

@@ -41,6 +41,8 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 import org.jboss.as.controller.client.MessageSeverity;
 import org.jboss.as.controller.client.OperationAttachments;
@@ -68,6 +70,7 @@ import org.jboss.msc.service.ServiceNotFoundException;
 import org.jboss.msc.service.ServiceRegistry;
 import org.jboss.msc.service.ServiceRegistryException;
 import org.jboss.msc.service.ServiceTarget;
+import org.jboss.msc.service.StabilityMonitor;
 import org.jboss.msc.service.StartException;
 import org.jboss.msc.value.ImmediateValue;
 import org.jboss.msc.value.Value;
@@ -77,6 +80,7 @@ import org.jboss.msc.value.Value;
  *
  * @author <a href="mailto:david.lloyd@redhat.com">David M. Lloyd</a>
  */
+@SuppressWarnings("deprecation")
 final class OperationContextImpl extends AbstractOperationContext {
 
     private static final Object NULL = new Object();
@@ -110,11 +114,13 @@ final class OperationContextImpl extends AbstractOperationContext {
     private Step containerMonitorStep;
     private volatile Boolean requiresModelUpdateAuthorization;
 
+    private final Integer operationId;
+
     OperationContextImpl(final ModelControllerImpl modelController, final ProcessType processType,
                          final RunningMode runningMode, final EnumSet<ContextFlag> contextFlags,
                             final OperationMessageHandler messageHandler, final OperationAttachments attachments,
                             final Resource model, final ModelController.OperationTransactionControl transactionControl,
-                            final ControlledProcessState processState, final boolean booting) {
+                            final ControlledProcessState processState, final boolean booting, final Integer operationId) {
         super(processType, runningMode, transactionControl, processState, booting);
         this.model = model;
         this.originalModel = model;
@@ -124,6 +130,8 @@ final class OperationContextImpl extends AbstractOperationContext {
         this.affectsModel = booting ? new ConcurrentHashMap<PathAddress, Object>(16 * 16) : new HashMap<PathAddress, Object>(1);
         this.contextFlags = contextFlags;
         this.serviceTarget = new ContextServiceTarget(modelController);
+
+        this.operationId = operationId;
     }
 
     public InputStream getAttachmentStream(final int index) {
@@ -144,7 +152,7 @@ final class OperationContextImpl extends AbstractOperationContext {
             // First wait until any removals we've initiated have begun processing, otherwise
             // the ContainerStateMonitor may not have gotten the notification causing it to untick
             waitForRemovals();
-            ContainerStateMonitor.ContainerStateChangeReport changeReport = modelController.awaitContainerStateChangeReport(1);
+            ContainerStateMonitor.ContainerStateChangeReport changeReport = modelController.awaitContainerStateChangeReport();
             // If any services are missing, add a verification handler to see if we caused it
             if (changeReport != null && !changeReport.getMissingServices().isEmpty()) {
                 ServiceRemovalVerificationHandler removalVerificationHandler = new ServiceRemovalVerificationHandler(changeReport);
@@ -297,7 +305,9 @@ final class OperationContextImpl extends AbstractOperationContext {
             acquireContainerMonitor();
             awaitContainerMonitor();
         }
-        doRemove(controller);
+        if (controller != null) {
+            doRemove(controller);
+        }
     }
 
     private void doRemove(final ServiceController<?> controller) {
@@ -355,7 +365,7 @@ final class OperationContextImpl extends AbstractOperationContext {
                 throw MESSAGES.invalidModificationAfterCompletedStep();
             }
             try {
-                modelController.acquireLock(respectInterruption);
+                modelController.acquireLock(operationId, respectInterruption, this);
                 lockStep = activeStep;
             } catch (InterruptedException e) {
                 cancelled = true;
@@ -377,7 +387,7 @@ final class OperationContextImpl extends AbstractOperationContext {
 
     private void awaitContainerMonitor() {
         try {
-            modelController.awaitContainerMonitor(respectInterruption, 1);
+            modelController.awaitContainerMonitor(respectInterruption);
         } catch (InterruptedException e) {
             if (currentStage != Stage.DONE && resultAction != ResultAction.ROLLBACK) {
                 // We're not on the way out, so we've been cancelled on the way in
@@ -670,7 +680,7 @@ final class OperationContextImpl extends AbstractOperationContext {
     void releaseStepLocks(AbstractOperationContext.Step step) {
         try {
             if (this.lockStep == step) {
-                modelController.releaseLock();
+                modelController.releaseLock(operationId);
                 lockStep = null;
             }
             if (this.containerMonitorStep == step) {
@@ -682,7 +692,7 @@ final class OperationContextImpl extends AbstractOperationContext {
                 // Any subsequent step that calls getServiceRegistry/getServiceTarget/removeService
                 // is going to have to await the monitor uninterruptibly anyway before proceeding.
                 try {
-                    modelController.awaitContainerMonitor(true, 1);
+                    modelController.awaitContainerMonitor(true);
                 }  catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
                     MGMT_OP_LOGGER.interruptedWaitingStability();
@@ -928,6 +938,16 @@ final class OperationContextImpl extends AbstractOperationContext {
             return this;
         }
 
+        public ServiceBuilder<T> addMonitor(StabilityMonitor monitor) {
+            realBuilder.addMonitor(monitor);
+            return this;
+        }
+
+        public ServiceBuilder<T> addMonitors(StabilityMonitor... monitors) {
+            realBuilder.addMonitors(monitors);
+            return this;
+        }
+
         public ServiceBuilder<T> addListener(final ServiceListener<? super T> listener) {
             realBuilder.addListener(listener);
             return this;
@@ -1161,6 +1181,12 @@ final class OperationContextImpl extends AbstractOperationContext {
             return controller.getImmediateUnavailableDependencies();
         }
 
+        public S awaitValue() throws IllegalStateException, InterruptedException {
+            return controller.awaitValue();
+        }
 
+        public S awaitValue(long time, TimeUnit unit) throws IllegalStateException, InterruptedException, TimeoutException {
+            return controller.awaitValue(time, unit);
+        }
     }
 }

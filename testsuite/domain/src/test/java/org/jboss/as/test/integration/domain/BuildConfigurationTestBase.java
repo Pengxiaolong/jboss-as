@@ -30,66 +30,52 @@ import java.io.FileNotFoundException;
 import java.io.FileReader;
 import java.io.FileWriter;
 import java.io.IOException;
-import java.net.URL;
-import java.net.URLConnection;
 import java.util.ArrayList;
 import java.util.List;
 
-import org.jboss.as.test.integration.domain.management.util.DomainLifecycleUtil;
 import org.jboss.as.test.integration.domain.management.util.JBossAsManagedConfiguration;
+import org.jboss.as.test.integration.domain.management.util.JBossAsManagedConfigurationParameters;
 import org.jboss.as.test.shared.TestSuiteEnvironment;
-import org.junit.Test;
 
 /**
- * Test validating the configuration starts and can accept a simple web request.
+ * Base class for tests that use the standard AS configuration files.
  *
  * @author Emanuel Muckenhuber
+ * @author Brian Stansberry (c) 2013 Red Hat Inc.
  */
 public abstract class BuildConfigurationTestBase {
 
     static final String masterAddress = System.getProperty("jboss.test.host.master.address", "localhost");
+
     static final File CONFIG_DIR = new File("target/jbossas/domain/configuration/");
 
-    @Test
-    public void test() throws Exception {
-        final JBossAsManagedConfiguration config = createConfiguration(getDomainConfigFile(), getHostConfigFile(), getClass().getSimpleName());
-        final DomainLifecycleUtil utils = new DomainLifecycleUtil(config);
-        utils.start(); // Start
-        try {
-            URLConnection connection = new URL("http://" + TestSuiteEnvironment.formatPossibleIpv6Address(masterAddress) + ":8080").openConnection();
-            connection.connect();
-        } finally {
-            utils.stop(); // Stop
-        }
+    static JBossAsManagedConfiguration createConfiguration(final String domainXmlName, final String hostXmlName, final String testConfiguration) {
+        return createConfiguration(domainXmlName, hostXmlName, testConfiguration, "master", masterAddress, 9999);
     }
 
-    protected abstract String getDomainConfigFile();
+    static JBossAsManagedConfiguration createConfiguration(final String domainXmlName, final String hostXmlName,
+                                                           final String testConfiguration, final String hostName,
+                                                           final String hostAddress, final int hostPort) {
+        final JBossAsManagedConfiguration configuration = new JBossAsManagedConfiguration(JBossAsManagedConfigurationParameters.STANDARD);
 
-    protected abstract String getHostConfigFile();
+        configuration.setHostControllerManagementAddress(hostAddress);
+        configuration.setHostControllerManagementPort(hostPort);
+        configuration.setHostCommandLineProperties("-Djboss.domain.master.address=" + masterAddress +
+                " -Djboss.management.native.port=" + hostPort);
+        configuration.setDomainConfigFile(hackFixDomainConfig(new File(CONFIG_DIR, domainXmlName)).getAbsolutePath());
+        configuration.setHostConfigFile(hackFixHostConfig(new File(CONFIG_DIR, hostXmlName), hostName, hostAddress).getAbsolutePath());
 
+        configuration.setHostName(hostName); // TODO this shouldn't be needed
 
-    static JBossAsManagedConfiguration createConfiguration(final String domainXmlName, final String hostXmlName, final String testConfiguration) {
-        final File output = new File("target" + File.separator + "domains" + File.separator + testConfiguration);
-        final JBossAsManagedConfiguration configuration = new JBossAsManagedConfiguration();
-
-        configuration.setHostControllerManagementAddress(masterAddress);
-        configuration.setHostCommandLineProperties("-Djboss.test.host.master.address=" + masterAddress);
-        configuration.setDomainConfigFile(hackReplaceProperty(new File(CONFIG_DIR, domainXmlName)).getAbsolutePath());
-        configuration.setHostConfigFile(hackReplaceInterfaces(new File(CONFIG_DIR, hostXmlName)).getAbsolutePath());
-
-        configuration.setHostName("master"); // TODO this shouldn't be needed
-
+        final File output = new File("target" + File.separator + "domains" + File.separator + testConfiguration + File.separator + hostName);
         new File(output, "configuration").mkdirs(); // TODO this should not be necessary
         configuration.setDomainDirectory(output.getAbsolutePath());
 
-        System.out.println(configuration.getDomainConfigFile());
-        System.out.println(configuration.getHostConfigFile());
         return configuration;
 
     }
 
-    //HACK to make the interfaces settable - I could not do it in xsl since it was replacing the system property
-    static File hackReplaceInterfaces(File hostConfigFile) {
+    private static File hackFixHostConfig(File hostConfigFile, String hostName, String hostAddress) {
         final File file;
         final BufferedWriter writer;
         try {
@@ -104,27 +90,38 @@ public abstract class BuildConfigurationTestBase {
             try {
                 String line = reader.readLine();
                 while (line != null) {
-                    int start = line.indexOf("<inet-address value=\"");
-                    if (start >= 0) {
+                    int start = line.indexOf("<host");
+                    if (start >= 0 && !line.contains(" name=")) {
                         StringBuilder sb = new StringBuilder();
-                        sb.append(line.substring(0, start));
-                        sb.append("<inet-address value=\"" + masterAddress + "\"/>");
+                        sb.append("<host name=\"");
+                        sb.append(hostName);
+                        sb.append('"');
+                        sb.append(line.substring(start + 5));
                         writer.write(sb.toString());
                     } else {
-                        start = line.indexOf("<option value=\"");
+                        start = line.indexOf("<inet-address value=\"");
                         if (start >= 0) {
                             StringBuilder sb = new StringBuilder();
-                            sb.append(line.substring(0, start));
-                            List<String> opts = new ArrayList<String>();
-                            TestSuiteEnvironment.getIpv6Args(opts);
-                            for (String opt : opts) {
-                                sb.append("<option value=\"" + opt + "\"/>");
-                            }
-
+                            sb.append(line.substring(0, start))
+                                .append("<inet-address value=\"")
+                                .append(hostAddress)
+                                .append("\"/>");
                             writer.write(sb.toString());
                         } else {
-                            start = line.indexOf("java.net.preferIPv4Stack");
-                            if (start < 0) {
+                            start = line.indexOf("<option value=\"");
+                            if (start >= 0) {
+                                StringBuilder sb = new StringBuilder();
+                                sb.append(line.substring(0, start));
+                                List<String> opts = new ArrayList<String>();
+                                TestSuiteEnvironment.getIpv6Args(opts);
+                                for (String opt : opts) {
+                                    sb.append("<option value=\"")
+                                            .append(opt)
+                                            .append("\"/>");
+                                }
+
+                                writer.write(sb.toString());
+                            } else if (!line.contains("java.net.preferIPv4Stack")){
                                 writer.write(line);
                             }
                         }
@@ -144,8 +141,7 @@ public abstract class BuildConfigurationTestBase {
         return file;
     }
 
-    //HACK to make the interfaces settable - I could not do it in xsl since it was replacing the system property
-    static File hackReplaceProperty(File hostConfigFile) {
+    static File hackFixDomainConfig(File hostConfigFile) {
         final File file;
         final BufferedWriter writer;
         try {

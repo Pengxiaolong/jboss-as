@@ -1,3 +1,25 @@
+/*
+ * JBoss, Home of Professional Open Source.
+ * Copyright 2012, Red Hat, Inc., and individual contributors
+ * as indicated by the @author tags. See the copyright.txt file in the
+ * distribution for a full listing of individual contributors.
+ *
+ * This is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU Lesser General Public License as
+ * published by the Free Software Foundation; either version 2.1 of
+ * the License, or (at your option) any later version.
+ *
+ * This software is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with this software; if not, write to the Free
+ * Software Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA
+ * 02110-1301 USA, or see the FSF site: http://www.fsf.org.
+ */
+
 package org.jboss.as.messaging;
 
 import static org.jboss.as.messaging.ClusterConnectionDefinition.ALLOW_DIRECT_CONNECTIONS_ONLY;
@@ -13,7 +35,7 @@ import static org.jboss.as.messaging.CommonAttributes.DIVERT;
 import static org.jboss.as.messaging.CommonAttributes.DURABLE;
 import static org.jboss.as.messaging.CommonAttributes.GROUPING_HANDLER;
 import static org.jboss.as.messaging.CommonAttributes.HORNETQ_SERVER;
-import static org.jboss.as.messaging.CommonAttributes.INBOUND_CONFIG;
+import static org.jboss.as.messaging.CommonAttributes.SERVLET_CONNECTOR;
 import static org.jboss.as.messaging.CommonAttributes.IN_VM_ACCEPTOR;
 import static org.jboss.as.messaging.CommonAttributes.IN_VM_CONNECTOR;
 import static org.jboss.as.messaging.CommonAttributes.JMS_BRIDGE;
@@ -22,17 +44,15 @@ import static org.jboss.as.messaging.CommonAttributes.JMS_DESTINATIONS;
 import static org.jboss.as.messaging.CommonAttributes.JMS_QUEUE;
 import static org.jboss.as.messaging.CommonAttributes.JMS_TOPIC;
 import static org.jboss.as.messaging.CommonAttributes.PARAM;
-import static org.jboss.as.messaging.CommonAttributes.PATH;
 import static org.jboss.as.messaging.CommonAttributes.POOLED_CONNECTION_FACTORY;
-import static org.jboss.as.messaging.CommonAttributes.RELATIVE_TO;
 import static org.jboss.as.messaging.CommonAttributes.REMOTE_ACCEPTOR;
 import static org.jboss.as.messaging.CommonAttributes.REMOTE_CONNECTOR;
 import static org.jboss.as.messaging.CommonAttributes.ROLE;
-import static org.jboss.as.messaging.CommonAttributes.SELECTOR;
-import static org.jboss.as.messaging.CommonAttributes.VALUE;
 import static org.jboss.as.messaging.Element.SOURCE;
 import static org.jboss.as.messaging.Element.TARGET;
 import static org.jboss.as.messaging.MessagingMessages.MESSAGES;
+import static org.jboss.as.messaging.MessagingPathHandlers.PATHS;
+import static org.jboss.as.messaging.MessagingPathHandlers.RELATIVE_TO;
 import static org.jboss.as.messaging.Namespace.CURRENT;
 
 import java.util.ArrayList;
@@ -45,11 +65,11 @@ import org.jboss.as.controller.descriptions.ModelDescriptionConstants;
 import org.jboss.as.controller.persistence.SubsystemMarshallingContext;
 import org.jboss.as.messaging.jms.ConnectionFactoryAttribute;
 import org.jboss.as.messaging.jms.ConnectionFactoryDefinition;
-import org.jboss.as.messaging.jms.JndiEntriesAttribute;
+import org.jboss.as.messaging.jms.JMSQueueDefinition;
+import org.jboss.as.messaging.jms.JMSTopicDefinition;
 import org.jboss.as.messaging.jms.PooledConnectionFactoryDefinition;
 import org.jboss.as.messaging.jms.bridge.JMSBridgeDefinition;
 import org.jboss.dmr.ModelNode;
-import org.jboss.dmr.ModelType;
 import org.jboss.dmr.Property;
 import org.jboss.staxmapper.XMLElementWriter;
 import org.jboss.staxmapper.XMLExtendedStreamWriter;
@@ -166,21 +186,38 @@ public class MessagingXMLWriter implements XMLElementWriter<SubsystemMarshalling
             if(node.hasDefined(REMOTE_CONNECTOR)) {
                 for(final Property property : node.get(REMOTE_CONNECTOR).asPropertyList()) {
                     writer.writeStartElement(Element.NETTY_CONNECTOR.getLocalName());
-                    writeAcceptorAndConnectorContent(writer, property);
+                    writer.writeAttribute(Attribute.NAME.getLocalName(), property.getName());
+                    RemoteTransportDefinition.SOCKET_BINDING.marshallAsAttribute(property.getValue(), writer);
+                    writeTransportParam(writer, property.getValue().get(PARAM));
+                    writer.writeEndElement();
+                }
+            }
+            if(node.hasDefined(SERVLET_CONNECTOR)) {
+                for(final Property property : node.get(SERVLET_CONNECTOR).asPropertyList()) {
+                    writer.writeStartElement(Element.SERVLET_CONNECTOR.getLocalName());
+                    writer.writeAttribute(Attribute.NAME.getLocalName(), property.getName());
+                    ServletConnectorDefinition.HOST.marshallAsAttribute(property.getValue(), writer);
+                    ServletConnectorDefinition.SOCKET_BINDING.marshallAsAttribute(property.getValue(), writer);
+                    writeTransportParam(writer, property.getValue().get(PARAM));
                     writer.writeEndElement();
                 }
             }
             if(node.hasDefined(IN_VM_CONNECTOR)) {
                 for(final Property property : node.get(IN_VM_CONNECTOR).asPropertyList()) {
                     writer.writeStartElement(Element.IN_VM_CONNECTOR.getLocalName());
-                    writeAcceptorAndConnectorContent(writer, property);
+                    writer.writeAttribute(Attribute.NAME.getLocalName(), property.getName());
+                    InVMTransportDefinition.SERVER_ID.marshallAsAttribute(property.getValue(), writer);
+                    writeTransportParam(writer, property.getValue().get(PARAM));
                     writer.writeEndElement();
                 }
             }
             if(node.hasDefined(CONNECTOR)) {
                 for(final Property property : node.get(CONNECTOR).asPropertyList()) {
                     writer.writeStartElement(Element.CONNECTOR.getLocalName());
-                    writeAcceptorAndConnectorContent(writer, property);
+                    writer.writeAttribute(Attribute.NAME.getLocalName(), property.getName());
+                    GenericTransportDefinition.SOCKET_BINDING.marshallAsElement(property.getValue(), writer);
+                    CommonAttributes.FACTORY_CLASS.marshallAsElement(property.getValue(), writer);
+                    writeTransportParam(writer, property.getValue().get(PARAM));
                     writer.writeEndElement();
                 }
             }
@@ -195,21 +232,21 @@ public class MessagingXMLWriter implements XMLElementWriter<SubsystemMarshalling
             if(node.hasDefined(REMOTE_ACCEPTOR)) {
                 for(final Property property : node.get(REMOTE_ACCEPTOR).asPropertyList()) {
                     writer.writeStartElement(Element.NETTY_ACCEPTOR.getLocalName());
-                    writeAcceptorAndConnectorContent(writer, property);
+                    writeAcceptorContent(writer, property);
                     writer.writeEndElement();
                 }
             }
             if(node.hasDefined(IN_VM_ACCEPTOR)) {
                 for(final Property property : node.get(IN_VM_ACCEPTOR).asPropertyList()) {
                     writer.writeStartElement(Element.IN_VM_ACCEPTOR.getLocalName());
-                    writeAcceptorAndConnectorContent(writer, property);
+                    writeAcceptorContent(writer, property);
                     writer.writeEndElement();
                 }
             }
             if(node.hasDefined(ACCEPTOR)) {
                 for(final Property property : node.get(ACCEPTOR).asPropertyList()) {
                     writer.writeStartElement(Element.ACCEPTOR.getLocalName());
-                    writeAcceptorAndConnectorContent(writer, property);
+                    writeAcceptorContent(writer, property);
                     writer.writeEndElement();
                 }
             }
@@ -218,7 +255,7 @@ public class MessagingXMLWriter implements XMLElementWriter<SubsystemMarshalling
         }
     }
 
-    private static void writeAcceptorAndConnectorContent(final XMLExtendedStreamWriter writer, final Property property) throws XMLStreamException {
+    private static void writeAcceptorContent(final XMLExtendedStreamWriter writer, final Property property) throws XMLStreamException {
         writer.writeAttribute(Attribute.NAME.getLocalName(), property.getName());
         final ModelNode value = property.getValue();
 
@@ -226,12 +263,15 @@ public class MessagingXMLWriter implements XMLElementWriter<SubsystemMarshalling
         InVMTransportDefinition.SERVER_ID.marshallAsAttribute(value, writer);
         CommonAttributes.FACTORY_CLASS.marshallAsElement(value, writer);
 
-        // TODO use a custom attribute marshaller
-        if (value.hasDefined(PARAM)) {
-            for(final Property parameter : value.get(PARAM).asPropertyList()) {
+        writeTransportParam(writer, value.get(PARAM));
+    }
+
+    private static void writeTransportParam(final XMLExtendedStreamWriter writer, final ModelNode param) throws XMLStreamException {
+        if (param.isDefined()) {
+            for(final Property parameter : param.asPropertyList()) {
                 writer.writeStartElement(Element.PARAM.getLocalName());
                 writer.writeAttribute(Attribute.KEY.getLocalName(), parameter.getName());
-                writer.writeAttribute(Attribute.VALUE.getLocalName(), parameter.getValue().get(VALUE.getName()).asString());
+                writer.writeAttribute(Attribute.VALUE.getLocalName(), parameter.getValue().get(TransportParamDefinition.VALUE.getName()).asString());
                 writer.writeEndElement();
             }
         }
@@ -417,12 +457,11 @@ public class MessagingXMLWriter implements XMLElementWriter<SubsystemMarshalling
     private static void writeDirectory(final XMLExtendedStreamWriter writer, final Element element, final ModelNode node) throws XMLStreamException {
         final String localName = element.getLocalName();
         if(node.hasDefined(localName)) {
-            final String path = node.get(localName).has(PATH.getName()) ? node.get(localName, PATH.getName()).asString() : null;
-            final String relativeTo = node.get(localName).hasDefined(RELATIVE_TO.getName()) ? node.get(localName, RELATIVE_TO.getName()).asString() : null;
-            if(path != null || relativeTo != null) {
+            final ModelNode localNode = node.get(localName);
+            if (RELATIVE_TO.isMarshallable(localNode) ||  PATHS.get(localName).isMarshallable(localNode)) {
                 writer.writeEmptyElement(localName);
-                if(path != null) writer.writeAttribute(PATH.getName(), path);
-                if(relativeTo != null) writer.writeAttribute(RELATIVE_TO.getName(), relativeTo);
+                PATHS.get(localName).marshallAsAttribute(node.get(localName), writer);
+                RELATIVE_TO.marshallAsAttribute(node.get(localName), writer);
             }
         }
     }
@@ -552,7 +591,7 @@ public class MessagingXMLWriter implements XMLElementWriter<SubsystemMarshalling
                     for (Property param : service.get(CommonAttributes.PARAM).asPropertyList()) {
                         writer.writeEmptyElement(Element.PARAM.getLocalName());
                         writer.writeAttribute(Attribute.KEY.getLocalName(), param.getName());
-                        writer.writeAttribute(Attribute.VALUE.getLocalName(), param.getValue().get(CommonAttributes.VALUE.getName()).asString());
+                        writer.writeAttribute(Attribute.VALUE.getLocalName(), param.getValue().get(ConnectorServiceParamDefinition.VALUE.getName()).asString());
                     }
                 }
                 writer.writeEndElement();
@@ -600,21 +639,14 @@ public class MessagingXMLWriter implements XMLElementWriter<SubsystemMarshalling
                     writer.writeAttribute(Attribute.NAME.getLocalName(), name);
 
                     // write inbound config attributes first...
-                    if(factory.hasDefined(INBOUND_CONFIG)) {
-                        final ModelNode inboundConfigs = factory.get(INBOUND_CONFIG);
-                        if (inboundConfigs.getType() == ModelType.LIST) {
-                            writer.writeStartElement(Element.INBOUND_CONFIG.getLocalName());
-                            for (ModelNode config : inboundConfigs.asList()) {
-                                if (config.isDefined()) {
-                                    for (ConnectionFactoryAttribute attribute : PooledConnectionFactoryDefinition.ATTRIBUTES) {
-                                        if (attribute.isInboundConfig()) {
-                                            attribute.getDefinition().marshallAsElement(factory, writer);
-                                        }
-                                    }
-                                }
+                    if(hasDefinedInboundConfigAttributes(factory)) {
+                        writer.writeStartElement(Element.INBOUND_CONFIG.getLocalName());
+                        for (ConnectionFactoryAttribute attribute : PooledConnectionFactoryDefinition.ATTRIBUTES) {
+                            if (attribute.isInboundConfig()) {
+                                attribute.getDefinition().marshallAsElement(factory, writer);
                             }
-                            writer.writeEndElement();
                         }
+                        writer.writeEndElement();
                     }
 
                     // ... then the attributes that are not part of the inbound config
@@ -630,6 +662,15 @@ public class MessagingXMLWriter implements XMLElementWriter<SubsystemMarshalling
         }
     }
 
+    private static boolean hasDefinedInboundConfigAttributes(ModelNode pcf) {
+        for (ConnectionFactoryAttribute attribute : PooledConnectionFactoryDefinition.ATTRIBUTES) {
+            if (attribute.isInboundConfig() && pcf.hasDefined(attribute.getDefinition().getName())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     private static void writeJmsQueues(final XMLExtendedStreamWriter writer, final ModelNode node) throws XMLStreamException {
         if (!node.isDefined() || node.keys().size() == 0) {
             return;
@@ -642,9 +683,11 @@ public class MessagingXMLWriter implements XMLElementWriter<SubsystemMarshalling
                 if (queue.isDefined()) {
                     writer.writeStartElement(Element.JMS_QUEUE.getLocalName());
                     writer.writeAttribute(Attribute.NAME.getLocalName(), name);
-                    JndiEntriesAttribute.DESTINATION.marshallAsElement(queue, writer);
-                    SELECTOR.marshallAsElement(queue, writer);
-                    DURABLE.marshallAsElement(queue, writer);
+
+                    for (AttributeDefinition attribute : JMSQueueDefinition.ATTRIBUTES) {
+                        attribute.marshallAsElement(queue, writer);
+                    }
+
                     writer.writeEndElement();
                 }
             }
@@ -663,7 +706,11 @@ public class MessagingXMLWriter implements XMLElementWriter<SubsystemMarshalling
                 if (topic.isDefined()) {
                     writer.writeStartElement(Element.JMS_TOPIC.getLocalName());
                     writer.writeAttribute(Attribute.NAME.getLocalName(), name);
-                    JndiEntriesAttribute.DESTINATION.marshallAsElement(topic, writer);
+
+                    for (AttributeDefinition attribute : JMSTopicDefinition.ATTRIBUTES) {
+                        attribute.marshallAsElement(topic, writer);
+                    }
+
                     writer.writeEndElement();
                 }
             }

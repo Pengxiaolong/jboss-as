@@ -21,37 +21,49 @@
  */
 package org.jboss.as.controller.operations.common;
 
-import org.jboss.as.controller.ControllerMessages;
-import org.jboss.as.controller.PathElement;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.OP_ADDR;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.PROBLEM;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.VALID;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.VALUE;
 
 import java.util.Iterator;
-import java.util.Locale;
-import java.util.NoSuchElementException;
 
+import org.jboss.as.controller.ControllerMessages;
 import org.jboss.as.controller.OperationContext;
+import org.jboss.as.controller.OperationDefinition;
 import org.jboss.as.controller.OperationFailedException;
 import org.jboss.as.controller.OperationStepHandler;
 import org.jboss.as.controller.PathAddress;
-import org.jboss.as.controller.descriptions.DescriptionProvider;
-import org.jboss.as.controller.descriptions.common.CommonDescriptions;
+import org.jboss.as.controller.PathElement;
+import org.jboss.as.controller.SimpleAttributeDefinitionBuilder;
+import org.jboss.as.controller.SimpleOperationDefinitionBuilder;
+import org.jboss.as.controller.descriptions.common.ControllerResolver;
 import org.jboss.as.controller.registry.ImmutableManagementResourceRegistration;
-import org.jboss.as.controller.registry.ManagementResourceRegistration;
 import org.jboss.as.controller.registry.Resource;
 import org.jboss.dmr.ModelNode;
-import org.jboss.modules.ModuleLoadError;
+import org.jboss.dmr.ModelType;
 
 /**
  *
  * @author Alexey Loubyansky
  */
-public class ValidateAddressOperationHandler implements OperationStepHandler, DescriptionProvider {
+public class ValidateAddressOperationHandler implements OperationStepHandler {
 
     public static final String OPERATION_NAME = "validate-address";
     public static final ValidateAddressOperationHandler INSTANCE = new ValidateAddressOperationHandler();
+
+    public static final OperationDefinition DEFINITION = new SimpleOperationDefinitionBuilder(OPERATION_NAME, ControllerResolver.getResolver("global"))
+        .addParameter(
+                SimpleAttributeDefinitionBuilder.create(VALUE, ModelType.OBJECT)
+                    .build())
+        .setReplyParameters(
+                SimpleAttributeDefinitionBuilder.create(VALID, ModelType.BOOLEAN).build(),
+                SimpleAttributeDefinitionBuilder.create(PROBLEM, ModelType.STRING)
+                    .setAllowNull(true)
+                    .build()
+                )
+        .setReadOnly()
+        .build();
 
     @Override
     public void execute(OperationContext context, ModelNode operation) throws OperationFailedException {
@@ -60,38 +72,38 @@ public class ValidateAddressOperationHandler implements OperationStepHandler, De
         final Resource resource = context.readResource(PathAddress.EMPTY_ADDRESS);
         Resource model = resource;
         final Iterator<PathElement> iterator = pathAddr.iterator();
-        int index = 0;
+        PathAddress current = PathAddress.EMPTY_ADDRESS;
         out: while(iterator.hasNext()) {
             final PathElement next = iterator.next();
-            index++;
-            if(model.hasChild(next)) {
-                model = model.getChild(next);
-            } else {
-                final PathAddress subAddress = pathAddr.subAddress(0, index);
-                final ImmutableManagementResourceRegistration registration = context.getResourceRegistration().getSubModel(subAddress);
+            current = current.append(next);
 
-                if(registration != null) {
-                    // If the target is a registered proxy return immediately
-                    boolean remote = registration.isRemote();
-                    if(remote && ! iterator.hasNext()) {
-                        break out;
-                    }
-                    // Create the proxy op
-                    final PathAddress newAddress = pathAddr.subAddress(index);
-                    final ModelNode newOperation = operation.clone();
-                    newOperation.get(OP_ADDR).set(subAddress.toModelNode());
-                    newOperation.get(VALUE).set(newAddress.toModelNode());
+            // Check if the registration is a proxy and dispatch directly
+            final ImmutableManagementResourceRegistration registration = context.getResourceRegistration().getSubModel(current);
+            if(registration != null && registration.isRemote()) {
 
-                    // On the DC the host=master is not a proxy but the validate-address is registered at the root
-                    // Otherwise delegate to the proxy handler
-                    final OperationStepHandler proxyHandler = registration.getOperationHandler(PathAddress.EMPTY_ADDRESS, OPERATION_NAME);
-                    if(proxyHandler != null) {
-                        context.addStep(newOperation, proxyHandler, OperationContext.Stage.IMMEDIATE);
-                        context.stepCompleted();
-                        return;
-                    }
+                // If the target is a registered proxy return immediately
+                if(! iterator.hasNext()) {
+                    break out;
                 }
 
+                // Create the proxy op
+                final PathAddress newAddress = pathAddr.subAddress(current.size());
+                final ModelNode newOperation = operation.clone();
+                newOperation.get(OP_ADDR).set(current.toModelNode());
+                newOperation.get(VALUE).set(newAddress.toModelNode());
+
+                // On the DC the host=master is not a proxy but the validate-address is registered at the root
+                // Otherwise delegate to the proxy handler
+                final OperationStepHandler proxyHandler = registration.getOperationHandler(PathAddress.EMPTY_ADDRESS, OPERATION_NAME);
+                if(proxyHandler != null) {
+                    context.addStep(newOperation, proxyHandler, OperationContext.Stage.MODEL, true);
+                    context.stepCompleted();
+                    return;
+                }
+
+            } else if (model.hasChild(next)) {
+                model = model.getChild(next);
+            } else {
                 // Invalid
                 context.getResult().get(VALID).set(false);
                 context.getResult().get(PROBLEM).set(ControllerMessages.MESSAGES.childResourceNotFound(next));
@@ -101,10 +113,5 @@ public class ValidateAddressOperationHandler implements OperationStepHandler, De
         }
         context.getResult().get(VALID).set(true);
         context.stepCompleted();
-    }
-
-    @Override
-    public ModelNode getModelDescription(Locale locale) {
-        return CommonDescriptions.getValidateAddressOperation(locale);
     }
 }

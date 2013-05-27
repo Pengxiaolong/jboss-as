@@ -24,7 +24,6 @@ package org.jboss.as.web.deployment;
 
 import java.io.File;
 import java.io.FileInputStream;
-import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.util.List;
 import java.util.Properties;
@@ -32,7 +31,6 @@ import java.util.Properties;
 import javax.el.BeanELResolver;
 import javax.el.ExpressionFactory;
 
-import org.apache.el.ExpressionFactoryImpl;
 import org.jboss.as.server.deployment.Attachments;
 import org.jboss.as.server.deployment.DeploymentPhaseContext;
 import org.jboss.as.server.deployment.DeploymentUnit;
@@ -48,19 +46,22 @@ import org.jboss.modules.Module;
  * This resolves a performance issue.
  *
  * @author Stuart Douglas
- * @see https://issues.jboss.org/browse/AS7-5026
+ * @see <a href="https://issues.jboss.org/browse/AS7-5026">jira</a>
  */
 public class ELExpressionFactoryProcessor implements DeploymentUnitProcessor {
 
     public static final String FACTORY_ID = ExpressionFactory.class.getName();
-    private static final Method purge;
+    private static Method purge;
 
     static {
         try {
             purge = BeanELResolver.class.getDeclaredMethod("purgeBeanClasses", ClassLoader.class);
+        } catch (Throwable t) {
+            // Ignore, because other EL implementations may not have it
+            purge = null;
+        }
+        if (purge != null) {
             purge.setAccessible(true);
-        } catch (NoSuchMethodException e) {
-            throw new RuntimeException(e);
         }
     }
 
@@ -103,16 +104,26 @@ public class ELExpressionFactoryProcessor implements DeploymentUnitProcessor {
             }
         } catch (SecurityException se) {
         }
-        FactoryFinderCache.addCacheEntry(module.getClassLoader(), FACTORY_ID, ExpressionFactoryImpl.class.getName());
+        try {
+            FactoryFinderCache.addCacheEntry(module.getClassLoader(), FACTORY_ID, "org.apache.el.ExpressionFactoryImpl");
+        } catch (Throwable t) {
+            // Ignore, because other EL implementations may not have it
+        }
     }
 
     @Override
     public void undeploy(final DeploymentUnit deploymentUnit) {
         final Module module = deploymentUnit.getAttachment(Attachments.MODULE);
-        if(module != null) {
-            FactoryFinderCache.clearClassLoader(module.getClassLoader());
+        if (module != null) {
             try {
-                purge.invoke(new BeanELResolver(), module.getClassLoader());
+                FactoryFinderCache.clearClassLoader(module.getClassLoader());
+            } catch (Throwable t) {
+                // Ignore, because other EL implementations may not have it
+            }
+            try {
+                if (purge != null) {
+                    purge.invoke(new BeanELResolver(), module.getClassLoader());
+                }
             } catch (Exception e) {
                 WebLogger.ROOT_LOGGER.couldNotPurgeELCache(e);
             }

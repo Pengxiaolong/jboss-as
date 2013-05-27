@@ -22,9 +22,7 @@
 
 package org.jboss.as.controller.test;
 
-import java.util.Locale;
-
-import junit.framework.Assert;
+import java.util.Collections;
 
 import org.jboss.as.controller.ExpressionResolver;
 import org.jboss.as.controller.ModelVersion;
@@ -35,13 +33,14 @@ import org.jboss.as.controller.ProcessType;
 import org.jboss.as.controller.ResourceDefinition;
 import org.jboss.as.controller.RunningMode;
 import org.jboss.as.controller.SimpleResourceDefinition;
-import org.jboss.as.controller.descriptions.DescriptionProvider;
 import org.jboss.as.controller.descriptions.ModelDescriptionConstants;
+import org.jboss.as.controller.descriptions.NonResolvingResourceDescriptionResolver;
 import org.jboss.as.controller.registry.GlobalTransformerRegistry;
 import org.jboss.as.controller.registry.ImmutableManagementResourceRegistration;
 import org.jboss.as.controller.registry.ManagementResourceRegistration;
 import org.jboss.as.controller.registry.OperationTransformerRegistry;
 import org.jboss.as.controller.registry.Resource;
+import org.jboss.as.controller.registry.Resource.ResourceEntry;
 import org.jboss.as.controller.transform.AbstractOperationTransformer;
 import org.jboss.as.controller.transform.OperationResultTransformer;
 import org.jboss.as.controller.transform.OperationTransformer;
@@ -52,12 +51,12 @@ import org.jboss.as.controller.transform.TransformationTarget;
 import org.jboss.as.controller.transform.TransformationTargetImpl;
 import org.jboss.as.controller.transform.TransformerRegistry;
 import org.jboss.as.controller.transform.Transformers;
+import org.jboss.as.controller.transform.TransformersLogger;
 import org.jboss.as.controller.transform.TransformersSubRegistration;
 import org.jboss.dmr.ModelNode;
+import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
-
-import java.util.Collections;
 
 /**
  * @author Emanuel Muckenhuber
@@ -79,6 +78,7 @@ public class OperationTransformationTestCase {
         subsystems.add("resource-adapters", "1.1");
     }
 
+    private final Resource resourceRoot = Resource.Factory.create();
     private final GlobalTransformerRegistry registry = new GlobalTransformerRegistry();
     private final ManagementResourceRegistration resourceRegistration = ManagementResourceRegistration.Factory.create(ROOT);
     private final OperationTransformer NOOP_TRANSFORMER = new OperationTransformer() {
@@ -87,26 +87,23 @@ public class OperationTransformationTestCase {
             return new TransformedOperation(new ModelNode(), OperationResultTransformer.ORIGINAL_RESULT);
         }
     };
-    private final Resource resourceRoot = Resource.Factory.create();
+    private final OperationTransformer OPERATION_TRANSFORMER = new OperationTransformer() {
+        @Override
+        public TransformedOperation transformOperation(TransformationContext context, PathAddress address, ModelNode operation) throws OperationFailedException {
+            final ModelNode transformed = operation.clone();
+            transformed.get("param1").set("value1");
+            return new TransformedOperation(transformed, OperationResultTransformer.ORIGINAL_RESULT);
+        }
+    };
 
     @Before
     public void setUp() {
         registry.discardOperation(TEST_DISCARD, 1, 1, "discard");
-        final OperationTransformer transformer = new AbstractOperationTransformer() {
-
-            @Override
-            protected ModelNode transform(TransformationContext context, PathAddress address, ModelNode operation) {
-                final ModelNode transformed = operation.clone();
-                transformed.get("param1").set("value1");
-                return transformed;
-            }
-
-        };
-        registry.registerTransformer(TEST_NORMAL, 1, 2, "normal", transformer);
+        registry.registerTransformer(TEST_NORMAL, 1, 2, "normal", OPERATION_TRANSFORMER);
     }
 
     @Test
-    public void testDiscardOperation() throws OperationFailedException  {
+    public void testDiscardOperation() throws OperationFailedException {
         final ModelNode operation = new ModelNode();
         operation.get(ModelDescriptionConstants.OP).set("discard");
         operation.get(ModelDescriptionConstants.OP_ADDR).set(TEST_DISCARD.toModelNode());
@@ -114,7 +111,7 @@ public class OperationTransformationTestCase {
     }
 
     @Test
-    public void testBasicTransformation() throws OperationFailedException  {
+    public void testBasicTransformation() throws OperationFailedException {
         final ModelNode operation = new ModelNode();
         operation.get(ModelDescriptionConstants.OP).set("normal");
         operation.get(ModelDescriptionConstants.OP_ADDR).set(TEST_NORMAL.toModelNode());
@@ -140,13 +137,14 @@ public class OperationTransformationTestCase {
         final OperationTransformerRegistry localRegistry = registry.create(ModelVersion.create(1, 0, 0), Collections.<PathAddress, ModelVersion>emptyMap());
 
         OperationTransformerRegistry.OperationTransformerEntry entry = localRegistry.resolveOperationTransformer(address, "testing");
-        Assert.assertEquals(OperationTransformerRegistry.TransformationPolicy.FORWARD, entry.getPolicy());
+        Assert.assertSame(OperationTransformerRegistry.FORWARD, entry);
 
         registry.registerTransformer(address, 1, 0, "testing", NOOP_TRANSFORMER);
         localRegistry.mergeSubsystem(registry, "test", ModelVersion.create(1, 0));
 
         entry = localRegistry.resolveOperationTransformer(address, "testing");
-        Assert.assertEquals(OperationTransformerRegistry.TransformationPolicy.TRANSFORM, entry.getPolicy());
+        Assert.assertNotNull(entry);
+        Assert.assertSame(NOOP_TRANSFORMER, entry.getTransformer());
 
     }
 
@@ -214,16 +212,30 @@ public class OperationTransformationTestCase {
 
         final ModelVersion subsystem = ModelVersion.create(1, 2);
         final TransformerRegistry registry = TransformerRegistry.Factory.create(null);
-        registry.registerSubsystemTransformers("test", subsystem, ResourceTransformer.DISCARD);
+        TransformersSubRegistration sub = registry.registerSubsystemTransformers("test", subsystem, ResourceTransformer.DISCARD);
+        sub.registerOperationTransformer("test", OPERATION_TRANSFORMER);
 
-        final TransformationTarget target = create(registry, ModelVersion.create(1, 2, 3));
-        target.addSubsystemVersion("test", subsystem);
+        final TransformationTarget host = create(registry, ModelVersion.create(1, 2, 3));
+        host.addSubsystemVersion("test", subsystem);
 
+        final PathAddress profile = PathAddress.pathAddress(PathElement.pathElement(ModelDescriptionConstants.PROFILE, "test"));
+        final PathAddress serverAddress = PathAddress.pathAddress(PathElement.pathElement(ModelDescriptionConstants.HOST, "test"), PathElement.pathElement(ModelDescriptionConstants.RUNNING_SERVER, "test"));
+        final PathAddress subsytemAddress = PathAddress.pathAddress(PathElement.pathElement(ModelDescriptionConstants.SUBSYSTEM, "test"));
+
+        final OperationTransformer profileTransformer = host.resolveTransformer(new MockTransformationContext(), profile.append(subsytemAddress), "test");
+        Assert.assertEquals(profileTransformer, OPERATION_TRANSFORMER);
+
+        final OperationTransformer serverTransformer = host.resolveTransformer(new MockTransformationContext(), serverAddress.append(subsytemAddress), "test");
+        Assert.assertEquals(serverTransformer, OPERATION_TRANSFORMER);
 
     }
 
     protected TransformationTarget create(final TransformerRegistry registry, ModelVersion version) {
-        return TransformationTargetImpl.create(registry, version, Collections.<PathAddress, ModelVersion>emptyMap(), TransformationTarget.TransformationTargetType.HOST);
+        return create(registry, version, TransformationTarget.TransformationTargetType.HOST);
+    }
+
+    protected TransformationTarget create(final TransformerRegistry registry, ModelVersion version, TransformationTarget.TransformationTargetType type) {
+        return TransformationTargetImpl.create(registry, version, Collections.<PathAddress, ModelVersion>emptyMap(), null, type, null);
     }
 
     protected Resource transform(final TransformationTarget target, final Resource root) throws OperationFailedException {
@@ -240,12 +252,24 @@ public class OperationTransformationTestCase {
         final String operationName = operation.require(ModelDescriptionConstants.OP).asString();
         final OperationTransformerRegistry transformerRegistry = registry.create(ModelVersion.create(major, minor), Collections.<PathAddress, ModelVersion>emptyMap());
         final OperationTransformerRegistry.OperationTransformerEntry entry = transformerRegistry.resolveOperationTransformer(address, operationName);
-        if(entry.getPolicy() == OperationTransformerRegistry.TransformationPolicy.DISCARD) {
+        if (entry.getTransformer() == OperationTransformer.DISCARD) {
             return null;
         } else {
             final OperationTransformer transformer = entry.getTransformer();
             return transformer.transformOperation(TRANSFORMATION_CONTEXT, address, operation).getTransformedOperation();
         }
+    }
+
+    private ModelNode readModelRecursively(Resource resource) {
+        ModelNode model = new ModelNode();
+        model.set(resource.getModel().clone());
+
+        for (String type : resource.getChildTypes()) {
+            for (ResourceEntry entry : resource.getChildren(type)) {
+                model.get(type, entry.getName()).set(readModelRecursively(entry));
+            }
+        }
+        return model;
     }
 
     TransformationContext TRANSFORMATION_CONTEXT = new TransformationContext() {
@@ -289,17 +313,19 @@ public class OperationTransformationTestCase {
         public ModelNode resolveExpressions(ModelNode node) throws OperationFailedException {
             return node;
         }
-    };
 
-    // As usual
-    private static final DescriptionProvider NOOP_PROVIDER = new DescriptionProvider() {
         @Override
-        public ModelNode getModelDescription(Locale locale) {
-            return new ModelNode();
+        public TransformersLogger getLogger() {
+            return TransformersLogger.getLogger(getTarget());
+        }
+
+        @Override
+        public boolean isSkipRuntimeIgnoreCheck() {
+            return false;
         }
     };
 
-    private static final ResourceDefinition ROOT = new SimpleResourceDefinition(PathElement.pathElement("test"), NOOP_PROVIDER);
+    private static final ResourceDefinition ROOT = new SimpleResourceDefinition(PathElement.pathElement("test"), new NonResolvingResourceDescriptionResolver());
 
     private static final ExpressionResolver resolver = new ExpressionResolver() {
         @Override
@@ -307,5 +333,60 @@ public class OperationTransformationTestCase {
             return node;
         }
     };
+
+    private static class MockTransformationContext implements TransformationContext {
+
+        @Override
+        public TransformationTarget getTarget() {
+            return null;
+        }
+
+        @Override
+        public ProcessType getProcessType() {
+            return null;
+        }
+
+        @Override
+        public RunningMode getRunningMode() {
+            return null;
+        }
+
+        @Override
+        public ImmutableManagementResourceRegistration getResourceRegistration(PathAddress address) {
+            return null;
+        }
+
+        @Override
+        public ImmutableManagementResourceRegistration getResourceRegistrationFromRoot(PathAddress address) {
+            return null;
+        }
+
+        @Override
+        public Resource readResource(PathAddress address) {
+            return null;
+        }
+
+        @Override
+        public Resource readResourceFromRoot(PathAddress address) {
+            return null;
+        }
+
+        @Override
+        @Deprecated
+        public ModelNode resolveExpressions(ModelNode node) throws OperationFailedException {
+            return node.resolve();
+        }
+
+        @Override
+        public TransformersLogger getLogger() {
+            return null;
+        }
+
+        @Override
+        public boolean isSkipRuntimeIgnoreCheck() {
+            return false;
+        }
+
+    }
 
 }

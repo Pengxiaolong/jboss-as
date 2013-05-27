@@ -24,13 +24,14 @@ package org.jboss.as.threads;
 
 import org.jboss.as.controller.OperationStepHandler;
 import org.jboss.as.controller.PathElement;
-import org.jboss.as.controller.ResourceDefinition;
+import org.jboss.as.controller.ReadResourceNameOperationStepHandler;
 import org.jboss.as.controller.SimpleResourceDefinition;
 import org.jboss.as.controller.registry.ManagementResourceRegistration;
+import org.jboss.as.controller.transform.description.ResourceTransformationDescriptionBuilder;
 import org.jboss.msc.service.ServiceName;
 
 /**
- * {@link ResourceDefinition} for a queueless thread pool resource.
+ * {@link org.jboss.as.controller.ResourceDefinition} for a queueless thread pool resource.
  *
  * @author Brian Stansberry (c) 2011 Red Hat Inc.
  */
@@ -84,11 +85,22 @@ public class QueuelessThreadPoolResourceDefinition extends SimpleResourceDefinit
 
     @Override
     public void registerAttributes(ManagementResourceRegistration resourceRegistration) {
-        resourceRegistration.registerReadOnlyAttribute(PoolAttributeDefinitions.NAME, null);
+        resourceRegistration.registerReadOnlyAttribute(PoolAttributeDefinitions.NAME, ReadResourceNameOperationStepHandler.INSTANCE);
         QueuelessThreadPoolWriteAttributeHandler writeHandler = new QueuelessThreadPoolWriteAttributeHandler(blocking, serviceNameBase);
         writeHandler.registerAttributes(resourceRegistration);
         if (registerRuntimeOnly) {
             new QueuelessThreadPoolMetricsHandler(serviceNameBase).registerAttributes(resourceRegistration);
         }
+    }
+
+    public static void registerTransformers1_0(ResourceTransformationDescriptionBuilder parent) {
+        registerTransformers1_0(parent, CommonAttributes.BLOCKING_QUEUELESS_THREAD_POOL);
+        registerTransformers1_0(parent, CommonAttributes.QUEUELESS_THREAD_POOL);
+    }
+
+    public static void registerTransformers1_0(ResourceTransformationDescriptionBuilder parent, String type) {
+        parent.addChildResource(PathElement.pathElement(type))
+        .getAttributeBuilder()
+            .addRejectCheck(KeepAliveTimeAttributeDefinition.TRANSFORMATION_CHECKER, PoolAttributeDefinitions.KEEPALIVE_TIME);
     }
 }

@@ -21,6 +21,8 @@
  */
 package org.jboss.as.ejb3.component.entity.entitycache;
 
+import static org.jboss.as.ejb3.EjbMessages.MESSAGES;
+
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
@@ -32,7 +34,6 @@ import javax.ejb.NoSuchEJBException;
 import javax.transaction.Synchronization;
 import javax.transaction.TransactionSynchronizationRegistry;
 
-import org.jboss.as.ejb3.EjbLogger;
 import org.jboss.as.ejb3.component.entity.EntityBeanComponent;
 import org.jboss.as.ejb3.component.entity.EntityBeanComponentInstance;
 
@@ -40,10 +41,9 @@ import org.jboss.as.ejb3.component.entity.EntityBeanComponentInstance;
  * Cache of entity bean component instances by transaction key
  *
  * @author Stuart Douglas
+ * @author <a href="wfink@redhat.com">Wolf-Dieter Fink</a>
  */
 public class TransactionLocalEntityCache implements ReadyEntityCache {
-
-
     private final TransactionSynchronizationRegistry transactionSynchronizationRegistry;
     private final ConcurrentMap<Object, Map<Object, CacheEntry>> cache = new ConcurrentHashMap<Object, Map<Object, CacheEntry>>(Runtime.getRuntime().availableProcessors());
     private final EntityBeanComponent component;
@@ -51,6 +51,26 @@ public class TransactionLocalEntityCache implements ReadyEntityCache {
     public TransactionLocalEntityCache(final EntityBeanComponent component) {
         this.component = component;
         this.transactionSynchronizationRegistry = component.getTransactionSynchronizationRegistry();
+    }
+
+    @Override
+    public synchronized boolean contains(final Object key) {
+        if (!isTransactionActive() || !cache.containsKey(key)) {
+            return false;
+        }
+        final Map<Object, CacheEntry> cache = prepareCache();
+
+        return cache.containsKey(key);
+    }
+
+    @Override
+    public synchronized boolean containsNotRemoved(final Object key) {
+        if (!isTransactionActive() || !cache.containsKey(key)) {
+            return false;
+        }
+        final Map<Object, CacheEntry> cache = prepareCache();
+
+        return cache.containsKey(key) && !cache.get(key).instance.isRemoved();
     }
 
     @Override
@@ -120,7 +140,7 @@ public class TransactionLocalEntityCache implements ReadyEntityCache {
         if (map != null) {
             final CacheEntry cacheEntry = map.get(instance.getPrimaryKey());
             if (cacheEntry == null) {
-                throw EjbLogger.EJB3_LOGGER.entityBeanInstanceNotFoundInCache(instance);
+                throw MESSAGES.entityBeanInstanceNotFoundInCache(instance);
             }
             if (cacheEntry.referenceCount.decrementAndGet() <= 0) {
                 final Object pk = instance.getPrimaryKey();
@@ -138,7 +158,7 @@ public class TransactionLocalEntityCache implements ReadyEntityCache {
         final Map<Object, CacheEntry> cache = prepareCache();
         final CacheEntry cacheEntry = cache.get(instance.getPrimaryKey());
         if (cacheEntry == null) {
-            throw EjbLogger.EJB3_LOGGER.entityBeanInstanceNotFoundInCache(instance);
+            throw MESSAGES.entityBeanInstanceNotFoundInCache(instance);
         }
         cacheEntry.referenceCount.incrementAndGet();
     }
@@ -179,7 +199,7 @@ public class TransactionLocalEntityCache implements ReadyEntityCache {
 
     private EntityBeanComponentInstance createInstance(Object pk) {
         final EntityBeanComponentInstance instance = component.acquireUnAssociatedInstance();
-        instance.associate(pk);
+        instance.activate(pk);
         return instance;
     }
 

@@ -23,8 +23,7 @@ package org.jboss.as.test.integration.security.loginmodules.negotiation;
 
 import org.apache.http.annotation.Immutable;
 import org.apache.http.auth.AuthScheme;
-import org.apache.http.impl.auth.NegotiateSchemeFactory;
-import org.apache.http.impl.auth.SpnegoTokenGenerator;
+import org.apache.http.auth.AuthSchemeFactory;
 import org.apache.http.params.HttpParams;
 
 /**
@@ -34,18 +33,19 @@ import org.apache.http.params.HttpParams;
  * @author Josef Cacek
  */
 @Immutable
-public class JBossNegotiateSchemeFactory extends NegotiateSchemeFactory {
+public class JBossNegotiateSchemeFactory implements AuthSchemeFactory {
 
     // Constructors ----------------------------------------------------------
 
-    public JBossNegotiateSchemeFactory(final SpnegoTokenGenerator spengoGenerator, boolean stripPort) {
-        super(spengoGenerator, stripPort);
+    private final boolean stripPort;
+
+    public JBossNegotiateSchemeFactory(boolean stripPort) {
+        this.stripPort = stripPort;
     }
 
     // Public methods --------------------------------------------------------
 
-    @Override
     public AuthScheme newInstance(final HttpParams params) {
-        return new JBossNegotiateScheme(getSpengoGenerator(), isStripPort());
+        return new JBossNegotiateScheme(stripPort);
     }
 }

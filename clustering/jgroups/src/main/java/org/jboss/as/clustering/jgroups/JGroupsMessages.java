@@ -30,7 +30,9 @@ import org.jboss.logging.annotations.MessageBundle;
 import org.jboss.logging.Messages;
 
 /**
- * Date: 29.08.2011
+ * JGroupsMessages
+ *
+ * logging id range: 10270 - 10279, 10390 - 10399
  *
  * @author <a href="mailto:jperkins@redhat.com">James R. Perkins</a>
  */
@@ -61,7 +63,7 @@ public interface JGroupsMessages {
     @Message(id = 10271, value = "Failed to locate %s")
     String notFound(String resource);
 
-    @Message(id = 10272, value = "A node named %s already exists in this cluster.  Perhaps there is already a server running on this host?  If so, restart this server with a unique node name, via -Djboss.node.name=<node-name>")
+    @Message(id = 10272, value = "A node named %s already exists in this cluster. Perhaps there is already a server running on this host? If so, restart this server with a unique node name, via -Djboss.node.name=<node-name>")
     IllegalStateException duplicateNodeName(String name);
 
     @Message(id = 10273, value = "Transport for stack %s is not defined. Please specify both a transport and protocol list, either as optional parameters to add() or via batching.")
@@ -70,4 +72,30 @@ public interface JGroupsMessages {
     @Message(id = 10274, value = "Protocol list for stack %s is not defined. Please specify both a transport and protocol list, either as optional parameters to add() or via batching.")
     OperationFailedException protocolListNotDefined(String stackName);
 
+    @Message(id = 10275, value = "Protocol with relative path %s is already defined.")
+    OperationFailedException protocolAlreadyDefined(String relativePath);
+
+    @Message(id = 10276, value = "Protocol with relative path %s is not defined.")
+    OperationFailedException protocolNotDefined(String relativePath);
+
+    @Message(id = 10277, value = "Property %s for protocol with relative path %s is not defined.")
+    OperationFailedException propertyNotDefined(String propertyName, String protocolRelativePath);
+
+    @Message(id = 10278, value = "Unknown metric %s")
+    String unknownMetric(String metricName);
+
+    @Message(id = 10279, value = "Unable to load protocol class %s")
+    OperationFailedException unableToLoadProtocolClass(String protocolName);
+
+    @Message(id = 10390, value = "Privileged access exception on attribute %s")
+    String privilegedAccessExceptionForAttribute(String attrName);
+
+    @Message(id = 10391, value = "Instantiation exception on converter for attribute %s")
+    String instantiationExceptionOnConverterForAttribute(String attrName);
+
+    @Message(id = 10392, value = "Protocol %s not found in current stack")
+    String protocolNotFoundInStack(String protocolName);
+
+    @Message(id = 10393, value = "Unable to load protocol class %s")
+    String unableToLoadProtocol(String protocolName);
 }

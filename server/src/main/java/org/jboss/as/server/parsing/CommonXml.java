@@ -34,8 +34,6 @@ import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.COR
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.DEPLOYMENT;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.DEPLOYMENT_OVERLAY;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.DESTINATION_ADDRESS;
-import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.DESTINATION_PORT;
-import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.ENABLED;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.HASH;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.INTERFACE;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.LOCAL_DESTINATION_OUTBOUND_SOCKET_BINDING;
@@ -45,13 +43,10 @@ import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.NOT
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.OP;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.OP_ADDR;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.PATH;
-import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.REGULAR_EXPRESSION;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.RELATIVE_TO;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.REMOTE_DESTINATION_OUTBOUND_SOCKET_BINDING;
-import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.RUNTIME_NAME;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.SCHEMA_LOCATIONS;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.SOCKET_BINDING;
-import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.SOURCE_NETWORK;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.SYSTEM_PROPERTY;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.VALUE;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.VAULT;
@@ -60,7 +55,6 @@ import static org.jboss.as.controller.parsing.ParseUtils.duplicateNamedElement;
 import static org.jboss.as.controller.parsing.ParseUtils.invalidAttributeValue;
 import static org.jboss.as.controller.parsing.ParseUtils.isNoNamespaceAttribute;
 import static org.jboss.as.controller.parsing.ParseUtils.missingRequired;
-import static org.jboss.as.controller.parsing.ParseUtils.parseBoundedIntegerAttribute;
 import static org.jboss.as.controller.parsing.ParseUtils.parsePossibleExpression;
 import static org.jboss.as.controller.parsing.ParseUtils.requireNamespace;
 import static org.jboss.as.controller.parsing.ParseUtils.requireNoAttributes;
@@ -98,6 +92,7 @@ import org.jboss.as.controller.parsing.ParseUtils;
 import org.jboss.as.controller.persistence.ModelMarshallingContext;
 import org.jboss.as.controller.resource.AbstractSocketBindingResourceDefinition;
 import org.jboss.as.controller.resource.SocketBindingGroupResourceDefinition;
+import org.jboss.as.server.controller.resources.DeploymentAttributes;
 import org.jboss.as.server.controller.resources.SystemPropertyResourceDefinition;
 import org.jboss.as.server.operations.SystemPropertyAddHandler;
 import org.jboss.as.server.services.net.LocalDestinationOutboundSocketBindingResourceDefinition;
@@ -241,7 +236,7 @@ public abstract class CommonXml implements XMLElementReader<List<ModelNode>>, XM
         writer.writeStartElement(element.getLocalName());
     }
 
-    protected void writePaths(final XMLExtendedStreamWriter writer, final ModelNode node) throws XMLStreamException {
+    protected void writePaths(final XMLExtendedStreamWriter writer, final ModelNode node, final boolean namedPath) throws XMLStreamException {
         List<Property> paths = node.asPropertyList();
 
         for (Iterator<Property> it = paths.iterator(); it.hasNext(); ) {
@@ -260,7 +255,9 @@ public abstract class CommonXml implements XMLElementReader<List<ModelNode>>, XM
                 final ModelNode value = path.getValue();
                 writer.writeEmptyElement(Element.PATH.getLocalName());
                 writer.writeAttribute(Attribute.NAME.getLocalName(), path.getName());
-                writer.writeAttribute(Attribute.PATH.getLocalName(), value.get(PATH).asString());
+                if (!namedPath || value.get(PATH).isDefined()) {
+                    writer.writeAttribute(Attribute.PATH.getLocalName(), value.get(PATH).asString());
+                }
                 if (value.has(RELATIVE_TO) && value.get(RELATIVE_TO).isDefined()) {
                     writer.writeAttribute(Attribute.RELATIVE_TO.getLocalName(), value.get(RELATIVE_TO).asString());
                 }
@@ -317,7 +314,7 @@ public abstract class CommonXml implements XMLElementReader<List<ModelNode>>, XM
     protected void parsePath(final XMLExtendedStreamReader reader, final ModelNode address, final List<ModelNode> list,
                              final boolean requirePath, final Set<String> defined) throws XMLStreamException {
         String name = null;
-        String path = null;
+        ModelNode path = null;
         String relativeTo = null;
         final int count = reader.getAttributeCount();
         for (int i = 0; i < count; i++) {
@@ -338,7 +335,7 @@ public abstract class CommonXml implements XMLElementReader<List<ModelNode>>, XM
                         break;
                     }
                     case PATH: {
-                        path = value;
+                        path = ParseUtils.parsePossibleExpression(value);
                         break;
                     }
                     case RELATIVE_TO: {
@@ -361,7 +358,7 @@ public abstract class CommonXml implements XMLElementReader<List<ModelNode>>, XM
         final ModelNode update = new ModelNode();
         update.get(OP_ADDR).set(address).add(ModelDescriptionConstants.PATH, name);
         update.get(OP).set(ADD);
-        update.get(NAME).set(name);
+        //update.get(NAME).set(name);
         if (path != null)
             update.get(PATH).set(path);
         if (relativeTo != null)
@@ -769,10 +766,7 @@ public abstract class CommonXml implements XMLElementReader<List<ModelNode>>, XM
     private ModelNode parseClientMapping(XMLExtendedStreamReader reader) throws XMLStreamException {
         final ModelNode mapping = new ModelNode();
 
-        // Ensure all fields exist, even if not defined
-        final ModelNode sourceNetwork = mapping.get(SOURCE_NETWORK);
-        final ModelNode destination = mapping.get(DESTINATION_ADDRESS);
-        final ModelNode destinationPort = mapping.get(DESTINATION_PORT);
+        boolean hasDestinationAddress = false;
         final int count = reader.getAttributeCount();
         for (int i = 0; i < count; i++) {
             final String value = reader.getAttributeValue(i);
@@ -783,23 +777,19 @@ public abstract class CommonXml implements XMLElementReader<List<ModelNode>>, XM
             final Attribute attribute = Attribute.forName(reader.getAttributeLocalName(i));
             switch (attribute) {
                 case SOURCE_NETWORK:
-                    validateAddressMask(value, reader.getLocation());
-                    sourceNetwork.set(value);
+                    AbstractSocketBindingResourceDefinition.CLIENT_MAPPING_SOURCE_NETWORK.parseAndSetParameter(value, mapping, reader);
                     break;
                 case DESTINATION_ADDRESS:
-                    if (value == null || value.isEmpty()) {
-                        throw invalidAttributeValue(reader, i);
-                    }
-                    // We can't validate the address since the client is allowed to resolve private DNS names
-                    destination.set(value);
+                    AbstractSocketBindingResourceDefinition.CLIENT_MAPPING_DESTINATION_ADDRESS.parseAndSetParameter(value, mapping, reader);
+                    hasDestinationAddress = true;
                     break;
                 case DESTINATION_PORT: {
-                    destinationPort.set(parseBoundedIntegerAttribute(reader, i, 0, 65535, true));
+                    AbstractSocketBindingResourceDefinition.CLIENT_MAPPING_DESTINATION_PORT.parseAndSetParameter(value, mapping, reader);
                     break;
                 }
             }
         }
-        if (!destination.isDefined()) {
+        if (!hasDestinationAddress) {
             throw MESSAGES.missingRequiredAttributes(new StringBuilder(DESTINATION_ADDRESS), reader.getLocation());
         }
 
@@ -981,11 +971,11 @@ public abstract class CommonXml implements XMLElementReader<List<ModelNode>>, XM
             if (Element.DEPLOYMENT != deployment) {
                 throw unexpectedElement(reader);
             }
+            final ModelNode deploymentAdd = Util.getEmptyOperation(ADD, null);
 
             // Handle attributes
             String uniqueName = null;
-            String runtimeName = null;
-            String startInput = null;
+            Set<Attribute> requiredAttributes = EnumSet.of(Attribute.NAME, Attribute.RUNTIME_NAME);
             final int count = reader.getAttributeCount();
             for (int i = 0; i < count; i++) {
                 final String value = reader.getAttributeValue(i);
@@ -996,6 +986,7 @@ public abstract class CommonXml implements XMLElementReader<List<ModelNode>>, XM
                     if (!allowedAttributes.contains(attribute)) {
                         throw unexpectedAttribute(reader, i);
                     }
+                    requiredAttributes.remove(attribute);
                     switch (attribute) {
                         case NAME: {
                             if (!names.add(value)) {
@@ -1005,11 +996,11 @@ public abstract class CommonXml implements XMLElementReader<List<ModelNode>>, XM
                             break;
                         }
                         case RUNTIME_NAME: {
-                            runtimeName = value;
+                            DeploymentAttributes.RUNTIME_NAME.parseAndSetParameter(value, deploymentAdd, reader);
                             break;
                         }
                         case ENABLED: {
-                            startInput = value;
+                            DeploymentAttributes.ENABLED.parseAndSetParameter(value, deploymentAdd, reader);
                             break;
                         }
                         default:
@@ -1017,16 +1008,17 @@ public abstract class CommonXml implements XMLElementReader<List<ModelNode>>, XM
                     }
                 }
             }
-            if (uniqueName == null) {
-                throw missingRequired(reader, Collections.singleton(Attribute.NAME));
+            if (requiredAttributes.size() > 0) {
+                throw missingRequired(reader, requiredAttributes);
             }
-            if (runtimeName == null) {
-                throw missingRequired(reader, Collections.singleton(Attribute.RUNTIME_NAME));
-            }
-            final boolean enabled = startInput == null ? true : Boolean.parseBoolean(startInput);
 
             final ModelNode deploymentAddress = address.clone().add(DEPLOYMENT, uniqueName);
-            final ModelNode deploymentAdd = Util.getEmptyOperation(ADD, deploymentAddress);
+            deploymentAdd.get(OP_ADDR).set(deploymentAddress);
+
+            // Deal with the mismatch between the xsd default value for 'enabled' and the mgmt API value
+            if (allowedAttributes.contains(Attribute.ENABLED) && !deploymentAdd.hasDefined(DeploymentAttributes.ENABLED.getName())) {
+                deploymentAdd.get(DeploymentAttributes.ENABLED.getName()).set(true);
+            }
 
             // Handle elements
             while (reader.hasNext() && reader.nextTag() != END_ELEMENT) {
@@ -1050,16 +1042,11 @@ public abstract class CommonXml implements XMLElementReader<List<ModelNode>>, XM
                 }
             }
 
-            deploymentAdd.get(RUNTIME_NAME).set(runtimeName);
-            if (allowedAttributes.contains(Attribute.ENABLED)) {
-                deploymentAdd.get(ENABLED).set(enabled);
-            }
             list.add(deploymentAdd);
         }
     }
 
-
-    protected void parseDeploymentOverlays(final XMLExtendedStreamReader reader, final Namespace namespace, final ModelNode baseAddress, final List<ModelNode> list) throws XMLStreamException {
+    protected void parseDeploymentOverlays(final XMLExtendedStreamReader reader, final Namespace namespace, final ModelNode baseAddress, final List<ModelNode> list, final boolean allowContent, final boolean allowDeployment) throws XMLStreamException {
         requireNoAttributes(reader);
 
         while (reader.nextTag() != END_ELEMENT) {
@@ -1068,7 +1055,7 @@ public abstract class CommonXml implements XMLElementReader<List<ModelNode>>, XM
 
             switch (element) {
                 case DEPLOYMENT_OVERLAY:
-                    parseDeploymentOverlay(reader, baseAddress, list);
+                    parseDeploymentOverlay(reader, baseAddress, list, allowContent, allowDeployment);
                     break;
                 default:
                     throw unexpectedElement(reader);
@@ -1076,7 +1063,7 @@ public abstract class CommonXml implements XMLElementReader<List<ModelNode>>, XM
         }
     }
 
-    protected void parseDeploymentOverlay(final XMLExtendedStreamReader reader, final ModelNode baseAddress, final List<ModelNode> list) throws XMLStreamException {
+    protected void parseDeploymentOverlay(final XMLExtendedStreamReader reader, final ModelNode baseAddress, final List<ModelNode> list, final boolean allowContent, final boolean allowDeployment) throws XMLStreamException {
 
         final EnumSet<Attribute> required = EnumSet.of(Attribute.NAME);
         String name = null;
@@ -1110,16 +1097,12 @@ public abstract class CommonXml implements XMLElementReader<List<ModelNode>>, XM
 
         while (reader.nextTag() != END_ELEMENT) {
             final Element element = Element.forName(reader.getLocalName());
-
-            switch (element) {
-                case CONTENT:
-                    parseContentOverride(name, reader, baseAddress, list);
-                    break;
-                case DEPLOYMENT:
-                    parseDeploymentOverlayDeployment(name, reader, baseAddress, list);
-                    break;
-                default:
-                    throw unexpectedElement(reader);
+            if(element == Element.CONTENT && allowContent) {
+                parseContentOverride(name, reader, baseAddress, list);
+            } else if(element == Element.DEPLOYMENT && allowDeployment) {
+                parseDeploymentOverlayDeployment(name, reader, baseAddress, list);
+            } else {
+                throw unexpectedElement(reader);
             }
         }
     }
@@ -1172,7 +1155,6 @@ public abstract class CommonXml implements XMLElementReader<List<ModelNode>>, XM
 
         final EnumSet<Attribute> required = EnumSet.of(Attribute.NAME);
         String depName = null;
-        boolean regEx = false;
         final int count = reader.getAttributeCount();
         for (int i = 0; i < count; i++) {
             requireNoNamespaceAttribute(reader, i);
@@ -1182,10 +1164,6 @@ public abstract class CommonXml implements XMLElementReader<List<ModelNode>>, XM
             switch (attribute) {
                 case NAME: {
                     depName = value;
-                    break;
-                }
-                case REGULAR_EXPRESSION: {
-                    regEx = Boolean.parseBoolean(value);
                     break;
                 }
                 default:
@@ -1206,7 +1184,6 @@ public abstract class CommonXml implements XMLElementReader<List<ModelNode>>, XM
         final ModelNode op = new ModelNode();
         op.get(OP).set(ADD);
         op.get(OP_ADDR).set(address);
-        op.get(REGULAR_EXPRESSION).set(regEx);
         list.add(op);
 
     }
@@ -1466,26 +1443,14 @@ public abstract class CommonXml implements XMLElementReader<List<ModelNode>>, XM
                 AbstractSocketBindingResourceDefinition.MULTICAST_ADDRESS.marshallAsAttribute(binding, writer);
                 AbstractSocketBindingResourceDefinition.MULTICAST_PORT.marshallAsAttribute(binding, writer);
 
-                // TODO do this in ClientMappingsAttributeDefinition
                 ModelNode attr = binding.get(CLIENT_MAPPINGS);
                 if (attr.isDefined()) {
                     for (ModelNode mapping : attr.asList()) {
                         writer.writeEmptyElement(Element.CLIENT_MAPPING.getLocalName());
 
-                        attr = mapping.get(SOURCE_NETWORK);
-                        if (attr.isDefined()) {
-                            writeAttribute(writer, Attribute.SOURCE_NETWORK, attr.asString());
-                        }
-
-                        attr = mapping.get(DESTINATION_ADDRESS);
-                        if (attr.isDefined()) {
-                            writeAttribute(writer, Attribute.DESTINATION_ADDRESS, attr.asString());
-                        }
-
-                        attr = mapping.get(DESTINATION_PORT);
-                        if (attr.isDefined()) {
-                            writeAttribute(writer, Attribute.DESTINATION_PORT, attr.asString());
-                        }
+                        AbstractSocketBindingResourceDefinition.CLIENT_MAPPING_SOURCE_NETWORK.marshallAsAttribute(mapping, writer);
+                        AbstractSocketBindingResourceDefinition.CLIENT_MAPPING_DESTINATION_ADDRESS.marshallAsAttribute(mapping, writer);
+                        AbstractSocketBindingResourceDefinition.CLIENT_MAPPING_DESTINATION_PORT.marshallAsAttribute(mapping, writer);
                     }
                 }
 
@@ -1643,12 +1608,8 @@ public abstract class CommonXml implements XMLElementReader<List<ModelNode>>, XM
                     if (deploymentNames.size() > 0) {
                         for (String deploymentName : deploymentNames) {
                             final ModelNode depNode = deployments.get(deploymentName);
-                            final boolean regEx = depNode.hasDefined(REGULAR_EXPRESSION) ? depNode.get(REGULAR_EXPRESSION).asBoolean() : false;
                             writer.writeStartElement(Element.DEPLOYMENT.getLocalName());
                             writeAttribute(writer, Attribute.NAME, deploymentName);
-                            if (regEx) {
-                                writeAttribute(writer, Attribute.REGULAR_EXPRESSION, "true");
-                            }
                             writer.writeEndElement();
                         }
                     }

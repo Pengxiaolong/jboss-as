@@ -23,9 +23,7 @@
 package org.jboss.as.messaging;
 
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.OP_ADDR;
-import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.READ_ATTRIBUTE_OPERATION;
 
-import org.jboss.as.controller.ControllerMessages;
 import org.jboss.as.controller.OperationContext;
 import org.jboss.as.controller.PathAddress;
 import org.jboss.dmr.ModelNode;
@@ -91,9 +89,9 @@ public class ManagementUtil {
         return result;
     }
 
-    public static void rollbackOperationWithNoHandler(OperationContext context, ModelNode operation) {
-        context.getFailureDescription().set(ControllerMessages.MESSAGES.noHandler(READ_ATTRIBUTE_OPERATION, PathAddress.pathAddress(operation.require(OP_ADDR))));
+    public static void rollbackOperationWithResourceNotFound(OperationContext context, ModelNode operation) {
+        context.getFailureDescription().set(MessagingMessages.MESSAGES.hqServerManagementServiceResourceNotFound(PathAddress.pathAddress(operation.require(OP_ADDR))));
         context.setRollbackOnly();
-        context.completeStep();
+        context.stepCompleted();
     }
 }

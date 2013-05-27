@@ -22,10 +22,13 @@
 
 package org.jboss.as.ejb3.remote.protocol.versionone;
 
+import java.util.Map;
+
 import org.jboss.as.ejb3.deployment.DeploymentModuleIdentifier;
 import org.jboss.as.ejb3.deployment.DeploymentRepository;
 import org.jboss.as.ejb3.deployment.EjbDeploymentInformation;
 import org.jboss.as.ejb3.deployment.ModuleDeployment;
+import org.jboss.as.ejb3.remote.protocol.AbstractMessageHandler;
 
 /**
  * @author Jaikiran Pai
@@ -40,7 +43,11 @@ abstract class EJBIdentifierBasedMessageHandler extends AbstractMessageHandler {
 
     protected EjbDeploymentInformation findEJB(final String appName, final String moduleName, final String distinctName, final String beanName) {
         final DeploymentModuleIdentifier ejbModule = new DeploymentModuleIdentifier(appName, moduleName, distinctName);
-        final ModuleDeployment moduleDeployment = this.deploymentRepository.getModules().get(ejbModule);
+        final Map<DeploymentModuleIdentifier, ModuleDeployment> modules = this.deploymentRepository.getModules();
+        if (modules == null || modules.isEmpty()) {
+            return null;
+        }
+        final ModuleDeployment moduleDeployment = modules.get(ejbModule);
         if (moduleDeployment == null) {
             return null;
         }

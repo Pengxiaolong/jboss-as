@@ -22,36 +22,55 @@
 
 package org.jboss.as.test.clustering.extended.ejb2.stateful.passivation;
 
+import static org.jboss.as.test.clustering.ClusteringTestConstants.CLUSTER_ESTABLISHMENT_LOOP_COUNT;
+import static org.jboss.as.test.clustering.ClusteringTestConstants.CLUSTER_ESTABLISHMENT_WAIT_MS;
+import static org.jboss.as.test.clustering.ClusteringTestConstants.CLUSTER_NAME;
+import static org.jboss.as.test.clustering.ClusteringTestConstants.WAIT_FOR_PASSIVATION_MS;
+
 import java.io.IOException;
 import java.util.HashMap;
 import java.util.Map;
-import javax.naming.InitialContext;
 
-import junit.framework.Assert;
+import javax.naming.NamingException;
 
-import org.jboss.arquillian.container.test.api.*;
+import org.junit.Assert;
+
+import org.jboss.arquillian.container.test.api.ContainerController;
+import org.jboss.arquillian.container.test.api.Deployer;
 import org.jboss.as.arquillian.container.ManagementClient;
 import org.jboss.as.controller.client.ModelControllerClient;
 import org.jboss.as.test.clustering.DMRUtil;
 import org.jboss.as.test.clustering.EJBClientContextSelector;
+import org.jboss.as.test.clustering.EJBDirectory;
+import org.jboss.as.test.clustering.RemoteEJBDirectory;
 import org.jboss.ejb.client.ClusterContext;
 import org.jboss.ejb.client.ContextSelector;
 import org.jboss.ejb.client.EJBClientContext;
 import org.jboss.logging.Logger;
-
-import static org.jboss.as.test.clustering.ClusteringTestConstants.*;
+import org.junit.AfterClass;
+import org.junit.BeforeClass;
 
 /**
  * Base class for passivation tests on EJB2 beans.
- * 
+ *
  * @author Ondrej Chaloupka
  */
 public abstract class ClusterPassivationTestBase {
     private static Logger log = Logger.getLogger(ClusterPassivationTestBase.class);
     public static final String ARCHIVE_NAME = "cluster-passivation-test";
     public static final String ARCHIVE_NAME_HELPER = "cluster-passivation-test-helper";
-   
-    protected static InitialContext context;
+
+    protected static EJBDirectory directory;
+
+    @BeforeClass
+    public static void beforeClass() throws NamingException {
+        directory = new RemoteEJBDirectory(ARCHIVE_NAME);
+    }
+
+    @AfterClass
+    public static void destroy() throws NamingException {
+        directory.close();
+    }
 
     // Properties pass amongst tests
     protected static ContextSelector<EJBClientContext> previousSelector;
@@ -85,7 +104,7 @@ public abstract class ClusterPassivationTestBase {
 
     /**
      * Start servers whether their are not started.
-     * 
+     *
      * @param client1 client for server1
      * @param client2 client for server2
      */
@@ -126,9 +145,9 @@ public abstract class ClusterPassivationTestBase {
         // A small hack - deleting node (by name) from cluster which this client knows
         // It means that the next request (ejb call) will be passed to the server #2
         EJBClientContext.requireCurrent().getClusterContext(CLUSTER_NAME).removeClusterNode(calledNodeFirst);
-        
+
         Assert.assertEquals("Supposing to get passivation node which was set", calledNodeFirst, statefulBean.getPassivatedBy());
-        
+
         String calledNodeSecond = statefulBean.incrementNumber(); // 42
         statefulBean.setPassivationNode(calledNodeSecond);
         log.info("Called node name second: " + calledNodeSecond);
@@ -151,7 +170,7 @@ public abstract class ClusterPassivationTestBase {
         Assert.assertEquals("It can't be node " + calledNodeSecond + " because is switched off", calledNodeFirst, calledNode);
 
         Assert.assertEquals("Supposing to get passivation node which was set", calledNodeSecond, statefulBean.getPassivatedBy());
-        
+
         Thread.sleep(WAIT_FOR_PASSIVATION_MS); // waiting for passivation
         Assert.assertEquals(++clientNumber, statefulBean.getNumber()); // 43
     }

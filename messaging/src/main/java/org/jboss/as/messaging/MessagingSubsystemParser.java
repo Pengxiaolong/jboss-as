@@ -40,14 +40,12 @@ import static org.jboss.as.messaging.CommonAttributes.CONNECTION_FACTORY;
 import static org.jboss.as.messaging.CommonAttributes.CONNECTOR;
 import static org.jboss.as.messaging.CommonAttributes.DEFAULT;
 import static org.jboss.as.messaging.CommonAttributes.DURABLE;
-import static org.jboss.as.messaging.CommonAttributes.FACTORY_CLASS;
 import static org.jboss.as.messaging.CommonAttributes.FILTER;
 import static org.jboss.as.messaging.CommonAttributes.HORNETQ_SERVER;
 import static org.jboss.as.messaging.CommonAttributes.IN_VM_ACCEPTOR;
 import static org.jboss.as.messaging.CommonAttributes.IN_VM_CONNECTOR;
 import static org.jboss.as.messaging.CommonAttributes.JMS_QUEUE;
 import static org.jboss.as.messaging.CommonAttributes.JMS_TOPIC;
-import static org.jboss.as.messaging.CommonAttributes.LIVE_CONNECTOR_REF;
 import static org.jboss.as.messaging.CommonAttributes.PARAM;
 import static org.jboss.as.messaging.CommonAttributes.POOLED_CONNECTION_FACTORY;
 import static org.jboss.as.messaging.CommonAttributes.REMOTE_ACCEPTOR;
@@ -131,6 +129,7 @@ public class MessagingSubsystemParser implements XMLStreamConstants, XMLElementR
             case MESSAGING_1_1:
             case MESSAGING_1_2:
             case MESSAGING_1_3:
+            case MESSAGING_1_4:
                 processHornetQServers(reader, address, list);
                 break;
             default:
@@ -249,8 +248,8 @@ public class MessagingSubsystemParser implements XMLStreamConstants, XMLElementR
                     parseDirectory(reader, CommonAttributes.LARGE_MESSAGES_DIRECTORY, address, list);
                     break;
                 case LIVE_CONNECTOR_REF: {
-                    String string = readStringAttributeElement(reader, CommonAttributes.CONNECTOR_NAME);
-                    LIVE_CONNECTOR_REF.parseAndSetParameter(string, operation, reader);
+                    MessagingLogger.ROOT_LOGGER.deprecatedXMLElement(element.toString());
+                    skipElementText(reader);
                     break;
                 }
                 case PAGING_DIRECTORY:
@@ -297,6 +296,9 @@ public class MessagingSubsystemParser implements XMLStreamConstants, XMLElementR
                         throw unexpectedEndElement(reader);
                     }
                     break;
+                case CLUSTERED:
+                    // log that the attribute is deprecated but handle it anyway
+                    MessagingLogger.ROOT_LOGGER.deprecatedXMLElement(element.toString());
                 default:
                     if (SIMPLE_ROOT_RESOURCE_ELEMENTS.contains(element)) {
                         AttributeDefinition attributeDefinition = element.getDefinition();
@@ -304,13 +306,22 @@ public class MessagingSubsystemParser implements XMLStreamConstants, XMLElementR
                             handleElementText(reader, element, operation);
                         } else {
                             // These should be handled in specific case blocks above, e.g. case REMOTING_INTERCEPTORS:
-                            throw MESSAGES.unsupportedElement(element.getLocalName());
+                            handleComplexConfigurationAttribute(reader, element, operation);
                         }
                     } else {
-                        throw ParseUtils.unexpectedElement(reader);
+                        handleUnknownConfigurationAttribute(reader, element, operation);
                     }
             }
         } while (reader.hasNext() && localName.equals(elementName) == false);
+    }
+
+    protected void handleComplexConfigurationAttribute(XMLExtendedStreamReader reader, Element element, ModelNode operation) throws XMLStreamException {
+        throw MESSAGES.unsupportedElement(element.getLocalName());
+    }
+
+    protected void handleUnknownConfigurationAttribute(XMLExtendedStreamReader reader, Element element, ModelNode operation)
+            throws XMLStreamException {
+        throw ParseUtils.unexpectedElement(reader);
     }
 
     private static void processConnectorServices(XMLExtendedStreamReader reader, ModelNode address, List<ModelNode> updates) throws XMLStreamException {
@@ -353,10 +364,12 @@ public class MessagingSubsystemParser implements XMLStreamConstants, XMLElementR
                 }
                 case PARAM: {
                     String[] attrs = ParseUtils.requireAttributes(reader, Attribute.KEY.getLocalName(), Attribute.VALUE.getLocalName());
-                    requireNoContent(reader);
-                    final ModelNode paramAdd = org.jboss.as.controller.operations.common.Util.getEmptyOperation(ADD, serviceAddress.clone().add(CommonAttributes.PARAM, attrs[0]));
-                    CommonAttributes.VALUE.parseAndSetParameter(attrs[1], paramAdd, reader);
+                    final String key = attrs[0];
+                    final String value = attrs[1];
+                    final ModelNode paramAdd = org.jboss.as.controller.operations.common.Util.getEmptyOperation(ADD, serviceAddress.clone().add(CommonAttributes.PARAM, key));
+                    ConnectorServiceParamDefinition.VALUE.parseAndSetParameter(value, paramAdd, reader);
                     updates.add(paramAdd);
+                    requireNoContent(reader);
                     break;
                 }
                 default: {
@@ -367,7 +380,7 @@ public class MessagingSubsystemParser implements XMLStreamConstants, XMLElementR
 
 
         if(!required.isEmpty()) {
-            missingRequired(reader, required);
+            throw missingRequired(reader, required);
         }
 
     }
@@ -405,7 +418,6 @@ public class MessagingSubsystemParser implements XMLStreamConstants, XMLElementR
             switch (element) {
                 case FORWARD_WHEN_NO_CONSUMERS:
                 case MAX_HOPS:
-                case CONFIRMATION_WINDOW_SIZE:
                     handleElementText(reader, element, clusterConnectionAdd);
                     break;
                 case ADDRESS:  {
@@ -417,6 +429,9 @@ public class MessagingSubsystemParser implements XMLStreamConstants, XMLElementR
                     handleElementText(reader, element, "simple", clusterConnectionAdd);
                     break;
                 }
+                case CONFIRMATION_WINDOW_SIZE:
+                    handleElementText(reader, element, "bridge", clusterConnectionAdd);
+                    break;
                 case USE_DUPLICATE_DETECTION:
                 case RETRY_INTERVAL:
                     // Use the "cluster" variant
@@ -433,16 +448,33 @@ public class MessagingSubsystemParser implements XMLStreamConstants, XMLElementR
                     break;
                 }
                 default: {
-                    throw ParseUtils.unexpectedElement(reader);
+                    handleUnknownClusterConnectionAttribute(reader, element, clusterConnectionAdd);
                 }
             }
         }
 
         if(!required.isEmpty()) {
-            missingRequired(reader, required);
+            throw missingRequired(reader, required);
         }
 
+        checkClusterConnectionConstraints(reader, seen);
+
         updates.add(clusterConnectionAdd);
+    }
+
+    protected void handleUnknownClusterConnectionAttribute(XMLExtendedStreamReader reader, Element element, ModelNode clusterConnectionAdd)
+            throws XMLStreamException {
+        throw ParseUtils.unexpectedElement(reader);
+    }
+
+    protected void checkClusterConnectionConstraints(XMLExtendedStreamReader reader, Set<Element> seen) throws XMLStreamException {
+    }
+
+    protected void checkBroadcastGroupConstraints(XMLExtendedStreamReader reader, Set<Element> seen) throws XMLStreamException {
+        checkOnlyOneOfElements(reader, seen, Element.GROUP_ADDRESS, Element.SOCKET_BINDING);
+        if (seen.contains(Element.GROUP_ADDRESS) && !seen.contains(Element.GROUP_PORT)) {
+            throw missingRequired(reader, EnumSet.of(Element.GROUP_PORT));
+        }
     }
 
     private void processBridges(XMLExtendedStreamReader reader, ModelNode address, List<ModelNode> updates) throws XMLStreamException {
@@ -479,17 +511,19 @@ public class MessagingSubsystemParser implements XMLStreamConstants, XMLElementR
                 case QUEUE_NAME:
                 case HA:
                 case TRANSFORMER_CLASS_NAME:
-                case RETRY_INTERVAL_MULTIPLIER:
-                case CONFIRMATION_WINDOW_SIZE:
                 case USER:
                 case PASSWORD:
                     handleElementText(reader, element, bridgeAdd);
+                    break;
+                case CONFIRMATION_WINDOW_SIZE:
+                    handleElementText(reader, element, "bridge", bridgeAdd);
                     break;
                 case FILTER:  {
                     String string = readStringAttributeElement(reader, CommonAttributes.STRING);
                     FILTER.parseAndSetParameter(string, bridgeAdd, reader);
                     break;
                 }
+                case RETRY_INTERVAL_MULTIPLIER:
                 case RETRY_INTERVAL:
                     // Use the "default" variant
                     handleElementText(reader, element, DEFAULT, bridgeAdd);
@@ -523,7 +557,7 @@ public class MessagingSubsystemParser implements XMLStreamConstants, XMLElementR
         checkOnlyOneOfElements(reader, seen, Element.STATIC_CONNECTORS, Element.DISCOVERY_GROUP_REF);
 
         if(!required.isEmpty()) {
-            missingRequired(reader, required);
+            throw missingRequired(reader, required);
         }
 
         updates.add(bridgeAdd);
@@ -568,7 +602,7 @@ public class MessagingSubsystemParser implements XMLStreamConstants, XMLElementR
         }
 
         if(!required.isEmpty()) {
-            missingRequired(reader, required);
+            throw missingRequired(reader, required);
         }
     }
 
@@ -600,7 +634,7 @@ public class MessagingSubsystemParser implements XMLStreamConstants, XMLElementR
         }
 
         if(!required.isEmpty()) {
-            missingRequired(reader, required);
+            throw missingRequired(reader, required);
         }
 
         updates.add(groupingHandlerAdd);
@@ -622,7 +656,7 @@ public class MessagingSubsystemParser implements XMLStreamConstants, XMLElementR
         }
     }
 
-    static void processBroadcastGroups(XMLExtendedStreamReader reader, ModelNode address, List<ModelNode> updates) throws XMLStreamException {
+    void processBroadcastGroups(XMLExtendedStreamReader reader, ModelNode address, List<ModelNode> updates) throws XMLStreamException {
         requireNoAttributes(reader);
         while(reader.hasNext() && reader.nextTag() != END_ELEMENT) {
             final Element element = Element.forName(reader.getLocalName());
@@ -637,7 +671,7 @@ public class MessagingSubsystemParser implements XMLStreamConstants, XMLElementR
         }
     }
 
-    private static void parseBroadcastGroup(XMLExtendedStreamReader reader, ModelNode address, List<ModelNode> updates) throws XMLStreamException {
+    protected void parseBroadcastGroup(XMLExtendedStreamReader reader, ModelNode address, List<ModelNode> updates) throws XMLStreamException {
 
         String name = null;
 
@@ -656,15 +690,15 @@ public class MessagingSubsystemParser implements XMLStreamConstants, XMLElementR
             }
         }
         if(name == null) {
-            ParseUtils.missingRequired(reader, Collections.singleton(Attribute.NAME));
+            throw missingRequired(reader, Collections.singleton(Attribute.NAME));
         }
 
         ModelNode broadcastGroupAdd = org.jboss.as.controller.operations.common.Util.getEmptyOperation(ADD, address.clone().add(CommonAttributes.BROADCAST_GROUP, name));
 
-        EnumSet<Element> required = EnumSet.of(Element.GROUP_ADDRESS, Element.GROUP_PORT);
+        Set<Element> seen = EnumSet.noneOf(Element.class);
         while(reader.hasNext() && reader.nextTag() != END_ELEMENT) {
             final Element element = Element.forName(reader.getLocalName());
-            required.remove(element);
+            seen.add(element);
             switch (element) {
                 case LOCAL_BIND_ADDRESS:
                 case LOCAL_BIND_PORT:
@@ -678,19 +712,22 @@ public class MessagingSubsystemParser implements XMLStreamConstants, XMLElementR
                     handleElementText(reader, element, "broadcast-group", broadcastGroupAdd);
                     break;
                 default: {
-                    throw ParseUtils.unexpectedElement(reader);
+                    handleUnknownBroadcastGroupAttribute(reader, element, broadcastGroupAdd);
                 }
             }
         }
 
-        if(!required.isEmpty()) {
-            missingRequired(reader, required);
-        }
+        checkBroadcastGroupConstraints(reader, seen);
 
         updates.add(broadcastGroupAdd);
     }
 
-    static void processDiscoveryGroups(XMLExtendedStreamReader reader, ModelNode address, List<ModelNode> updates) throws XMLStreamException {
+    protected void handleUnknownBroadcastGroupAttribute(XMLExtendedStreamReader reader, Element element, ModelNode operation)
+            throws XMLStreamException {
+        throw ParseUtils.unexpectedElement(reader);
+    }
+
+    void processDiscoveryGroups(XMLExtendedStreamReader reader, ModelNode address, List<ModelNode> updates) throws XMLStreamException {
         requireNoAttributes(reader);
         while(reader.hasNext() && reader.nextTag() != END_ELEMENT) {
             final Element element = Element.forName(reader.getLocalName());
@@ -705,7 +742,7 @@ public class MessagingSubsystemParser implements XMLStreamConstants, XMLElementR
         }
     }
 
-    private static void parseDiscoveryGroup(XMLExtendedStreamReader reader, ModelNode address, List<ModelNode> updates) throws XMLStreamException {
+    protected void parseDiscoveryGroup(XMLExtendedStreamReader reader, ModelNode address, List<ModelNode> updates) throws XMLStreamException {
 
         String name = null;
 
@@ -724,15 +761,15 @@ public class MessagingSubsystemParser implements XMLStreamConstants, XMLElementR
             }
         }
         if(name == null) {
-            ParseUtils.missingRequired(reader, Collections.singleton(Attribute.NAME));
+            throw  missingRequired(reader, Collections.singleton(Attribute.NAME));
         }
 
         ModelNode discoveryGroup = org.jboss.as.controller.operations.common.Util.getEmptyOperation(ADD, address.clone().add(CommonAttributes.DISCOVERY_GROUP, name));
 
-        EnumSet<Element> required = EnumSet.of(Element.GROUP_ADDRESS, Element.GROUP_PORT);
+        Set<Element> seen = EnumSet.noneOf(Element.class);
         while(reader.hasNext() && reader.nextTag() != END_ELEMENT) {
             final Element element = Element.forName(reader.getLocalName());
-            required.remove(element);
+            seen.add(element);
             switch (element) {
                 case LOCAL_BIND_ADDRESS:
                 case GROUP_ADDRESS:
@@ -743,16 +780,26 @@ public class MessagingSubsystemParser implements XMLStreamConstants, XMLElementR
                     handleElementText(reader, element, discoveryGroup);
                     break;
                 default: {
-                    throw ParseUtils.unexpectedElement(reader);
+                    handleUnknownDiscoveryGroupAttribute(reader, element, discoveryGroup);
                 }
             }
         }
 
-        if(!required.isEmpty()) {
-            missingRequired(reader, required);
-        }
+        checkDiscoveryGroupConstraints(reader, seen);
 
         updates.add(discoveryGroup);
+    }
+
+    protected void handleUnknownDiscoveryGroupAttribute(XMLExtendedStreamReader reader, Element element, ModelNode operation)
+            throws XMLStreamException {
+        throw ParseUtils.unexpectedElement(reader);
+    }
+
+    protected void checkDiscoveryGroupConstraints(XMLExtendedStreamReader reader, Set<Element> seen) throws XMLStreamException {
+        checkOnlyOneOfElements(reader, seen, Element.GROUP_ADDRESS, Element.SOCKET_BINDING);
+        if (seen.contains(Element.GROUP_ADDRESS) && !seen.contains(Element.GROUP_PORT)) {
+            throw missingRequired(reader, EnumSet.of(Element.GROUP_PORT));
+        }
     }
 
     void processConnectionFactories(final XMLExtendedStreamReader reader, ModelNode address, List<ModelNode> updates) throws XMLStreamException {
@@ -787,11 +834,11 @@ public class MessagingSubsystemParser implements XMLStreamConstants, XMLElementR
        }
     }
 
-    static void processAcceptors(final XMLExtendedStreamReader reader, final ModelNode address, final List<ModelNode> updates) throws XMLStreamException {
+   void processAcceptors(final XMLExtendedStreamReader reader, final ModelNode address, final List<ModelNode> updates) throws XMLStreamException {
         while(reader.hasNext() && reader.nextTag() != END_ELEMENT) {
             String name = null;
             String socketBinding = null;
-            int serverId = 0;
+            String serverId = null;
 
             int count = reader.getAttributeCount();
             for (int i = 0; i < count; i++) {
@@ -807,7 +854,7 @@ public class MessagingSubsystemParser implements XMLStreamConstants, XMLElementR
                         break;
                     }
                     case SERVER_ID: {
-                        serverId = Integer.valueOf(attrValue);
+                        serverId = attrValue;
                         break;
                     }
                     default: {
@@ -828,7 +875,7 @@ public class MessagingSubsystemParser implements XMLStreamConstants, XMLElementR
                 case ACCEPTOR: {
                     acceptorAddress.add(ACCEPTOR, name);
                     if(socketBinding != null) operation.get(RemoteTransportDefinition.SOCKET_BINDING.getName()).set(socketBinding);
-                    parseTransportConfigurationParams(reader, operation, true);
+                    parseTransportConfiguration(reader, operation, true);
                     break;
                 } case NETTY_ACCEPTOR: {
                     acceptorAddress.add(REMOTE_ACCEPTOR, name);
@@ -836,12 +883,14 @@ public class MessagingSubsystemParser implements XMLStreamConstants, XMLElementR
                         throw ParseUtils.missingRequired(reader, Collections.singleton(Attribute.SOCKET_BINDING));
                     }
                     operation.get(RemoteTransportDefinition.SOCKET_BINDING.getName()).set(socketBinding);
-                    parseTransportConfigurationParams(reader, operation, false);
+                    parseTransportConfiguration(reader, operation, false);
                     break;
                 } case IN_VM_ACCEPTOR: {
                     acceptorAddress.add(IN_VM_ACCEPTOR, name);
-                    operation.get(InVMTransportDefinition.SERVER_ID.getName()).set(serverId);
-                    parseTransportConfigurationParams(reader, operation, false);
+                    if (serverId != null) {
+                        InVMTransportDefinition.SERVER_ID.parseAndSetParameter(serverId, operation, reader);
+                    }
+                    parseTransportConfiguration(reader, operation, false);
                     break;
                 } default: {
                     throw ParseUtils.unexpectedElement(reader);
@@ -912,7 +961,7 @@ public class MessagingSubsystemParser implements XMLStreamConstants, XMLElementR
         }
     }
 
-    static ModelNode processSecuritySettings(final XMLExtendedStreamReader reader, final ModelNode address, final List<ModelNode> operations) throws XMLStreamException {
+    private ModelNode processSecuritySettings(final XMLExtendedStreamReader reader, final ModelNode address, final List<ModelNode> operations) throws XMLStreamException {
         final ModelNode security = new ModelNode();
         String localName = null;
         do {
@@ -938,7 +987,7 @@ public class MessagingSubsystemParser implements XMLStreamConstants, XMLElementR
         return security;
     }
 
-    static void parseSecurityRoles(final XMLExtendedStreamReader reader, final ModelNode address, final List<ModelNode> operations) throws XMLStreamException {
+    private void parseSecurityRoles(final XMLExtendedStreamReader reader, final ModelNode address, final List<ModelNode> operations) throws XMLStreamException {
 
         final Map<String, Set<AttributeDefinition>> permsByRole = new HashMap<String, Set<AttributeDefinition>>();
         String localName = null;
@@ -960,7 +1009,7 @@ public class MessagingSubsystemParser implements XMLStreamConstants, XMLElementR
                 required.remove(attribute);
                 switch (attribute) {
                     case ROLES_ATTR_NAME:
-                        roles = reader.getListAttributeValue(i);
+                        roles = parseRolesAttribute(reader, i);
                         break;
                     case TYPE_ATTR_NAME:
                         perm = SecurityRoleDefinition.ROLE_ATTRIBUTES_BY_XML_NAME.get(reader.getAttributeValue(i));
@@ -1011,11 +1060,15 @@ public class MessagingSubsystemParser implements XMLStreamConstants, XMLElementR
         }
     }
 
-    static void processConnectors(final XMLExtendedStreamReader reader, final ModelNode address, final List<ModelNode> updates) throws XMLStreamException {
+    protected List<String> parseRolesAttribute(final XMLExtendedStreamReader reader, int index) throws XMLStreamException {
+        return reader.getListAttributeValue(index);
+    }
+
+     void processConnectors(final XMLExtendedStreamReader reader, final ModelNode address, final List<ModelNode> updates) throws XMLStreamException {
         while(reader.hasNext() && reader.nextTag() != END_ELEMENT) {
             String name = null;
             String socketBinding = null;
-            int serverId = 0;
+            String serverId = null;
 
             int count = reader.getAttributeCount();
             for (int i = 0; i < count; i++) {
@@ -1031,7 +1084,7 @@ public class MessagingSubsystemParser implements XMLStreamConstants, XMLElementR
                         break;
                     }
                     case SERVER_ID: {
-                        serverId = Integer.valueOf(attrValue);
+                        serverId = attrValue;
                         break;
                     }
                     default: {
@@ -1040,7 +1093,7 @@ public class MessagingSubsystemParser implements XMLStreamConstants, XMLElementR
                 }
             }
             if(name == null) {
-                ParseUtils.missingRequired(reader, Collections.singleton(Attribute.NAME));
+                throw missingRequired(reader, Collections.singleton(Attribute.NAME));
             }
 
             final ModelNode connectorAddress = address.clone();
@@ -1052,20 +1105,22 @@ public class MessagingSubsystemParser implements XMLStreamConstants, XMLElementR
                 case CONNECTOR: {
                     connectorAddress.add(CONNECTOR, name);
                     if(socketBinding != null) operation.get(RemoteTransportDefinition.SOCKET_BINDING.getName()).set(socketBinding);
-                    parseTransportConfigurationParams(reader, operation, true);
+                    parseTransportConfiguration(reader, operation, true);
                     break;
                 } case NETTY_CONNECTOR: {
                     connectorAddress.add(REMOTE_CONNECTOR, name);
                     if(socketBinding == null) {
-                        ParseUtils.missingRequired(reader, Collections.singleton(Attribute.SOCKET_BINDING));
+                        throw missingRequired(reader, Collections.singleton(Attribute.SOCKET_BINDING));
                     }
                     operation.get(RemoteTransportDefinition.SOCKET_BINDING.getName()).set(socketBinding);
-                    parseTransportConfigurationParams(reader, operation, false);
+                    parseTransportConfiguration(reader, operation, false);
                     break;
                 } case IN_VM_CONNECTOR: {
                     connectorAddress.add(IN_VM_CONNECTOR, name);
-                    operation.get(InVMTransportDefinition.SERVER_ID.getName()).set(serverId);
-                    parseTransportConfigurationParams(reader, operation, false);
+                    if (serverId != null) {
+                        InVMTransportDefinition.SERVER_ID.parseAndSetParameter(serverId, operation, reader);
+                    }
+                    parseTransportConfiguration(reader, operation, false);
                     break;
                 } default: {
                     throw ParseUtils.unexpectedElement(reader);
@@ -1132,39 +1187,36 @@ public class MessagingSubsystemParser implements XMLStreamConstants, XMLElementR
         return addressSettingsSpec;
     }
 
-    static void parseTransportConfigurationParams(final XMLExtendedStreamReader reader, final ModelNode transportConfig, final boolean generic) throws XMLStreamException {
-        final ModelNode params = new ModelNode();
-
+   void parseTransportConfiguration(final XMLExtendedStreamReader reader, final ModelNode operation, final boolean generic) throws XMLStreamException {
         while(reader.hasNext() && reader.nextTag() != END_ELEMENT) {
-            int count = reader.getAttributeCount();
-            String key = null;
-            String value = null;
-            for (int n = 0; n < count; n++) {
-                String attrName = reader.getAttributeLocalName(n);
-                Attribute attribute = Attribute.forName(attrName);
-                switch (attribute) {
-                    case KEY:
-                        key = reader.getAttributeValue(n);
-                        break;
-                    case VALUE:
-                        value = reader.getAttributeValue(n);
-                        break;
-                    default:
-                        throw unexpectedAttribute(reader, n);
-                }
-            }
-
             Element element = Element.forName(reader.getLocalName());
             switch(element) {
                 case FACTORY_CLASS: {
                     if(! generic) {
                         throw ParseUtils.unexpectedElement(reader);
                     }
-                    transportConfig.get(FACTORY_CLASS.getName()).set(reader.getElementText().trim());
+                    handleElementText(reader, element, operation);
                     break;
                 }
                 case PARAM: {
-                    params.add(key, value);
+                    int count = reader.getAttributeCount();
+                    String key = null;
+                    String value = null;
+                    for (int n = 0; n < count; n++) {
+                        String attrName = reader.getAttributeLocalName(n);
+                        Attribute attribute = Attribute.forName(attrName);
+                        switch (attribute) {
+                            case KEY:
+                                key = reader.getAttributeValue(n);
+                                break;
+                            case VALUE:
+                                value = reader.getAttributeValue(n);
+                                break;
+                            default:
+                                throw unexpectedAttribute(reader, n);
+                        }
+                    }
+                    operation.get(PARAM).add(key, TransportParamDefinition.VALUE.parse(value, reader));
                     ParseUtils.requireNoContent(reader);
                     break;
                 } default: {
@@ -1172,11 +1224,10 @@ public class MessagingSubsystemParser implements XMLStreamConstants, XMLElementR
                 }
             }
         }
-        transportConfig.get(PARAM).set(params);
     }
 
     static void parseDirectory(final XMLExtendedStreamReader reader, final String name, final ModelNode address, final List<ModelNode> updates) throws XMLStreamException {
-        String path = null;
+        ModelNode path = null;
         String relativeTo = null;
         final int count = reader.getAttributeCount();
         for (int i = 0; i < count; i++) {
@@ -1188,7 +1239,7 @@ public class MessagingSubsystemParser implements XMLStreamConstants, XMLElementR
                     relativeTo = value;
                     break;
                 case PATH:
-                    path = value;
+                    path = MessagingPathHandlers.PATHS.get(name).parse(value, reader);
                     break;
                 default:
                     throw unexpectedAttribute(reader, i);
@@ -1267,7 +1318,7 @@ public class MessagingSubsystemParser implements XMLStreamConstants, XMLElementR
         }
 
         if(!required.isEmpty()) {
-            missingRequired(reader, required);
+            throw missingRequired(reader, required);
         }
 
         list.add(divertAdd);
@@ -1353,7 +1404,7 @@ public class MessagingSubsystemParser implements XMLStreamConstants, XMLElementR
 
         final String name = reader.getAttributeValue(0);
         if(name == null) {
-            ParseUtils.missingRequired(reader, Collections.singleton("name"));
+            throw missingRequired(reader, Collections.singleton("name"));
         }
 
         final ModelNode topic = new ModelNode();
@@ -1428,7 +1479,7 @@ public class MessagingSubsystemParser implements XMLStreamConstants, XMLElementR
     void processPooledConnectionFactory(final XMLExtendedStreamReader reader, ModelNode address, List<ModelNode> updates) throws XMLStreamException {
         final String name = reader.getAttributeValue(0);
         if(name == null) {
-            ParseUtils.missingRequired(reader, Collections.singleton("name"));
+            throw missingRequired(reader, Collections.singleton("name"));
         }
 
         final ModelNode connectionFactory = new ModelNode();
@@ -1509,7 +1560,6 @@ public class MessagingSubsystemParser implements XMLStreamConstants, XMLElementR
                 case CALL_TIMEOUT:
                 case CONSUMER_WINDOW_SIZE:
                 case CONSUMER_MAX_RATE:
-                case CONFIRMATION_WINDOW_SIZE:
                 case PRODUCER_WINDOW_SIZE:
                 case PRODUCER_MAX_RATE:
                 case CACHE_LARGE_MESSAGE_CLIENT:
@@ -1528,6 +1578,7 @@ public class MessagingSubsystemParser implements XMLStreamConstants, XMLElementR
                 case GROUP_ID:
                     handleElementText(reader, element, connectionFactory);
                     break;
+                case CONFIRMATION_WINDOW_SIZE:
                 case CONNECTION_TTL:
                 case MAX_RETRY_INTERVAL:
                 case MIN_LARGE_MESSAGE_SIZE:
@@ -1606,7 +1657,7 @@ public class MessagingSubsystemParser implements XMLStreamConstants, XMLElementR
                 // end of pooled CF elements
                 // =========================================================
                 default: {
-                    throw ParseUtils.unexpectedElement(reader);
+                    handleUnknownConnectionFactoryAttribute(reader, element, connectionFactory, pooled);
                 }
             }
         }
@@ -1614,6 +1665,10 @@ public class MessagingSubsystemParser implements XMLStreamConstants, XMLElementR
         checkOnlyOneOfElements(reader, seen, Element.CONNECTORS, Element.DISCOVERY_GROUP_REF);
 
         return connectionFactory;
+    }
+
+    protected void handleUnknownConnectionFactoryAttribute(XMLExtendedStreamReader reader, Element element, ModelNode connectionFactory, boolean pooled) throws XMLStreamException {
+        throw ParseUtils.unexpectedElement(reader);
     }
 
     protected void checkOtherElementIsNotAlreadyDefined(XMLStreamReader reader, Set<Element> seen, Element currentElement, Element otherElement) throws XMLStreamException {

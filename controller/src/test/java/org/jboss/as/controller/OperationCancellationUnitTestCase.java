@@ -37,7 +37,6 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 import java.io.IOException;
-import java.util.Locale;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
@@ -46,12 +45,8 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.jboss.as.controller.client.ModelControllerClient;
-import org.jboss.as.controller.descriptions.DescriptionProvider;
 import org.jboss.as.controller.operations.common.Util;
 import org.jboss.as.controller.operations.global.GlobalOperationHandlers;
-import org.jboss.as.controller.persistence.ConfigurationPersistenceException;
-import org.jboss.as.controller.persistence.ConfigurationPersister;
-import org.jboss.as.controller.persistence.NullConfigurationPersister;
 import org.jboss.as.controller.registry.ManagementResourceRegistration;
 import org.jboss.as.controller.registry.Resource;
 import org.jboss.dmr.ModelNode;
@@ -74,8 +69,6 @@ import org.junit.Test;
  */
 public class OperationCancellationUnitTestCase {
 
-    protected static boolean useNonRecursive;
-
     private static final Executor executor = Executors.newCachedThreadPool();
 
     private static CountDownLatch blockObject;
@@ -95,22 +88,19 @@ public class OperationCancellationUnitTestCase {
     public void setupController() throws InterruptedException {
 
         // restore default
-        useNonRecursive = false;
         blockObject = new CountDownLatch(1);
         latch = new CountDownLatch(1);
 
         System.out.println("=========  New Test \n");
         container = ServiceContainer.Factory.create("test");
         ServiceTarget target = container.subTarget();
-        ControlledProcessState processState = new ControlledProcessState(true);
-        ModelControllerService svc = new ModelControllerService(processState);
+        ModelControllerService svc = new ModelControllerService();
         ServiceBuilder<ModelController> builder = target.addService(ServiceName.of("ModelController"), svc);
         builder.install();
-        svc.latch.await();
+        svc.awaitStartup(30, TimeUnit.SECONDS);
         controller = svc.getValue();
         ModelNode setup = Util.getEmptyOperation("setup", new ModelNode());
         controller.execute(setup, null, null, null);
-        processState.setRunning();
 
         client = controller.createClient(executor);
     }
@@ -156,18 +146,7 @@ public class OperationCancellationUnitTestCase {
         }
     }
 
-    public static class ModelControllerService extends AbstractControllerService {
-
-        final AtomicBoolean state = new AtomicBoolean(true);
-        final CountDownLatch latch = new CountDownLatch(1);
-
-        ModelControllerService(final ControlledProcessState processState) {
-            this(processState, new NullConfigurationPersister());
-        }
-
-        ModelControllerService(final ControlledProcessState processState, final ConfigurationPersister configurationPersister) {
-            super(ProcessType.EMBEDDED_SERVER, new RunningModeControl(RunningMode.NORMAL), configurationPersister, processState, DESC_PROVIDER, null, ExpressionResolver.DEFAULT);
-        }
+    public static class ModelControllerService extends TestModelControllerService {
 
         @Override
         protected void initModel(Resource rootResource, ManagementResourceRegistration rootRegistration) {
@@ -176,19 +155,13 @@ public class OperationCancellationUnitTestCase {
             rootRegistration.registerOperationHandler("composite", CompositeOperationHandler.INSTANCE, DESC_PROVIDER, false);
             rootRegistration.registerOperationHandler("good", new ModelStageGoodHandler(), DESC_PROVIDER, false);
             rootRegistration.registerOperationHandler("block-model", new ModelStageBlocksHandler(), DESC_PROVIDER, false);
-            rootRegistration.registerOperationHandler("block-runtime", new RuntimeStageBlocksHandler(state), DESC_PROVIDER, false);
+            rootRegistration.registerOperationHandler("block-runtime", new RuntimeStageBlocksHandler(getSharedState()), DESC_PROVIDER, false);
             rootRegistration.registerOperationHandler("good-service", new GoodServiceHandler(), DESC_PROVIDER, false);
             rootRegistration.registerOperationHandler("block-verify", new BlockingServiceHandler(), DESC_PROVIDER, false);
 
             GlobalOperationHandlers.registerGlobalOperations(rootRegistration, processType);
 
             rootRegistration.registerSubModel(PathElement.pathElement("child"), DESC_PROVIDER);
-        }
-
-        @Override
-        protected void finishBoot() throws ConfigurationPersistenceException {
-            super.finishBoot();
-            latch.countDown();
         }
     }
 
@@ -211,12 +184,6 @@ public class OperationCancellationUnitTestCase {
     }
 
     @Test
-    public void testModelStageInterruptionNonRecursive() throws Exception {
-        useNonRecursive = true;
-        testModelStageInterruption();
-    }
-
-    @Test
     public void testRuntimeStageInterruption() throws Exception {
         ModelNode step1 = getOperation("good", "attr1", 2);
         ModelNode step2 = getOperation("block-runtime", "attr2", 1);
@@ -235,12 +202,6 @@ public class OperationCancellationUnitTestCase {
     }
 
     @Test
-    public void testRuntimeStageInterruptionNonRecursive() throws Exception {
-        useNonRecursive = true;
-        testRuntimeStageInterruption();
-    }
-
-    @Test
     public void testVerifyStageInterruption() throws Exception {
         ModelNode step1 = getOperation("good", "attr1", 2);
         ModelNode step2 = getOperation("good-service", "attr1", 2);
@@ -255,12 +216,6 @@ public class OperationCancellationUnitTestCase {
         ModelNode result = controller.execute(getOperation("good", "attr1", 1), null, null, null);
         assertEquals(SUCCESS, result.get(OUTCOME).asString());
         assertEquals(1, result.get(RESULT).asInt());
-    }
-
-    @Test
-    public void testVerifyStageInterruptionNonRecursive() throws Exception {
-        useNonRecursive = true;
-        testVerifyStageInterruption();
     }
 
     @Test
@@ -284,12 +239,6 @@ public class OperationCancellationUnitTestCase {
         assertEquals(SUCCESS, result.get(OUTCOME).asString());
         assertEquals(1, result.get(RESULT).asInt());
 
-    }
-
-    @Test
-    public void testReadResourceForUpdateInterruptionNonRecursive() throws Exception {
-        useNonRecursive = true;
-        testReadResourceForUpdateInterruption();
     }
 
     public static ModelNode getOperation(String opName, String attr, int val) {
@@ -333,7 +282,7 @@ public class OperationCancellationUnitTestCase {
             context.createResource(PathAddress.EMPTY_ADDRESS.append(PathElement.pathElement("child", "one"))).getModel().set(child1);
             context.createResource(PathAddress.EMPTY_ADDRESS.append(PathElement.pathElement("child", "two"))).getModel().set(child2);
 
-            context.completeStep();
+            context.stepCompleted();
         }
     }
 
@@ -359,11 +308,7 @@ public class OperationCancellationUnitTestCase {
 
             context.getResult().set(current);
 
-            if (useNonRecursive) {
-                context.completeStep(OperationContext.RollbackHandler.NOOP_ROLLBACK_HANDLER);
-            } else {
-                context.completeStep();
-            }
+            context.completeStep(OperationContext.RollbackHandler.NOOP_ROLLBACK_HANDLER);
         }
     }
 
@@ -378,11 +323,7 @@ public class OperationCancellationUnitTestCase {
 
             context.getResult();
 
-            if (useNonRecursive) {
-                context.completeStep(OperationContext.RollbackHandler.NOOP_ROLLBACK_HANDLER);
-            } else {
-                context.completeStep();
-            }
+            context.completeStep(OperationContext.RollbackHandler.NOOP_ROLLBACK_HANDLER);
         }
     }
 
@@ -408,24 +349,17 @@ public class OperationCancellationUnitTestCase {
                 public void execute(OperationContext context, ModelNode operation) {
                     toggleRuntimeState(state);
                     block();
-                    if (useNonRecursive) {
-                        context.completeStep(new OperationContext.RollbackHandler() {
-                            @Override
-                            public void handleRollback(OperationContext context, ModelNode operation) {
-                                toggleRuntimeState(state);
-                            }
-                        });
-                    } else if (context.completeStep() == OperationContext.ResultAction.ROLLBACK) {
-                        toggleRuntimeState(state);
-                    }
+
+                    context.completeStep(new OperationContext.RollbackHandler() {
+                        @Override
+                        public void handleRollback(OperationContext context, ModelNode operation) {
+                            toggleRuntimeState(state);
+                        }
+                    });
                 }
             }, OperationContext.Stage.RUNTIME);
 
-            if (useNonRecursive) {
-                context.completeStep(OperationContext.RollbackHandler.NOOP_ROLLBACK_HANDLER);
-            } else {
-                context.completeStep();
-            }
+            context.completeStep(OperationContext.RollbackHandler.NOOP_ROLLBACK_HANDLER);
         }
     }
 
@@ -446,24 +380,17 @@ public class OperationCancellationUnitTestCase {
                             .addListener(verificationHandler)
                             .install();
                     context.addStep(verificationHandler, OperationContext.Stage.VERIFY);
-                    if (useNonRecursive) {
-                        context.completeStep(new OperationContext.RollbackHandler() {
-                            @Override
-                            public void handleRollback(OperationContext context, ModelNode operation) {
-                                context.removeService(svcName);
-                            }
-                        });
-                    } else if (context.completeStep() == OperationContext.ResultAction.ROLLBACK) {
-                        context.removeService(svcName);
-                    }
+
+                    context.completeStep(new OperationContext.RollbackHandler() {
+                        @Override
+                        public void handleRollback(OperationContext context, ModelNode operation) {
+                            context.removeService(svcName);
+                        }
+                    });
                 }
             }, OperationContext.Stage.RUNTIME);
 
-            if (useNonRecursive) {
-                context.completeStep(OperationContext.RollbackHandler.NOOP_ROLLBACK_HANDLER);
-            } else {
-                context.completeStep();
-            }
+            context.completeStep(OperationContext.RollbackHandler.NOOP_ROLLBACK_HANDLER);
         }
     }
 
@@ -502,33 +429,19 @@ public class OperationCancellationUnitTestCase {
                             .addListener(verificationHandler)
                             .install();
                     context.addStep(verificationHandler, OperationContext.Stage.VERIFY);
-                    if (useNonRecursive) {
-                        context.completeStep(new OperationContext.RollbackHandler() {
-                            @Override
-                            public void handleRollback(OperationContext context, ModelNode operation) {
-                                context.removeService(svcName);
-                            }
-                        });
-                    } else if (context.completeStep() == OperationContext.ResultAction.ROLLBACK) {
-                        context.removeService(svcName);
-                    }
+
+                    context.completeStep(new OperationContext.RollbackHandler() {
+                        @Override
+                        public void handleRollback(OperationContext context, ModelNode operation) {
+                            context.removeService(svcName);
+                        }
+                    });
                 }
             }, OperationContext.Stage.RUNTIME);
 
-            if (useNonRecursive) {
-                context.completeStep(OperationContext.RollbackHandler.NOOP_ROLLBACK_HANDLER);
-            } else {
-                context.completeStep();
-            }
+            context.completeStep(OperationContext.RollbackHandler.NOOP_ROLLBACK_HANDLER);
         }
     }
-
-    public static final DescriptionProvider DESC_PROVIDER = new DescriptionProvider() {
-        @Override
-        public ModelNode getModelDescription(Locale locale) {
-            return new ModelNode();
-        }
-    };
 
     static class RollbackTransactionControl implements ModelController.OperationTransactionControl {
 

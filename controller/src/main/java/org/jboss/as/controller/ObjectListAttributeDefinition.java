@@ -22,16 +22,15 @@
 
 package org.jboss.as.controller;
 
-import java.util.List;
 import java.util.Locale;
 import java.util.ResourceBundle;
+
 import javax.xml.stream.XMLStreamException;
 import javax.xml.stream.XMLStreamWriter;
 
 import org.jboss.as.controller.client.helpers.MeasurementUnit;
 import org.jboss.as.controller.descriptions.ModelDescriptionConstants;
 import org.jboss.as.controller.descriptions.ResourceDescriptionResolver;
-import org.jboss.as.controller.operations.validation.AllowedValuesValidator;
 import org.jboss.as.controller.operations.validation.MinMaxValidator;
 import org.jboss.as.controller.operations.validation.ParameterValidator;
 import org.jboss.as.controller.registry.AttributeAccess;
@@ -53,7 +52,7 @@ public class ObjectListAttributeDefinition extends ListAttributeDefinition {
 
     private ObjectListAttributeDefinition(final String name, final String xmlName, final ObjectTypeAttributeDefinition valueType, final boolean allowNull, final int minSize, final int maxSize, final String[] alternatives, final String[] requires,
                                           final AttributeMarshaller attributeMarshaller, final boolean resourceOnly, final DeprecationData deprecated, final AttributeAccess.Flag... flags) {
-        super(name, xmlName, allowNull, minSize, maxSize, valueType.getValidator(), alternatives, requires, attributeMarshaller, resourceOnly, deprecated, flags);
+        super(name, xmlName, allowNull, false, minSize, maxSize, valueType.getValidator(), alternatives, requires, attributeMarshaller, resourceOnly, deprecated, flags);
         this.valueType = valueType;
     }
 
@@ -100,6 +99,17 @@ public class ObjectListAttributeDefinition extends ListAttributeDefinition {
             }
             writer.writeEndElement();
         }
+    }
+
+    /**
+     * Uses the {@link ObjectTypeAttributeDefinition} passed to the constructor to
+     * {@link ObjectTypeAttributeDefinition#convertParameterExpressions(ModelNode) convert the element's expressions}.
+     *
+     * {@inheritDoc}
+     */
+    @Override
+    protected ModelNode convertParameterElementExpressions(ModelNode parameterElement) {
+        return valueType.convertParameterExpressions(parameterElement);
     }
 
     protected void addValueTypeDescription(final ModelNode node, final String prefix, final ResourceBundle bundle,
@@ -160,17 +170,7 @@ public class ObjectListAttributeDefinition extends ListAttributeDefinition {
                 }
             }
         }
-        if (validator instanceof AllowedValuesValidator) {
-            AllowedValuesValidator avv = (AllowedValuesValidator) validator;
-            List<ModelNode> allowed = avv.getAllowedValues();
-            if (allowed != null) {
-                for (ModelNode ok : allowed) {
-                    node.get(ModelDescriptionConstants.ALLOWED).add(ok);
-                }
-            }
-        }
-
-
+        addAllowedValuesToDescription(node, validator);
         valueType.addValueTypeDescription(node, prefix, bundle,resolver,locale);
     }
 

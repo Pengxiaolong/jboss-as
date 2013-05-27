@@ -21,16 +21,19 @@
 */
 package org.jboss.as.domain.controller.operations;
 
-import static junit.framework.Assert.assertNotNull;
 import static org.jboss.as.controller.ControllerMessages.MESSAGES;
+import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.ADD;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.DEPLOYMENT;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.EXTENSION;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.GROUP;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.HOST;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.INTERFACE;
+import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.NAME;
+import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.OP;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.OP_ADDR;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.PATH;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.PROFILE;
+import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.REMOVE;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.SERVER;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.SERVER_CONFIG;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.SERVER_GROUP;
@@ -39,12 +42,11 @@ import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.SYS
 import static org.junit.Assert.fail;
 
 import java.io.InputStream;
-import java.net.SocketException;
-import java.net.UnknownHostException;
 import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
@@ -71,8 +73,7 @@ import org.jboss.as.controller.registry.ManagementResourceRegistration;
 import org.jboss.as.controller.registry.OperationEntry;
 import org.jboss.as.controller.registry.Resource;
 import org.jboss.as.domain.controller.LocalHostControllerInfo;
-import org.jboss.as.network.NetworkInterfaceBinding;
-import org.jboss.as.repository.ContentRepository;
+import org.jboss.as.host.controller.discovery.DiscoveryOption;
 import org.jboss.dmr.ModelNode;
 import org.jboss.msc.service.ServiceController;
 import org.jboss.msc.service.ServiceName;
@@ -80,7 +81,6 @@ import org.jboss.msc.service.ServiceRegistry;
 import org.jboss.msc.service.ServiceTarget;
 
 /**
- *
  * @author <a href="kabir.khan@jboss.com">Kabir Khan</a>
  */
 public abstract class AbstractOperationTestCase {
@@ -121,35 +121,27 @@ public abstract class AbstractOperationTestCase {
             return null;
         }
 
-        public String getRemoteDomainControllerHost() {
-            return null;
-        }
-
-        public int getRemoteDomainControllerPort() {
-            return 0;
-        }
-
         public String getRemoteDomainControllerUsername() {
             return null;
         }
 
-        public NetworkInterfaceBinding getNetworkInterfaceBinding(String name) throws SocketException, UnknownHostException {
-            return null;
-        }
-
-        public ContentRepository getContentRepository() {
+        public List<DiscoveryOption> getRemoteDomainControllerDiscoveryOptions() {
             return null;
         }
 
         public ControlledProcessState.State getProcessState() {
             return null;
         }
+
+        @Override
+        public boolean isRemoteDomainControllerIgnoreUnaffectedConfiguration() {
+            return false;
+        }
     };
 
     MockOperationContext getOperationContext() {
         return getOperationContext(false);
     }
-
 
     MockOperationContext getOperationContext(final boolean booting) {
         final Resource root = createRootResource();
@@ -167,9 +159,10 @@ public abstract class AbstractOperationTestCase {
         private final PathAddress operationAddress;
         private Set<PathAddress> expectedSteps = new HashSet<PathAddress>();
         private final Map<AttachmentKey<?>, Object> valueAttachments = new HashMap<AttachmentKey<?>, Object>();
+        private final ModelNode result = new ModelNode();
 
 
-        private MockOperationContext(final Resource root, final boolean booting, final PathAddress operationAddress) {
+        protected MockOperationContext(final Resource root, final boolean booting, final PathAddress operationAddress) {
             this.root = root;
             this.booting = booting;
             this.operationAddress = operationAddress;
@@ -187,7 +180,9 @@ public abstract class AbstractOperationTestCase {
         }
 
         public void addStep(OperationStepHandler step, OperationContext.Stage stage) throws IllegalArgumentException {
-            fail("Should not have added step");
+            if (stage == Stage.RUNTIME) {
+                fail("Should not have added step");
+            }
         }
 
         @Override
@@ -196,8 +191,19 @@ public abstract class AbstractOperationTestCase {
         }
 
         public void addStep(ModelNode operation, OperationStepHandler step, OperationContext.Stage stage) throws IllegalArgumentException {
+            addStep(operation, step, stage, false);
+        }
+        public void addStep(ModelNode operation, OperationStepHandler step, OperationContext.Stage stage, boolean addFirst) throws IllegalArgumentException {
             final PathAddress opAddress = PathAddress.pathAddress(operation.get(OP_ADDR));
             if (!expectedSteps.contains(opAddress)) {
+                if (opAddress.size() == 2){
+                    //Ignore the add/removing running server add step done by ServerAddHandler and ServerRemoveHandler
+                    if (opAddress.getElement(0).getKey().equals(HOST) && opAddress.getElement(1).getKey().equals(SERVER) &&
+                            (operation.get(OP).asString().equals(ADD) || operation.get(OP).asString().equals(REMOVE))){
+                        return;
+                    }
+
+                }
                 fail("Should not have added step for: " + opAddress);
             }
             expectedSteps.remove(opAddress);
@@ -221,7 +227,7 @@ public abstract class AbstractOperationTestCase {
         }
 
         public ModelNode getResult() {
-            return null;
+            return result;
         }
 
         public boolean hasResult() {
@@ -233,16 +239,16 @@ public abstract class AbstractOperationTestCase {
             return null;
         }
 
-        public OperationContext.ResultAction completeStep() {
-            return null;
-        }
-
         public void completeStep(OperationContext.RollbackHandler rollbackHandler) {
 
         }
 
+        public void completeStep(ResultHandler resultHandler) {
+
+        }
+
         public void stepCompleted() {
-            completeStep(RollbackHandler.NOOP_ROLLBACK_HANDLER);
+            completeStep(ResultHandler.NOOP_RESULT_HANDLER);
         }
 
         public ModelNode getFailureDescription() {
@@ -267,12 +273,6 @@ public abstract class AbstractOperationTestCase {
             return null;
         }
 
-        @Deprecated
-        @SuppressWarnings("deprecation")
-        public OperationContext.Type getType() {
-            return null;
-        }
-
         public boolean isBooting() {
             return booting;
         }
@@ -293,6 +293,10 @@ public abstract class AbstractOperationTestCase {
         }
 
         public void reloadRequired() {
+        }
+
+        public boolean isReloadRequired() {
+            return false;
         }
 
         public void restartRequired() {
@@ -402,8 +406,7 @@ public abstract class AbstractOperationTestCase {
         public Resource readResourceFromRoot(PathAddress address, boolean recursive) {
             Resource resource = this.root;
             for (PathElement element : address) {
-                resource = resource.getChild(element);
-                assertNotNull(resource);
+                resource = resource.requireChild(element);
             }
             return resource;
         }
@@ -452,11 +455,11 @@ public abstract class AbstractOperationTestCase {
         }
 
         public ModelNode resolveExpressions(ModelNode node) {
-            return null;
+            return node.resolve();
         }
 
         @Override
-         public <V> V getAttachment(final AttachmentKey<V> key) {
+        public <V> V getAttachment(final AttachmentKey<V> key) {
             return key.cast(valueAttachments.get(key));
         }
 
@@ -487,6 +490,7 @@ public abstract class AbstractOperationTestCase {
         final Resource serverOneConfig = Resource.Factory.create();
         final ModelNode serverOneModel = new ModelNode();
         serverOneModel.get(GROUP).set("group-one");
+        serverOneModel.get(SOCKET_BINDING_GROUP).set("binding-one");
         serverOneConfig.writeModel(serverOneModel);
         host.registerChild(PathElement.pathElement(SERVER_CONFIG, "server-one"), serverOneConfig);
 
@@ -503,14 +507,36 @@ public abstract class AbstractOperationTestCase {
         host.registerChild(PathElement.pathElement(SERVER_CONFIG, "server-three"), serverThreeConfig);
 
         rootResource.registerChild(PathElement.pathElement(HOST, "localhost"), host);
+
+        final Resource serverGroup1 = Resource.Factory.create();
+        serverGroup1.getModel().get(PROFILE).set("profile-one");
+        serverGroup1.getModel().get(SOCKET_BINDING_GROUP).set("binding-one");
+        rootResource.registerChild(PathElement.pathElement(SERVER_GROUP, "group-one"), serverGroup1);
+
+        final Resource serverGroup2 = Resource.Factory.create();
+        serverGroup2.getModel().get(PROFILE).set("profile-2");
+        serverGroup2.getModel().get(SOCKET_BINDING_GROUP).set("binding-two");
+        rootResource.registerChild(PathElement.pathElement(SERVER_GROUP, "group-two"), serverGroup2);
+
+        final Resource profile1 = Resource.Factory.create();
+        profile1.getModel().setEmptyObject();
+        rootResource.registerChild(PathElement.pathElement(PROFILE, "profile-one"), profile1);
+        final Resource profile2 = Resource.Factory.create();
+        profile2.getModel().setEmptyObject();
+        rootResource.registerChild(PathElement.pathElement(PROFILE, "profile-two"), profile2);
+
+        final Resource binding1 = Resource.Factory.create();
+        binding1.getModel().setEmptyObject();
+        rootResource.registerChild(PathElement.pathElement(SOCKET_BINDING_GROUP, "binding-one"), binding1);
+        final Resource binding2 = Resource.Factory.create();
+        binding2.getModel().setEmptyObject();
+        rootResource.registerChild(PathElement.pathElement(SOCKET_BINDING_GROUP, "binding-two"), binding2);
+
         hack(rootResource, EXTENSION);
         hack(rootResource, PATH);
         hack(rootResource, SYSTEM_PROPERTY);
-        hack(rootResource, PROFILE);
         hack(rootResource, INTERFACE);
-        hack(rootResource, SOCKET_BINDING_GROUP);
         hack(rootResource, DEPLOYMENT);
-        hack(rootResource, SERVER_GROUP);
         return rootResource;
     }
 

@@ -43,22 +43,12 @@ import org.jboss.dmr.ModelType;
 import org.jboss.dmr.Property;
 
 /**
+ * {@link MapAttributeDefinition} for maps with keys of {@link ModelType#STRING}.
+ *
  * @author <a href="mailto:tomaz.cerar@redhat.com">Tomaz Cerar</a>
  * @since 7.2
  */
 public class SimpleMapAttributeDefinition extends MapAttributeDefinition {
-    /**
-     *
-     * @param name
-     * @param xmlName
-     * @param allowNull
-     * @param expressionAllowed
-     * @deprecated use {@link Builder}
-     */
-    @Deprecated
-    public SimpleMapAttributeDefinition(final String name, final String xmlName, boolean allowNull, boolean expressionAllowed) {
-        super(name, xmlName, allowNull, expressionAllowed, 0, Integer.MAX_VALUE, null, new ModelTypeValidator(ModelType.STRING, allowNull, expressionAllowed), null, null, null, false, null, AttributeAccess.Flag.RESTART_ALL_SERVICES);
-    }
 
     private SimpleMapAttributeDefinition(final String name, final String xmlName, final boolean allowNull, boolean allowExpression,
                                          final int minSize, final int maxSize, final ParameterCorrector corrector, final ParameterValidator elementValidator,
@@ -112,6 +102,10 @@ public class SimpleMapAttributeDefinition extends MapAttributeDefinition {
     public static final class Builder extends AbstractAttributeDefinitionBuilder<Builder, SimpleMapAttributeDefinition> {
         public Builder(final String name, boolean allowNull) {
             super(name, ModelType.OBJECT, allowNull);
+        }
+
+        public Builder(final SimpleMapAttributeDefinition basis) {
+            super(basis);
         }
 
         public Builder(final PropertiesAttributeDefinition basis) {

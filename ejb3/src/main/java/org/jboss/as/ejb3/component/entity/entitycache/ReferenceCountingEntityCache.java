@@ -22,18 +22,20 @@
 
 package org.jboss.as.ejb3.component.entity.entitycache;
 
+import static org.jboss.as.ejb3.EjbMessages.MESSAGES;
+
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import javax.ejb.NoSuchEntityException;
 
-import org.jboss.as.ejb3.EjbLogger;
 import org.jboss.as.ejb3.component.entity.EntityBeanComponent;
 import org.jboss.as.ejb3.component.entity.EntityBeanComponentInstance;
 
 /**
  * @author John Bailey
+ * @author <a href="wfink@redhat.com">Wolf-Dieter Fink</a>
  */
 public class ReferenceCountingEntityCache implements ReadyEntityCache {
     private final ConcurrentMap<Object, CacheEntry> cache = new ConcurrentHashMap<Object, CacheEntry>();
@@ -56,10 +58,31 @@ public class ReferenceCountingEntityCache implements ReadyEntityCache {
                 //this happens in an instance is removed and then re-added in the space of the same transaction
                 existing.replacedInstance = instance;
             } else {
-                throw EjbLogger.EJB3_LOGGER.instanceAlreadyRegisteredForPK(instance.getPrimaryKey());
+                throw MESSAGES.instanceAlreadyRegisteredForPK(instance.getPrimaryKey());
             }
         }
         return cacheEntry;
+    }
+
+    @Override
+    public synchronized boolean contains(final Object key) {
+        if(cache.containsKey(key)) {
+            final CacheEntry cacheEntry = cache.get(key);
+            return true;
+        }
+        return false;
+    }
+    @Override
+    public synchronized boolean containsNotRemoved(final Object key) {
+        if(cache.containsKey(key)) {
+            final CacheEntry cacheEntry = cache.get(key);
+            if (cacheEntry.replacedInstance != null) {
+                return !cacheEntry.replacedInstance.isRemoved();
+            } else {
+                return !cacheEntry.instance.isRemoved();
+            }
+        }
+        return false;
     }
 
     public synchronized EntityBeanComponentInstance get(final Object key) throws NoSuchEntityException {
@@ -82,7 +105,7 @@ public class ReferenceCountingEntityCache implements ReadyEntityCache {
         if (instance.getPrimaryKey() == null) return;  // TODO: Should this be an Exception
         final CacheEntry cacheEntry = cache.get(instance.getPrimaryKey());
         if (cacheEntry == null) {
-            throw EjbLogger.EJB3_LOGGER.entityBeanInstanceNotFoundInCache(instance);
+            throw MESSAGES.entityBeanInstanceNotFoundInCache(instance);
         }
         if (cacheEntry.replacedInstance != null) {
             //this can happen if an entity is removed and a new entity with the same PK is added in a transactions
@@ -140,7 +163,7 @@ public class ReferenceCountingEntityCache implements ReadyEntityCache {
 
     private EntityBeanComponentInstance createInstance(final Object pk) {
         final EntityBeanComponentInstance instance = component.acquireUnAssociatedInstance();
-        instance.associate(pk);
+        instance.activate(pk);
         return instance;
     }
 

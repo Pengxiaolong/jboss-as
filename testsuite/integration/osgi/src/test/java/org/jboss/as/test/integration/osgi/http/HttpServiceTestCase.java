@@ -24,10 +24,12 @@ package org.jboss.as.test.integration.osgi.http;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.PrintWriter;
+import java.net.URL;
+import java.util.Dictionary;
+import java.util.Hashtable;
 import java.util.Properties;
 import java.util.concurrent.TimeUnit;
 
-import javax.inject.Inject;
 import javax.servlet.Servlet;
 import javax.servlet.http.HttpServlet;
 import javax.servlet.http.HttpServletRequest;
@@ -38,9 +40,9 @@ import org.jboss.arquillian.junit.Arquillian;
 import org.jboss.arquillian.test.api.ArquillianResource;
 import org.jboss.as.arquillian.container.ManagementClient;
 import org.jboss.as.test.integration.common.HttpRequest;
-import org.jboss.logging.Logger;
+import org.jboss.as.test.osgi.FrameworkUtils;
+import org.jboss.osgi.metadata.OSGiManifestBuilder;
 import org.jboss.osgi.resolver.XBundle;
-import org.jboss.osgi.spi.OSGiManifestBuilder;
 import org.jboss.shrinkwrap.api.Archive;
 import org.jboss.shrinkwrap.api.ShrinkWrap;
 import org.jboss.shrinkwrap.api.asset.Asset;
@@ -52,12 +54,15 @@ import org.junit.runner.RunWith;
 import org.osgi.framework.Bundle;
 import org.osgi.framework.BundleContext;
 import org.osgi.framework.ServiceReference;
+import org.osgi.service.http.HttpContext;
 import org.osgi.service.http.HttpService;
+import org.osgi.util.tracker.ServiceTracker;
 
 /**
  * Test the {@link HttpService} on JBossWeb
  *
  * @author thomas.diesler@jboss.com
+ * @author David Bosschaert
  * @since 19-Jul-2011
  */
 @RunWith(Arquillian.class)
@@ -65,8 +70,8 @@ public class HttpServiceTestCase {
 
     static StringAsset STRING_ASSET = new StringAsset("Hello from Resource");
 
-    @Inject
-    public Bundle bundle;
+    @ArquillianResource
+    Bundle bundle;
 
     @ArquillianResource
     ManagementClient managementClient;
@@ -74,7 +79,7 @@ public class HttpServiceTestCase {
     @Deployment
     public static Archive<?> getDeployment() {
         final JavaArchive archive = ShrinkWrap.create(JavaArchive.class, "http-service-example");
-        archive.addClasses(HttpRequest.class);
+        archive.addClasses(HttpRequest.class, FrameworkUtils.class);
         archive.addAsResource(STRING_ASSET, "res/message.txt");
         archive.setManifest(new Asset() {
             @Override
@@ -84,6 +89,8 @@ public class HttpServiceTestCase {
                 builder.addBundleManifestVersion(2);
                 builder.addImportPackages(HttpService.class);
                 builder.addImportPackages(Servlet.class, HttpServlet.class);
+                builder.addImportPackages(XBundle.class, ManagementClient.class);
+                builder.addImportPackages(ServiceTracker.class);
                 return builder.openStream();
             }
         });
@@ -93,11 +100,10 @@ public class HttpServiceTestCase {
     @Test
     public void testServletAccess() throws Exception {
         BundleContext context = bundle.getBundleContext();
-        ServiceReference sref = context.getServiceReference(HttpService.class.getName());
-        String reqspec = "/httpservice/servlet?test=param&param=Kermit";
+        ServiceReference<HttpService> sref = FrameworkUtils.waitForServiceReference(context, HttpService.class);
+        HttpService httpService = context.getService(sref);
+        String reqspec = "/servlet?test=param&param=Kermit";
         try {
-            HttpService httpService = (HttpService) context.getService(sref);
-
             // Verify that the alias is not yet available
             assertNotAvailable(reqspec);
 
@@ -107,9 +113,10 @@ public class HttpServiceTestCase {
 
             // Unregister the servlet alias
             httpService.unregister("/servlet");
-
             assertNotAvailable(reqspec);
 
+            // Verify that the alias is not available any more
+            assertNotAvailable(reqspec);
         } finally {
             context.ungetService(sref);
         }
@@ -118,15 +125,14 @@ public class HttpServiceTestCase {
     @Test
     public void testResourceAccess() throws Exception {
         BundleContext context = bundle.getBundleContext();
-        ServiceReference sref = context.getServiceReference(HttpService.class.getName());
-        String reqspec = "/httpservice/resource/message.txt";
+        ServiceReference<HttpService> sref = FrameworkUtils.waitForServiceReference(context, HttpService.class);
+        HttpService httpService = context.getService(sref);
+        String reqspec = "/resource/message.txt";
         try {
-            HttpService httpService = (HttpService) context.getService(sref);
-
             // Verify that the alias is not yet available
             assertNotAvailable(reqspec);
 
-            // Register the test servlet and make a call
+            // Register the test resource and make a call
             httpService.registerResources("/resource", "/res", null);
             Assert.assertEquals("Hello from Resource", performCall(reqspec));
 
@@ -143,11 +149,10 @@ public class HttpServiceTestCase {
     @Test
     public void testServletInitProps() throws Exception {
         BundleContext context = bundle.getBundleContext();
-        ServiceReference sref = context.getServiceReference(HttpService.class.getName());
-        String reqspec = "/httpservice/servlet?test=init&init=someKey";
+        ServiceReference<HttpService> sref = FrameworkUtils.waitForServiceReference(context, HttpService.class);
+        HttpService httpService = context.getService(sref);
+        String reqspec = "/servlet?test=init&init=someKey";
         try {
-            HttpService httpService = (HttpService) context.getService(sref);
-
             // Verify that the alias is not yet available
             assertNotAvailable(reqspec);
 
@@ -160,18 +165,16 @@ public class HttpServiceTestCase {
         } finally {
             context.ungetService(sref);
         }
-
         assertNotAvailable(reqspec);
     }
 
     @Test
     public void testServletInstance() throws Exception {
         BundleContext context = bundle.getBundleContext();
-        ServiceReference sref = context.getServiceReference(HttpService.class.getName());
-        String reqspec = "/httpservice/servlet?test=instance";
+        ServiceReference<HttpService> sref = FrameworkUtils.waitForServiceReference(context, HttpService.class);
+        HttpService httpService = context.getService(sref);
+        String reqspec = "/servlet?test=instance";
         try {
-            HttpService httpService = (HttpService) context.getService(sref);
-
             // Verify that the alias is not yet available
             assertNotAvailable(reqspec);
 
@@ -181,8 +184,97 @@ public class HttpServiceTestCase {
         } finally {
             context.ungetService(sref);
         }
-
         assertNotAvailable(reqspec);
+    }
+
+    @Test
+    public void testServletContext() throws Exception {
+        BundleContext context = bundle.getBundleContext();
+        ServiceReference<HttpService> sref = FrameworkUtils.waitForServiceReference(context, HttpService.class);
+        HttpService httpService = context.getService(sref);
+        String reqspec = "/servlet2?test=param&param=Kermit";
+        try {
+            // Verify that the alias is not yet available
+            assertNotAvailable(reqspec);
+
+            // Register the test servlet
+            HttpServiceServlet servlet = new HttpServiceServlet(bundle);
+            Dictionary<String, String> parms = new Hashtable<String, String>();
+            parms.put("foo", "bar");
+            httpService.registerServlet("/servlet2", servlet, parms, null);
+
+            // Check that the ServletContext is available
+            Assert.assertEquals("/servlet2", servlet.getServletContext().getContextPath());
+
+            // Check that the ServletConfig is available
+            Assert.assertEquals("bar", servlet.getServletConfig().getInitParameter("foo"));
+
+            // Unregister the servlet alias
+            httpService.unregister("/servlet2");
+            assertNotAvailable(reqspec);
+        } finally {
+            context.ungetService(sref);
+        }
+    }
+
+    @Test
+    public void testSharedHttpContext() throws Exception {
+        BundleContext context = bundle.getBundleContext();
+        ServiceReference<HttpService> sref = FrameworkUtils.waitForServiceReference(context, HttpService.class);
+        HttpService httpService = context.getService(sref);
+        try {
+            // Verify that the alias is not yet available
+            assertNotAvailable("/servlet1");
+            assertNotAvailable("/servlet2");
+
+            // Register the test servlet
+            final HttpContext defaultContext = httpService.createDefaultHttpContext();
+            HttpContext httpContext = new HttpContext() {
+
+                @Override
+                public boolean handleSecurity(HttpServletRequest request, HttpServletResponse response) throws IOException {
+                    String value = request.getParameter("param");
+                    if (!"allow".equals(value)) {
+                        throw new SecurityException("Not allowed");
+                    }
+                    return defaultContext.handleSecurity(request, response);
+                }
+
+                @Override
+                public URL getResource(String name) {
+                    return defaultContext.getResource(name);
+                }
+
+                @Override
+                public String getMimeType(String name) {
+                    return defaultContext.getMimeType(name);
+                }
+            };
+
+            httpService.registerServlet("/servlet1", new HttpServiceServlet(bundle), null, httpContext);
+            httpService.registerServlet("/servlet2", new HttpServiceServlet(bundle), null, httpContext);
+
+            Assert.assertEquals("Hello: allow", performCall("/servlet1?test=param&param=allow"));
+            try {
+                performCall("/servlet1?test=param&param=deny");
+                Assert.fail("IOException expected");
+            } catch (IOException ex) {
+                // expected
+            }
+            Assert.assertEquals("Hello: allow", performCall("/servlet2?test=param&param=allow"));
+            try {
+                performCall("/servlet2?test=param&param=deny");
+                Assert.fail("IOException expected");
+            } catch (IOException ex) {
+                // expected
+            }
+
+            // Unregister the servlet alias
+            httpService.unregister("/servlet1");
+            httpService.unregister("/servlet2");
+        } finally {
+            context.ungetService(sref);
+        }
     }
 
     private void assertNotAvailable(String reqspec) throws Exception {
@@ -201,8 +293,6 @@ public class HttpServiceTestCase {
 
     @SuppressWarnings("serial")
     static final class HttpServiceServlet extends HttpServlet {
-
-        static Logger log = Logger.getLogger(HttpServiceServlet.class);
 
         private final XBundle bundle;
 

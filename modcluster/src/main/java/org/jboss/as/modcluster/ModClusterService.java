@@ -90,8 +90,8 @@ class ModClusterService implements Service<ModCluster>, ModCluster {
 
         // Read node to set configuration.
         if (config.getAdvertise()) {
-            // There should be a socket-binding....
-            final SocketBinding binding = this.binding.getValue();
+            // There should be a socket-binding.... Well no it needs an advertise socket :-(
+            final SocketBinding binding = this.binding.getOptionalValue();
             if (binding != null) {
                 config.setAdvertiseSocketAddress(binding.getMulticastSocketAddress());
                 config.setAdvertiseInterface(binding.getSocketAddress().getAddress());
@@ -217,5 +217,9 @@ class ModClusterService implements Service<ModCluster>, ModCluster {
     @Override
     public Map<InetSocketAddress, String> getProxyConfiguration() {
         return service.getProxyConfiguration();
+    }
+
+    ModClusterConfig getConfig() {
+        return config;
     }
 }

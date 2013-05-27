@@ -22,6 +22,8 @@
 
 package org.jboss.as.connector.deployers.ds.processors;
 
+import static org.jboss.as.connector.logging.ConnectorLogger.SUBSYSTEM_DATASOURCES_LOGGER;
+
 import java.sql.Driver;
 import java.util.ArrayList;
 import java.util.List;
@@ -29,7 +31,6 @@ import java.util.Map;
 
 import org.jboss.as.connector.logging.ConnectorLogger;
 import org.jboss.as.connector.logging.ConnectorMessages;
-import org.jboss.as.connector.util.ConnectorServices;
 import org.jboss.as.connector.services.driver.registry.DriverRegistry;
 import org.jboss.as.connector.subsystems.datasources.AbstractDataSourceService;
 import org.jboss.as.connector.subsystems.datasources.DataSourceReferenceFactoryService;
@@ -38,9 +39,11 @@ import org.jboss.as.connector.subsystems.datasources.DataSourcesExtension;
 import org.jboss.as.connector.subsystems.datasources.LocalDataSourceService;
 import org.jboss.as.connector.subsystems.datasources.ModifiableDataSource;
 import org.jboss.as.connector.subsystems.datasources.ModifiableXaDataSource;
+import org.jboss.as.connector.subsystems.datasources.Util;
 import org.jboss.as.connector.subsystems.datasources.XMLDataSourceRuntimeHandler;
 import org.jboss.as.connector.subsystems.datasources.XMLXaDataSourceRuntimeHandler;
 import org.jboss.as.connector.subsystems.datasources.XaDataSourceService;
+import org.jboss.as.connector.util.ConnectorServices;
 import org.jboss.as.controller.PathAddress;
 import org.jboss.as.controller.PathElement;
 import org.jboss.as.controller.ServiceVerificationHandler;
@@ -73,8 +76,6 @@ import org.jboss.msc.service.ServiceController;
 import org.jboss.msc.service.ServiceName;
 import org.jboss.msc.service.ServiceTarget;
 import org.jboss.security.SubjectFactory;
-
-import static org.jboss.as.connector.logging.ConnectorLogger.SUBSYSTEM_DATASOURCES_LOGGER;
 
 /**
  * Picks up -ds.xml deployments
@@ -125,7 +126,7 @@ public class DsXmlDeploymentInstallProcessor implements DeploymentUnitProcessor 
                     DataSource ds = (DataSource)dataSources.getDataSource().get(i);
                     if (ds.isEnabled() && ds.getDriver() != null) {
                         try {
-                            final String jndiName = cleanupJavaContext(ds.getJndiName());
+                            final String jndiName = Util.cleanJndiName(ds.getJndiName(), ds.isUseJavaContext());
                             LocalDataSourceService lds = new LocalDataSourceService(jndiName);
                             lds.getDataSourceConfigInjector().inject(buildDataSource(ds));
                             final String dsName = ds.getJndiName();
@@ -147,7 +148,7 @@ public class DsXmlDeploymentInstallProcessor implements DeploymentUnitProcessor 
                     XaDataSource xads = (XaDataSource)dataSources.getXaDataSource().get(i);
                     if (xads.isEnabled() && xads.getDriver() != null) {
                         try {
-                            String jndiName = cleanupJavaContext(xads.getJndiName());
+                            String jndiName = Util.cleanJndiName(xads.getJndiName(), xads.isUseJavaContext());
                             XaDataSourceService xds = new XaDataSourceService(jndiName);
                             xds.getDataSourceConfigInjector().inject(buildXaDataSource(xads));
                             final String dsName = xads.getJndiName();
@@ -326,19 +327,6 @@ public class DsXmlDeploymentInstallProcessor implements DeploymentUnitProcessor 
         referenceBuilder.setInitialMode(ServiceController.Mode.ACTIVE).addListener(verificationHandler).install();
         binderBuilder.setInitialMode(ServiceController.Mode.ACTIVE).addListener(verificationHandler).install();
     }
-
-    static String cleanupJavaContext(String jndiName) {
-        String bindName;
-        if (jndiName.startsWith("java:/")) {
-            bindName = jndiName.substring(6);
-        } else if (jndiName.startsWith("java:")) {
-            bindName = jndiName.substring(5);
-        } else {
-            bindName = jndiName;
-        }
-        return bindName;
-    }
-
 
     private static PathAddress getDataSourceAddress(final String jndiName, DeploymentUnit deploymentUnit, boolean xa) {
         List<PathElement> elements = new ArrayList<PathElement>();

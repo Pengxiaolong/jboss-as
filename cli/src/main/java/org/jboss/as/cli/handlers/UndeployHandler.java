@@ -31,6 +31,7 @@ import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
+import java.util.concurrent.Executors;
 
 import org.jboss.as.cli.CommandContext;
 import org.jboss.as.cli.CommandFormatException;
@@ -40,12 +41,15 @@ import org.jboss.as.cli.Util;
 import org.jboss.as.cli.impl.ArgumentWithValue;
 import org.jboss.as.cli.impl.ArgumentWithoutValue;
 import org.jboss.as.cli.impl.CommaSeparatedCompleter;
+import org.jboss.as.cli.impl.FileSystemPathArgument;
 import org.jboss.as.cli.operation.OperationFormatException;
 import org.jboss.as.cli.operation.ParsedCommandLine;
 import org.jboss.as.cli.operation.impl.DefaultOperationRequestAddress;
 import org.jboss.as.cli.operation.impl.DefaultOperationRequestBuilder;
 import org.jboss.as.controller.client.ModelControllerClient;
 import org.jboss.dmr.ModelNode;
+import org.jboss.vfs.TempFileProvider;
+import org.jboss.vfs.VFSUtils;
 import org.jboss.vfs.spi.MountHandle;
 
 /**
@@ -163,19 +167,7 @@ public class UndeployHandler extends DeploymentHandler {
         keepContent.addRequiredPreceding(name);
 
         final FilenameTabCompleter pathCompleter = Util.isWindows() ? new WindowsFilenameTabCompleter(ctx) : new DefaultFilenameTabCompleter(ctx);
-        path = new ArgumentWithValue(this, pathCompleter, "--path") {
-            @Override
-            public String getValue(ParsedCommandLine args) {
-                String value = super.getValue(args);
-                if(value != null) {
-                    if(value.length() >= 0 && value.charAt(0) == '"' && value.charAt(value.length() - 1) == '"') {
-                        value = value.substring(1, value.length() - 1);
-                    }
-                    value = pathCompleter.translatePath(value);
-                }
-                return value;
-            }
-        };
+        path = new FileSystemPathArgument(this, pathCompleter, "--path");
         path.addCantAppearAfter(l);
 
         script = new ArgumentWithValue(this, "--script");
@@ -285,9 +277,12 @@ public class UndeployHandler extends DeploymentHandler {
                 throw new OperationFormatException(this.keepContent.getFullName() + " can't be used in combination with a CLI archive.");
             }
 
+
+            TempFileProvider tempFileProvider;
             MountHandle root;
             try {
-                root = extractArchive(f);
+                tempFileProvider = TempFileProvider.create("cli", Executors.newSingleThreadScheduledExecutor());
+                root = extractArchive(f, tempFileProvider);
             } catch (IOException e) {
                 throw new OperationFormatException("Unable to extract archive '" + f.getAbsolutePath() + "' to temporary location");
             }
@@ -335,9 +330,8 @@ public class UndeployHandler extends DeploymentHandler {
                 // reset current dir in context
                 ctx.setCurrentDir(currentDir);
                 discardBatch(ctx, holdbackBatch);
-                try {
-                    root.close();
-                } catch (IOException ignore) {}
+
+                VFSUtils.safeClose(root, tempFileProvider);
             }
         }
 
@@ -352,7 +346,7 @@ public class UndeployHandler extends DeploymentHandler {
         if(name.indexOf('*') < 0) {
             deploymentNames = Collections.singletonList(name);
         } else {
-            deploymentNames = Util.getDeployments(client, name);
+            deploymentNames = Util.getMatchingDeployments(client, name, null);
             if(deploymentNames.isEmpty()) {
                 throw new CommandFormatException("No deployment matched wildcard expression " + name);
             }

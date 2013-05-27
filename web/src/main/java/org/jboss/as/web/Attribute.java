@@ -94,6 +94,7 @@ enum Attribute {
     SMAP(Constants.SMAP),
     SOCKET_BINDING(Constants.SOCKET_BINDING),
     SOURCE_VM(Constants.SOURCE_VM),
+    SSL_PROTOCOL(Constants.SSL_PROTOCOL),
     SUBSTITUTION(Constants.SUBSTITUTION),
     TARGET_VM(Constants.TARGET_VM),
     TRIM_SPACES(Constants.TRIM_SPACES),
@@ -106,6 +107,11 @@ enum Attribute {
     X_POWERED_BY(Constants.X_POWERED_BY),
     ENABLE_LOOKUPS(Constants.ENABLE_LOOKUPS),
     VALUE(Constants.VALUE),
+    MODULE(Constants.MODULE),
+    CLASS_NAME(Constants.CLASS_NAME),
+    PARAM_NAME(Constants.PARAM_NAME),
+    PARAM_VALUE(Constants.PARAM_VALUE),
+    PARAM(Constants.PARAM),
     ;
 
     private final String name;

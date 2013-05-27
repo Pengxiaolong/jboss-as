@@ -28,8 +28,6 @@ import static org.jboss.wsf.spi.util.StAXUtils.match;
 
 import java.io.InputStream;
 import java.lang.reflect.Method;
-import java.security.AccessController;
-import java.security.PrivilegedAction;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
@@ -42,6 +40,7 @@ import javax.xml.ws.WebServiceException;
 import org.jboss.ws.common.JavaUtils;
 import org.jboss.wsf.spi.deployment.DeploymentAspect;
 import org.jboss.wsf.spi.util.StAXUtils;
+import org.wildfly.security.manager.WildFlySecurityManager;
 
 /**
  * A parser for WS deployment aspects
@@ -135,12 +134,12 @@ public class WSDeploymentAspectParser {
         try {
             @SuppressWarnings("unchecked")
             Class<? extends DeploymentAspect> clazz = (Class<? extends DeploymentAspect>) Class.forName(deploymentAspectClass, true, loader);
-            ClassLoader orig = getContextClassLoader();
+            ClassLoader orig = WildFlySecurityManager.getCurrentContextClassLoaderPrivileged();
             try {
-                setContextClassLoader(loader);
+                WildFlySecurityManager.setCurrentContextClassLoaderPrivileged(loader);
                 deploymentAspect = clazz.newInstance();
             } finally {
-                setContextClassLoader(orig);
+                WildFlySecurityManager.setCurrentContextClassLoaderPrivileged(orig);
             }
         } catch (Exception e) {
             throw MESSAGES.cannotInstantiateDeploymentAspect(e, deploymentAspectClass);
@@ -350,41 +349,5 @@ public class WSDeploymentAspectParser {
             }
         }
         throw MESSAGES.unexpectedEndOfDocument();
-    }
-
-    /**
-     * Get context classloader.
-     *
-     * @return the current context classloader
-     */
-    private static ClassLoader getContextClassLoader() {
-        SecurityManager sm = System.getSecurityManager();
-        if (sm == null) {
-            return Thread.currentThread().getContextClassLoader();
-        } else {
-            return AccessController.doPrivileged(new PrivilegedAction<ClassLoader>() {
-                public ClassLoader run() {
-                    return Thread.currentThread().getContextClassLoader();
-                }
-            });
-        }
-    }
-
-    /**
-     * Set context classloader.
-     *
-     * @param classLoader the classloader
-     */
-    private static void setContextClassLoader(final ClassLoader classLoader) {
-        if (System.getSecurityManager() == null) {
-            Thread.currentThread().setContextClassLoader(classLoader);
-        } else {
-            AccessController.doPrivileged(new PrivilegedAction<Object>() {
-                public Object run() {
-                    Thread.currentThread().setContextClassLoader(classLoader);
-                    return null;
-                }
-            });
-        }
     }
 }

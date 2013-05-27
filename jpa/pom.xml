@@ -28,25 +28,22 @@
     <modelVersion>4.0.0</modelVersion>
 
     <parent>
-        <groupId>org.jboss.as</groupId>
-        <artifactId>jboss-as-parent</artifactId>
-        <version>7.2.0.Alpha1-SNAPSHOT</version>
+        <groupId>org.wildfly</groupId>
+        <artifactId>wildfly-parent</artifactId>
+        <version>8.0.0.Alpha2-SNAPSHOT</version>
+        <relativePath>../pom.xml</relativePath>
     </parent>
 
-    <groupId>org.jboss.as</groupId>
-    <artifactId>jboss-as-jpa-parent</artifactId>
-    <version>7.2.0.Alpha1-SNAPSHOT</version>
+    <groupId>org.wildfly</groupId>
+    <artifactId>wildfly-jpa-parent</artifactId>
+    <version>8.0.0.Alpha2-SNAPSHOT</version>
     <packaging>pom</packaging>
 
-    <name>JBoss Application Server: JPA Subsystem</name>
+    <name>WildFly: JPA Subsystem</name>
 
     <modules>
         <module>core</module>
         <module>util</module>
-        <module>spi</module>
-        <module>hibernate4</module>
-        <module>hibernate3</module>
-        <module>openjpa</module>
     </modules>
 
     <dependencies>
@@ -54,6 +51,15 @@
             <groupId>junit</groupId>
             <artifactId>junit</artifactId>
             <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.jboss.logging</groupId>
+            <artifactId>jboss-logging-processor</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.jboss.logging</groupId>
+            <artifactId>jboss-logging</artifactId>
+            <scope>provided</scope>
         </dependency>
     </dependencies>
 </project>

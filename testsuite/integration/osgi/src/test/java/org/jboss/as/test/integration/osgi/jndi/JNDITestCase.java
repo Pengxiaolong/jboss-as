@@ -29,7 +29,6 @@ import java.io.InputStream;
 import java.util.Dictionary;
 import java.util.Hashtable;
 
-import javax.inject.Inject;
 import javax.naming.Context;
 import javax.naming.InitialContext;
 import javax.naming.Name;
@@ -41,7 +40,9 @@ import javax.naming.spi.ObjectFactory;
 
 import org.jboss.arquillian.container.test.api.Deployment;
 import org.jboss.arquillian.junit.Arquillian;
-import org.jboss.osgi.spi.OSGiManifestBuilder;
+import org.jboss.arquillian.test.api.ArquillianResource;
+import org.jboss.as.test.osgi.FrameworkUtils;
+import org.jboss.osgi.metadata.OSGiManifestBuilder;
 import org.jboss.shrinkwrap.api.ShrinkWrap;
 import org.jboss.shrinkwrap.api.asset.Asset;
 import org.jboss.shrinkwrap.api.spec.JavaArchive;
@@ -49,8 +50,8 @@ import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.osgi.framework.Bundle;
 import org.osgi.framework.BundleContext;
-import org.osgi.framework.ServiceReference;
 import org.osgi.framework.ServiceRegistration;
+import org.osgi.util.tracker.ServiceTracker;
 
 /**
  * A test that deployes a bundle that exercises the {@link InitialContext}
@@ -62,12 +63,13 @@ import org.osgi.framework.ServiceRegistration;
 @RunWith(Arquillian.class)
 public class JNDITestCase {
 
-    @Inject
-    public Bundle bundle;
+    @ArquillianResource
+    Bundle bundle;
 
     @Deployment
     public static JavaArchive createdeployment() {
         final JavaArchive archive = ShrinkWrap.create(JavaArchive.class, "example-jndi");
+        archive.addClasses(FrameworkUtils.class);
         archive.setManifest(new Asset() {
             public InputStream openStream() {
                 OSGiManifestBuilder builder = OSGiManifestBuilder.newInstance();
@@ -75,6 +77,7 @@ public class JNDITestCase {
                 builder.addBundleManifestVersion(2);
                 builder.addImportPackages(InitialContext.class);
                 builder.addImportPackages(InitialContextFactoryBuilder.class);
+                builder.addImportPackages(ServiceTracker.class);
                 return builder.openStream();
             }
         });
@@ -97,8 +100,7 @@ public class JNDITestCase {
     public void testInitialContextFactoryBuilderService() throws Exception {
         bundle.start();
         BundleContext context = bundle.getBundleContext();
-        ServiceReference ref = context.getServiceReference(InitialContextFactoryBuilder.class.getName());
-        InitialContextFactoryBuilder builder = (InitialContextFactoryBuilder) context.getService(ref);
+        InitialContextFactoryBuilder builder = FrameworkUtils.waitForService(context, InitialContextFactoryBuilder.class);
 
         InitialContextFactory factory = builder.createInitialContextFactory(null);
         Context iniCtx = factory.getInitialContext(null);
@@ -122,7 +124,7 @@ public class JNDITestCase {
         BundleContext context = bundle.getBundleContext();
         Dictionary<String, Object> props = new Hashtable<String, Object>();
         props.put("osgi.jndi.url.scheme", new String [] {"testscheme"});
-        ServiceRegistration reg = context.registerService(ObjectFactory.class.getName(), of, props);
+        ServiceRegistration<ObjectFactory> reg = context.registerService(ObjectFactory.class, of, props);
 
         boolean found = false;
         int i=0;
@@ -160,7 +162,6 @@ public class JNDITestCase {
     }
 
     public class TestObjectFactory implements ObjectFactory {
-
         @Override
         public Object getObjectInstance(Object obj, Name name, Context nameCtx, Hashtable<?, ?> environment) throws Exception {
             return new InitialContext(new Hashtable<String, Object>()) {

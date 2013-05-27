@@ -66,21 +66,19 @@ fi
 if $cygwin; then
     JBOSS_HOME=`cygpath --path --windows "$JBOSS_HOME"`
     JAVA_HOME=`cygpath --path --windows "$JAVA_HOME"`
-    JBOSS_CLASSPATH=`cygpath --path --windows "$JBOSS_CLASSPATH"`
-    JBOSS_ENDORSED_DIRS=`cygpath --path --windows "$JBOSS_ENDORSED_DIRS"`
     JBOSS_MODULEPATH=`cygpath --path --windows "$JBOSS_MODULEPATH"`
 fi
 
 CLASSPATH=$JAVA_HOME/lib/jconsole.jar
 CLASSPATH=$CLASSPATH:$JAVA_HOME/lib/tools.jar
 
-MODULES="org/jboss/remoting-jmx org/jboss/remoting3 org/jboss/logging org/jboss/xnio org/jboss/xnio/nio org/jboss/sasl org/jboss/marshalling org/jboss/marshalling/river org/jboss/as/cli org/jboss/staxmapper org/jboss/as/protocol org/jboss/dmr org/jboss/as/controller-client org/jboss/threads org/jboss/as/controller"
+MODULES="org/jboss/remoting-jmx org/jboss/remoting org/jboss/logging org/jboss/xnio org/jboss/xnio/nio org/jboss/sasl org/jboss/marshalling org/jboss/marshalling/river org/jboss/as/cli org/jboss/staxmapper org/jboss/as/protocol org/jboss/dmr org/jboss/as/controller-client org/jboss/threads"
 
 for MODULE in $MODULES
 do
-    for JAR in `cd "$JBOSS_MODULEPATH/$MODULE/main/" && ls -1 *.jar`
+    for JAR in `cd "$JBOSS_MODULEPATH/system/layers/base/$MODULE/main/" && ls -1 *.jar`
     do
-        CLASSPATH="$CLASSPATH:$JBOSS_MODULEPATH/$MODULE/main/$JAR"
+        CLASSPATH="$CLASSPATH:$JBOSS_MODULEPATH/system/layers/base/$MODULE/main/$JAR"
     done
 done
 

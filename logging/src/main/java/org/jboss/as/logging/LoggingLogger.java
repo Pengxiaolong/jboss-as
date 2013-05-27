@@ -27,10 +27,11 @@ import static org.jboss.logging.Logger.Level.WARN;
 
 import java.io.Closeable;
 
+import org.jboss.as.server.deployment.module.ResourceRoot;
 import org.jboss.logging.BasicLogger;
+import org.jboss.logging.Logger;
 import org.jboss.logging.annotations.Cause;
 import org.jboss.logging.annotations.LogMessage;
-import org.jboss.logging.Logger;
 import org.jboss.logging.annotations.Message;
 import org.jboss.logging.annotations.MessageLogger;
 
@@ -120,4 +121,34 @@ public interface LoggingLogger extends BasicLogger {
     @LogMessage(level = WARN)
     @Message(id = 11508, value = "Filters are not currently supported for log4j appenders.")
     void filterNotSupported();
+
+    /**
+     * Logs a warning message indicating the deployment specified a logging profile, but the logging profile was not
+     * found.
+     *
+     * @param loggingProfile the logging profile that was not found
+     * @param deployment     the deployment that specified the logging profile
+     */
+    @LogMessage(level = WARN)
+    @Message(id = 11509, value = "Logging profile '%s' was specified for deployment '%s' but was not found. Using system logging configuration.")
+    void loggingProfileNotFound(String loggingProfile, ResourceRoot deployment);
+
+    /**
+     * Logs a warning message indicating the configuration file found appears to be a {@link
+     * java.util.logging.LogManager J.U.L.} configuration file and the log manager does not allow this configuration.
+     *
+     * @param fileName the configuration file name
+     */
+    @LogMessage(level = WARN)
+    @Message(id = 11510, value = "The configuration file in '%s' appears to be a J.U.L. configuration file. The log manager does not allow this type of configuration file.")
+    void julConfigurationFileFound(String fileName);
+
+    /**
+     * Logs a warning message indicating the handler is being replaced due to a different type or module name.
+     *
+     * @param name the name of the handler
+     */
+    @LogMessage(level = WARN)
+    @Message(id = 11511, value = "Replacing handler '%s' during add operation. Either the handler type or the module name differs from the initial configuration.")
+    void replacingNamedHandler(String name);
 }

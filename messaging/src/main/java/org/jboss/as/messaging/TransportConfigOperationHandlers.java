@@ -25,11 +25,16 @@ package org.jboss.as.messaging;
 import static org.jboss.as.messaging.CommonAttributes.ACCEPTOR;
 import static org.jboss.as.messaging.CommonAttributes.CONNECTOR;
 import static org.jboss.as.messaging.CommonAttributes.FACTORY_CLASS;
+import static org.jboss.as.messaging.CommonAttributes.HOST;
+import static org.jboss.as.messaging.CommonAttributes.SERVLET_CONNECTOR;
 import static org.jboss.as.messaging.CommonAttributes.IN_VM_ACCEPTOR;
 import static org.jboss.as.messaging.CommonAttributes.IN_VM_CONNECTOR;
 import static org.jboss.as.messaging.CommonAttributes.PARAM;
 import static org.jboss.as.messaging.CommonAttributes.REMOTE_ACCEPTOR;
 import static org.jboss.as.messaging.CommonAttributes.REMOTE_CONNECTOR;
+import static org.jboss.as.messaging.CommonAttributes.SERVLET_PATH;
+import static org.jboss.as.messaging.CommonAttributes.USE_INVM;
+import static org.jboss.as.messaging.CommonAttributes.USE_SERVLET;
 import static org.jboss.as.messaging.MessagingMessages.MESSAGES;
 
 import java.util.HashMap;
@@ -47,59 +52,19 @@ import org.hornetq.core.remoting.impl.netty.NettyConnectorFactory;
 import org.jboss.as.controller.AttributeDefinition;
 import org.jboss.as.controller.OperationContext;
 import org.jboss.as.controller.OperationFailedException;
-import org.jboss.as.controller.OperationStepHandler;
 import org.jboss.as.controller.PathAddress;
 import org.jboss.as.controller.PathElement;
 import org.jboss.as.controller.descriptions.DescriptionProvider;
 import org.jboss.as.controller.descriptions.ModelDescriptionConstants;
-import org.jboss.as.controller.parsing.ParseUtils;
 import org.jboss.as.controller.registry.Resource;
 import org.jboss.dmr.ModelNode;
 import org.jboss.dmr.Property;
-import org.jboss.msc.service.ServiceController;
-import org.jboss.msc.service.ServiceName;
-
 /**
  * Basic {@link TransportConfiguration} (Acceptor/Connector) related operations.
  *
  * @author Emanuel Muckenhuber
  */
 class TransportConfigOperationHandlers {
-
-    /**
-     * The transport-config remove operation handler.
-     */
-    static final OperationStepHandler REMOVE = new OperationStepHandler() {
-        @Override
-        public void execute(final OperationContext context, final ModelNode operation) throws OperationFailedException {
-            context.removeResource(PathAddress.EMPTY_ADDRESS);
-            reloadRequiredStep(context);
-            context.completeStep();
-        }
-    };
-
-    /**
-     * Add a step triggering the {@linkplain org.jboss.as.controller.OperationContext#reloadRequired()} in case the
-     * the messaging service is installed, since the transport-config operations need a reload/restart and can't be
-     * applied to the runtime directly.
-     *
-     * @param context the operation context
-     */
-    static void reloadRequiredStep(final OperationContext context) {
-        if (context.isNormalServer()) {
-            context.addStep(new OperationStepHandler() {
-                @Override
-                public void execute(final OperationContext context, final ModelNode operation) throws OperationFailedException {
-                    final ServiceName hqServiceName = MessagingServices.getHornetQServiceName(PathAddress.pathAddress(operation.get(ModelDescriptionConstants.OP_ADDR)));
-                    final ServiceController<?> controller = context.getServiceRegistry(false).getService(hqServiceName);
-                    if (controller != null) {
-                        context.reloadRequired();
-                    }
-                    context.completeStep();
-                }
-            }, OperationContext.Stage.RUNTIME);
-        }
-    }
 
     /**
      * Process the acceptor information.
@@ -137,7 +102,7 @@ class TransportConfigOperationHandlers {
                 final String acceptorName = property.getName();
                 final ModelNode config = property.getValue();
                 final Map<String, Object> parameters = getParameters(context, config);
-                parameters.put(InVMTransportDefinition.SERVER_ID.getName(), config.get(InVMTransportDefinition.SERVER_ID.getName()).asInt());
+                parameters.put(InVMTransportDefinition.SERVER_ID.getName(), InVMTransportDefinition.SERVER_ID.resolveModelAttribute(context, config).asInt());
                 acceptors.put(acceptorName, new TransportConfiguration(InVMAcceptorFactory.class.getName(), parameters, acceptorName));
             }
         }
@@ -157,12 +122,9 @@ class TransportConfigOperationHandlers {
         if (config.hasDefined(PARAM)) {
             for (final Property parameter : config.get(PARAM).asPropertyList()) {
                 String name = parameter.getName();
-                // FIXME with https://issues.jboss.org/browse/AS7-5121, PARAM will be represented with an AttributeDefinition
-                // and expressions will be resolved automatically
-                ModelNode value =  parameter.getValue().get(ModelDescriptionConstants.VALUE);
-                ModelNode expression = ParseUtils.parsePossibleExpression(value.asString());
-                String resolvedValue = context.resolveExpressions(expression).asString();
-                parameters.put(name, resolvedValue);            }
+                String value = TransportParamDefinition.VALUE.resolveModelAttribute(context, parameter.getValue()).asString();
+                parameters.put(name, value);
+            }
         }
         return parameters;
     }
@@ -183,7 +145,7 @@ class TransportConfigOperationHandlers {
                 final String connectorName = property.getName();
                 final ModelNode config = property.getValue();
                 final Map<String, Object> parameters = getParameters(context, config);
-                final String clazz = config.get(FACTORY_CLASS.getName()).asString();
+                final String clazz = FACTORY_CLASS.resolveModelAttribute(context, config).asString();
                 connectors.put(connectorName, new TransportConfiguration(clazz, parameters, connectorName));
             }
         }
@@ -203,14 +165,37 @@ class TransportConfigOperationHandlers {
                 final String connectorName = property.getName();
                 final ModelNode config = property.getValue();
                 final Map<String, Object> parameters = getParameters(context, config);
-                parameters.put(InVMTransportDefinition.SERVER_ID.getName(), config.get(InVMTransportDefinition.SERVER_ID.getName()).asInt());
+                parameters.put(InVMTransportDefinition.SERVER_ID.getName(), InVMTransportDefinition.SERVER_ID.resolveModelAttribute(context, config).asInt());
                 connectors.put(connectorName, new TransportConfiguration(InVMConnectorFactory.class.getName(), parameters, connectorName));
+            }
+        }
+        if (params.hasDefined(SERVLET_CONNECTOR)) {
+            final String serverName = configuration.getName();
+            for (final Property property : params.get(SERVLET_CONNECTOR).asPropertyList()) {
+                final String connectorName = property.getName();
+                final ModelNode config = property.getValue();
+                final Map<String, Object> parameters = getParameters(context, config);
+                parameters.put(USE_SERVLET, true);
+                parameters.put(SERVLET_PATH, ServletConnectorService.getServletPath(serverName, connectorName));
+                final String binding = config.get(ServletConnectorDefinition.SOCKET_BINDING.getName()).asString();
+                parameters.put(ServletConnectorDefinition.SOCKET_BINDING.getName(), binding);
+                bindings.add(binding);
+                connectors.put(connectorName, new TransportConfiguration(NettyConnectorFactory.class.getName(), parameters, connectorName));
+
+                // for each http connector added, we must add a corresponding special (use-invm) netty acceptor that will be used by the netty servlet
+                String acceptorName = connectorName + "-" + ACCEPTOR;
+                final Map<String, Object> acceptorParams = new HashMap<String, Object>();
+                acceptorParams.put(USE_INVM, true);
+                acceptorParams.put(HOST, ServletConnectorService.getServletEndpoint(serverName, connectorName));
+                TransportConfiguration httpAcceptor = new TransportConfiguration(NettyAcceptorFactory.class.getName(), acceptorParams, acceptorName);
+                configuration.getAcceptorConfigurations().add(httpAcceptor);
+
             }
         }
         configuration.setConnectorConfigurations(connectors);
     }
 
-    static class BasicTransportConfigAdd implements OperationStepHandler, DescriptionProvider {
+    static class BasicTransportConfigAdd extends HornetQReloadRequiredHandlers.AddStepHandler implements DescriptionProvider {
 
         private final AttributeDefinition[] attributes;
         private final boolean isAcceptor;
@@ -221,12 +206,16 @@ class TransportConfigOperationHandlers {
         }
 
         @Override
-        public void execute(OperationContext context, ModelNode operation) throws OperationFailedException {
-            final Resource resource = context.createResource(PathAddress.EMPTY_ADDRESS);
-            final ModelNode subModel = resource.getModel();
+        protected void populateModel(ModelNode operation, ModelNode model) throws OperationFailedException {
             for (final AttributeDefinition attribute : attributes) {
-                attribute.validateAndSet(operation, subModel);
+                attribute.validateAndSet(operation, model);
             }
+        }
+
+        @Override
+        protected void populateModel(OperationContext context, ModelNode operation, Resource resource)
+                throws OperationFailedException {
+            super.populateModel(context, operation, resource);
 
             if(operation.hasDefined(CommonAttributes.PARAM)) {
                 for(Property property : operation.get(CommonAttributes.PARAM).asPropertyList()) {
@@ -238,9 +227,6 @@ class TransportConfigOperationHandlers {
                     param.getModel().get(ModelDescriptionConstants.VALUE).set(value);
                 }
             }
-            // This needs a reload
-            reloadRequiredStep(context);
-            context.completeStep();
         }
 
         @Override

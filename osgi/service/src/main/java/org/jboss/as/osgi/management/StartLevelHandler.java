@@ -25,40 +25,47 @@ import org.jboss.as.controller.OperationContext;
 import org.jboss.as.controller.OperationFailedException;
 import org.jboss.as.controller.OperationStepHandler;
 import org.jboss.as.controller.descriptions.ModelDescriptionConstants;
+import org.jboss.as.osgi.parser.OSGiRootResource;
 import org.jboss.dmr.ModelNode;
 import org.jboss.msc.service.ServiceController;
 import org.jboss.osgi.framework.Services;
-import org.osgi.service.startlevel.StartLevel;
+import org.osgi.framework.Bundle;
+import org.osgi.framework.startlevel.FrameworkStartLevel;
 
 /**
  * Handles the framework start level.
  *
  * @author David Bosschaert
+ * @author Thomas.Diesler@jboss.com
  */
 public abstract class StartLevelHandler implements OperationStepHandler {
 
     public static final StartLevelHandler READ_HANDLER = new StartLevelHandler() {
         @Override
-        void invokeOperation(StartLevel startLevel, OperationContext context, ModelNode operation) {
-            int level = startLevel.getStartLevel();
-            context.getResult().set(level);
+        void invokeOperation(Bundle sysbundle, OperationContext context, ModelNode operation) {
+            FrameworkStartLevel frameworkStartLevel = sysbundle.adapt(FrameworkStartLevel.class);
+            int startlevel = frameworkStartLevel.getStartLevel();
+            context.getResult().set(startlevel);
         }
     };
 
     public static final StartLevelHandler WRITE_HANDLER = new StartLevelHandler() {
         @Override
-        void invokeOperation(StartLevel startLevel, OperationContext context, ModelNode operation) {
-            int targetStartLevel = operation.require(ModelDescriptionConstants.VALUE).asInt();
-            startLevel.setStartLevel(targetStartLevel);
+        void invokeOperation(Bundle sysbundle, OperationContext context, ModelNode operation) throws OperationFailedException {
+            ModelNode value = operation.require(ModelDescriptionConstants.VALUE);
+            OSGiRootResource.STARTLEVEL.getValidator().validateParameter(ModelDescriptionConstants.VALUE, value);
+            int startlevel = value.asInt();
+            FrameworkStartLevel frameworkStartLevel = sysbundle.adapt(FrameworkStartLevel.class);
+            frameworkStartLevel.setStartLevel(startlevel);
         }
     };
 
     @Override
     public void execute(OperationContext context, ModelNode operation) throws OperationFailedException {
-        ServiceController<?> controller = context.getServiceRegistry(false).getService(Services.START_LEVEL);
+        ServiceController<?> controller = context.getServiceRegistry(false).getService(Services.SYSTEM_BUNDLE);
         if (controller != null && controller.getState() == ServiceController.State.UP) {
-            StartLevel startLevel = (StartLevel) controller.getValue();
-            invokeOperation(startLevel, context, operation);
+            Bundle sysbundle =  (Bundle) controller.getValue();
+            invokeOperation(sysbundle, context, operation);
         } else {
             // non-metric read-attribute handlers should not fail
             context.getResult().set(new ModelNode());
@@ -66,5 +73,5 @@ public abstract class StartLevelHandler implements OperationStepHandler {
         context.completeStep(OperationContext.RollbackHandler.NOOP_ROLLBACK_HANDLER);
     }
 
-    abstract void invokeOperation(StartLevel sls, OperationContext context, ModelNode operation);
+    abstract void invokeOperation(Bundle sysbundle, OperationContext context, ModelNode operation) throws OperationFailedException ;
 }

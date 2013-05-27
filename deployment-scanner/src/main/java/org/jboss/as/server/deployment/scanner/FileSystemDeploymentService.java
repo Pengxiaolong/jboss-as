@@ -42,9 +42,7 @@ import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.regex.Pattern;
 
-import org.jboss.as.controller.OperationContext;
 import org.jboss.as.controller.OperationFailedException;
-import org.jboss.as.controller.ServiceVerificationHandler;
 import org.jboss.as.controller.operations.common.Util;
 import org.jboss.as.server.deployment.DeploymentAddHandler;
 import org.jboss.as.server.deployment.DeploymentDeployHandler;
@@ -56,7 +54,6 @@ import org.jboss.as.server.deployment.scanner.ZipCompletionScanner.NonScannableZ
 import org.jboss.as.server.deployment.scanner.api.DeploymentScanner;
 import org.jboss.dmr.ModelNode;
 import org.jboss.dmr.Property;
-import org.jboss.msc.service.ServiceController;
 
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.ARCHIVE;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.CANCELLED;
@@ -83,7 +80,7 @@ import static org.jboss.as.server.deployment.scanner.DeploymentScannerMessages.M
  */
 class FileSystemDeploymentService implements DeploymentScanner {
 
-    private static final Pattern ARCHIVE_PATTERN = Pattern.compile("^.*\\.[SsWwJjEeRr][Aa][Rr]$");
+    static final Pattern ARCHIVE_PATTERN = Pattern.compile("^.*\\.(?:(?:[SsWwJjEeRr][Aa][Rr])|(?:[Ww][Aa][Bb])|(?:[Ee][Ss][Aa]))$");
 
     static final String DEPLOYED = ".deployed";
     static final String FAILED_DEPLOY = ".failed";
@@ -246,11 +243,6 @@ class FileSystemDeploymentService implements DeploymentScanner {
     }
 
     @Override
-    public void bootTimeScan(final OperationContext context, final ServiceVerificationHandler verificationHandler, final List<ServiceController<?>> newControllers) {
-
-    }
-
-    @Override
     public synchronized void startScanner() {
         assert deploymentOperationsFactory != null : "deploymentOperationsFactory is null";
         startScanner(deploymentOperationsFactory.create());
@@ -312,7 +304,7 @@ class FileSystemDeploymentService implements DeploymentScanner {
                 final String deploymentName = fileName.substring(0, fileName.length() - DEPLOYED.length());
                 if (deploymentNames.contains(deploymentName)) {
                     File deployment = new File(dir, deploymentName);
-                    deployed.put(deploymentName, new DeploymentMarker(child.lastModified(), !deployment.isDirectory()));
+                    deployed.put(deploymentName, new DeploymentMarker(child.lastModified(), !deployment.isDirectory(), dir));
                 } else {
                     if (!child.delete()) {
                         ROOT_LOGGER.cannotRemoveDeploymentMarker(fileName);
@@ -405,11 +397,8 @@ class FileSystemDeploymentService implements DeploymentScanner {
 
                 // Add remove actions to the plan for anything we count as
                 // deployed that we didn't find on the scan
-                for (String missing : scanContext.toRemove) {
-                    // TODO -- minor -- this assumes the deployment was in the root deploymentDir,
-                    // not a child dir, and therefore puts the '.isundeploying' file there
-                    File parent = deploymentDir;
-                    scannerTasks.add(new UndeployTask(missing, parent, scanContext.scanStartTime));
+                for (Map.Entry<String, DeploymentMarker> missing : scanContext.toRemove.entrySet()) {
+                    scannerTasks.add(new UndeployTask(missing.getKey(), missing.getValue().parentFolder, scanContext.scanStartTime));
                 }
                 // Process the tasks
                 if (scannerTasks.size() > 0) {
@@ -779,7 +768,7 @@ class FileSystemDeploymentService implements DeploymentScanner {
                         // Treat no progress for an extended period as a failed deployment
                         String suffix = deployed.containsKey(deploymentName) ? MESSAGES.previousContentDeployed() : "";
                         String msg = MESSAGES.deploymentContentIncomplete(incompleteFile, suffix);
-                        writeFailedMarker(incompleteFile, new ModelNode().set(msg), status.timestamp);
+                        writeFailedMarker(incompleteFile, msg, status.timestamp);
                         ROOT_LOGGER.error(msg);
                         status.warned = true;
                         warnLogged = true;
@@ -824,7 +813,7 @@ class FileSystemDeploymentService implements DeploymentScanner {
                     NonScannableStatus nonScannableStatus = entry.getValue();
                     NonScannableZipException e = nonScannableStatus.exception;
                     String msg = MESSAGES.unsafeAutoDeploy(e.getLocalizedMessage(), fileName, DO_DEPLOY);
-                    writeFailedMarker(nonScannable, new ModelNode().set(msg), nonScannableStatus.timestamp);
+                    writeFailedMarker(nonScannable, msg, nonScannableStatus.timestamp);
                     ROOT_LOGGER.error(msg);
                     warnLogged = true;
 
@@ -914,7 +903,7 @@ class FileSystemDeploymentService implements DeploymentScanner {
         }
     }
 
-    private void writeFailedMarker(final File deploymentFile, final ModelNode failureDescription, long failureTimestamp) {
+    private void writeFailedMarker(final File deploymentFile, final String failureDescription, long failureTimestamp) {
         final File failedMarker = new File(deploymentFile.getParent(), deploymentFile.getName() + FAILED_DEPLOY);
         final File deployMarker = new File(deploymentFile.getParent(), deploymentFile.getName() + DO_DEPLOY);
         if (deployMarker.exists() && !deployMarker.delete()) {
@@ -932,7 +921,7 @@ class FileSystemDeploymentService implements DeploymentScanner {
         try {
             // failedMarker.createNewFile();
             fos = new FileOutputStream(failedMarker);
-            fos.write(failureDescription.asString().getBytes());
+            fos.write(failureDescription.getBytes());
         } catch (IOException io) {
             ROOT_LOGGER.errorWritingDeploymentMarker(io, failedMarker.getAbsolutePath());
         } finally {
@@ -1024,7 +1013,8 @@ class FileSystemDeploymentService implements DeploymentScanner {
 
         @Override
         protected void handleSuccessResult() {
-            final File doDeployMarker = new File(new File(parent), deploymentFile.getName() + DO_DEPLOY);
+            final File parentFolder = new File(parent);
+            final File doDeployMarker = new File(parentFolder, deploymentFile.getName() + DO_DEPLOY);
             if (doDeployMarker.exists() && !doDeployMarker.delete()) {
                 ROOT_LOGGER.cannotRemoveDeploymentMarker(doDeployMarker.getAbsolutePath());
             }
@@ -1041,7 +1031,7 @@ class FileSystemDeploymentService implements DeploymentScanner {
             if (deployed.containsKey(deploymentName)) {
                 deployed.remove(deploymentName);
             }
-            deployed.put(deploymentName, new DeploymentMarker(doDeployTimestamp, archive));
+            deployed.put(deploymentName, new DeploymentMarker(doDeployTimestamp, archive, parentFolder));
 
             // Remove the in-progress marker - save this until the deployment is really complete.
             removeInProgressMarker();
@@ -1066,12 +1056,11 @@ class FileSystemDeploymentService implements DeploymentScanner {
 
         @Override
         protected void handleFailureResult(final ModelNode result) {
-            ROOT_LOGGER.error(result.get(FAILURE_DESCRIPTION).asString());
 
             // Remove the in-progress marker
             removeInProgressMarker();
 
-            writeFailedMarker(deploymentFile, result.get(FAILURE_DESCRIPTION), doDeployTimestamp);
+            writeFailedMarker(deploymentFile, result.get(FAILURE_DESCRIPTION).toString(), doDeployTimestamp);
         }
     }
 
@@ -1095,7 +1084,7 @@ class FileSystemDeploymentService implements DeploymentScanner {
             // Remove the in-progress marker
             removeInProgressMarker();
 
-            writeFailedMarker(deploymentFile, result.get(FAILURE_DESCRIPTION), doDeployTimestamp);
+            writeFailedMarker(deploymentFile, result.get(FAILURE_DESCRIPTION).toString(), doDeployTimestamp);
         }
     }
 
@@ -1122,7 +1111,7 @@ class FileSystemDeploymentService implements DeploymentScanner {
             removeInProgressMarker();
 
             deployed.remove(deploymentName);
-            deployed.put(deploymentName, new DeploymentMarker(markerLastModified, archive));
+            deployed.put(deploymentName, new DeploymentMarker(markerLastModified, archive, new File(parent)));
 
         }
 
@@ -1132,7 +1121,7 @@ class FileSystemDeploymentService implements DeploymentScanner {
             // Remove the in-progress marker
             removeInProgressMarker();
 
-            writeFailedMarker(new File(parent, deploymentName), result.get(FAILURE_DESCRIPTION), markerLastModified);
+            writeFailedMarker(new File(parent, deploymentName), result.get(FAILURE_DESCRIPTION).toString(), markerLastModified);
         }
     }
 
@@ -1174,17 +1163,19 @@ class FileSystemDeploymentService implements DeploymentScanner {
             // Remove the in-progress marker
             removeInProgressMarker();
 
-            writeFailedMarker(new File(parent, deploymentName), result.get(FAILURE_DESCRIPTION), scanStartTime);
+            writeFailedMarker(new File(parent, deploymentName), result.get(FAILURE_DESCRIPTION).toString(), scanStartTime);
         }
     }
 
     private class DeploymentMarker {
         private final long lastModified;
-        private boolean archive;
+        private final boolean archive;
+        private final File parentFolder;
 
-        private DeploymentMarker(final long lastModified, boolean archive) {
+        private DeploymentMarker(final long lastModified, boolean archive, File parentFolder) {
             this.lastModified = lastModified;
             this.archive = archive;
+            this.parentFolder = parentFolder;
         }
     }
 
@@ -1200,7 +1191,7 @@ class FileSystemDeploymentService implements DeploymentScanner {
         /**
          * Files to undeploy at the end of the scan
          */
-        private final Set<String> toRemove = new HashSet<String>(deployed.keySet());
+        private final Map<String, DeploymentMarker> toRemove = new HashMap<String, DeploymentMarker>(deployed);
         /**
          * Marker files with no corresponding content
          */

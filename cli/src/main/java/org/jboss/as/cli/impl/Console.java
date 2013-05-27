@@ -33,10 +33,11 @@ import org.jboss.as.cli.CommandContext;
 import org.jboss.as.cli.CommandHistory;
 import org.jboss.as.cli.CommandLineCompleter;
 
-import org.jboss.jreadline.complete.CompleteOperation;
-import org.jboss.jreadline.complete.Completion;
-import org.jboss.jreadline.console.Config;
-import org.jboss.jreadline.console.settings.Settings;
+import org.jboss.aesh.complete.CompleteOperation;
+import org.jboss.aesh.complete.Completion;
+import org.jboss.aesh.console.Config;
+import org.jboss.aesh.console.Prompt;
+import org.jboss.aesh.console.settings.Settings;
 
 /**
  *
@@ -66,6 +67,10 @@ public interface Console {
 
     String readLine(String prompt, Character mask);
 
+    int getTerminalWidth();
+
+    int getTerminalHeight();
+
     static final class Factory {
 
         public static Console getConsole(CommandContext ctx) throws CliInitializationException {
@@ -74,18 +79,18 @@ public interface Console {
 
         public static Console getConsole(final CommandContext ctx, InputStream is, OutputStream os) throws CliInitializationException {
 
-            org.jboss.jreadline.console.Console jReadlineConsole = null;
+            org.jboss.aesh.console.Console aeshConsole = null;
             try {
-                jReadlineConsole = new org.jboss.jreadline.console.Console();
+                aeshConsole = new org.jboss.aesh.console.Console();
             } catch (IOException e) {
                 e.printStackTrace();
             }
 
-            final org.jboss.jreadline.console.Console finalJReadlineConsole = jReadlineConsole;
+            final org.jboss.aesh.console.Console finalAeshConsole = aeshConsole;
             return new Console() {
 
                 private CommandContext cmdCtx = ctx;
-                private org.jboss.jreadline.console.Console console = finalJReadlineConsole;
+                private org.jboss.aesh.console.Console console = finalAeshConsole;
                 private CommandHistory history = new HistoryImpl();
 
                 @Override
@@ -96,6 +101,11 @@ public interface Console {
                             int offset =  completer.complete(cmdCtx,
                                     co.getBuffer(), co.getCursor(), co.getCompletionCandidates());
                             co.setOffset(offset);
+                            if(co.getCompletionCandidates().size() == 1 &&
+                                    co.getCompletionCandidates().get(0).startsWith(co.getBuffer()))
+                                co.doAppendSeparator(true);
+                            else
+                                co.doAppendSeparator(false);
                         }
                     });
                 }
@@ -135,8 +145,9 @@ public interface Console {
                     list.toArray(newList);
                     try {
                         console.pushToStdOut(
-                                org.jboss.jreadline.util.Parser.formatDisplayList(newList,
-                                        console.getTerminalHeight(), console.getTerminalWidth()));
+                                org.jboss.aesh.util.Parser.formatDisplayList(newList,
+                                        console.getTerminalSize().getHeight(),
+                                        console.getTerminalSize().getWidth()));
                     } catch (IOException e) {
                         e.printStackTrace();
                     }
@@ -173,11 +184,21 @@ public interface Console {
                 @Override
                 public String readLine(String prompt, Character mask) {
                     try {
-                        return console.read(prompt, mask).getBuffer();
+                        return console.read(new Prompt(prompt), mask).getBuffer();
                     } catch (IOException e) {
                         e.printStackTrace();
                         return null;
                     }
+                }
+
+                @Override
+                public int getTerminalWidth() {
+                    return console.getTerminalSize().getWidth();
+                }
+
+                @Override
+                public int getTerminalHeight() {
+                    return console.getTerminalSize().getHeight();
                 }
 
             class HistoryImpl implements CommandHistory {

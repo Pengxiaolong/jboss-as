@@ -32,7 +32,7 @@ import org.jboss.as.arquillian.api.ServerSetup;
 import org.jboss.as.arquillian.container.ManagementClient;
 import org.jboss.as.connector.util.ConnectorServices;
 import org.jboss.as.connector.subsystems.resourceadapters.Namespace;
-import org.jboss.as.connector.subsystems.resourceadapters.ResourceAdaptersExtension.ResourceAdapterSubsystemParser;
+import org.jboss.as.connector.subsystems.resourceadapters.ResourceAdapterSubsystemParser;
 import org.jboss.as.test.integration.management.base.AbstractMgmtServerSetupTask;
 import org.jboss.as.test.integration.management.base.AbstractMgmtTestBase;
 import org.jboss.as.test.integration.management.base.ContainerResourceMgmtTestBase;
@@ -70,7 +70,7 @@ public class PureTestCase extends ContainerResourceMgmtTestBase {
         @Override
         public void doSetup(final ManagementClient managementClient) throws Exception {
             String xml = FileUtils.readFile(PureTestCase.class, "pure.xml");
-            List<ModelNode> operations = xmlToModelOperations(xml, Namespace.CURRENT.getUriString(), new ResourceAdapterSubsystemParser());
+            List<ModelNode> operations = xmlToModelOperations(xml, Namespace.RESOURCEADAPTERS_1_0.getUriString(), new ResourceAdapterSubsystemParser());
             executeOperation(operationListToCompositeOperation(operations));
 
         }
@@ -97,11 +97,11 @@ public class PureTestCase extends ContainerResourceMgmtTestBase {
 
         ResourceAdapterArchive raa =
                 ShrinkWrap.create(ResourceAdapterArchive.class, deploymentName);
-        JavaArchive ja = ShrinkWrap.create(JavaArchive.class, "multiple.jar");
-        ja.addClasses(PureInflowResourceAdapter.class, PureTestCase.class,
-                MgmtOperationException.class, XMLElementReader.class, XMLElementWriter.class, PureTestCaseSetup.class);
-        ja.addPackage(AbstractMgmtTestBase.class.getPackage());
-        raa.addAsLibrary(ja);
+        JavaArchive javaArchive = ShrinkWrap.create(JavaArchive.class, "multiple.jar");
+        javaArchive.addClasses(PureTestCase.class, PureTestCaseSetup.class, MgmtOperationException.class, XMLElementReader.class, XMLElementWriter.class);
+        javaArchive.addPackage(PureInflowResourceAdapter.class.getPackage());
+        javaArchive.addPackage(AbstractMgmtTestBase.class.getPackage());
+        raa.addAsLibrary(javaArchive);
 
         raa.addAsManifestResource(PureTestCase.class.getPackage(), "ra.xml", "ra.xml")
                 .addAsManifestResource(new StringAsset("Dependencies: org.jboss.as.controller-client,org.jboss.dmr,org.jboss.as.cli,javax.inject.api,org.jboss.as.connector\n"), "MANIFEST.MF");
@@ -147,8 +147,6 @@ public class PureTestCase extends ContainerResourceMgmtTestBase {
         Set<String> ids = repository.getResourceAdapters();
 
         assertNotNull(ids);
-        //on a running server it's always 2 beacause HornetQResourceAdapter is always present
-        assertEquals(1, ids.size());
 
         for (String piId : ids) {
             assertNotNull(piId);

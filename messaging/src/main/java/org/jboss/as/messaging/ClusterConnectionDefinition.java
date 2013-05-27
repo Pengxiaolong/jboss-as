@@ -21,16 +21,9 @@
  */
 
 package org.jboss.as.messaging;
-
-import static org.hornetq.core.config.impl.ConfigurationImpl.DEFAULT_CLUSTER_CONNECTION_TTL;
-import static org.hornetq.core.config.impl.ConfigurationImpl.DEFAULT_CLUSTER_FAILURE_CHECK_PERIOD;
-import static org.hornetq.core.config.impl.ConfigurationImpl.DEFAULT_CLUSTER_MAX_RETRY_INTERVAL;
-import static org.hornetq.core.config.impl.ConfigurationImpl.DEFAULT_CLUSTER_RECONNECT_ATTEMPTS;
-import static org.hornetq.core.config.impl.ConfigurationImpl.DEFAULT_CLUSTER_RETRY_INTERVAL_MULTIPLIER;
 import static org.jboss.as.controller.SimpleAttributeDefinitionBuilder.create;
 import static org.jboss.as.controller.client.helpers.MeasurementUnit.MILLISECONDS;
-import static org.jboss.as.controller.registry.AttributeAccess.Flag.RESTART_ALL_SERVICES;
-import static org.jboss.as.controller.registry.AttributeAccess.Flag.STORAGE_RUNTIME;
+import static org.jboss.as.messaging.CommonAttributes.CALL_FAILOVER_TIMEOUT;
 import static org.jboss.as.messaging.CommonAttributes.CONNECTOR_REF_STRING;
 import static org.jboss.as.messaging.CommonAttributes.STATIC_CONNECTORS;
 import static org.jboss.dmr.ModelType.BIG_DECIMAL;
@@ -42,7 +35,7 @@ import static org.jboss.dmr.ModelType.STRING;
 
 import java.util.EnumSet;
 
-import org.hornetq.core.config.impl.ConfigurationImpl;
+import org.hornetq.api.config.HornetQDefaultConfiguration;
 import org.jboss.as.controller.AttributeDefinition;
 import org.jboss.as.controller.PathElement;
 import org.jboss.as.controller.PrimitiveListAttributeDefinition;
@@ -64,6 +57,8 @@ import org.jboss.dmr.ModelNode;
  */
 public class ClusterConnectionDefinition extends SimpleResourceDefinition {
 
+    public static final PathElement PATH = PathElement.pathElement(CommonAttributes.CLUSTER_CONNECTION);
+
     public static final String GET_NODES = "get-nodes";
 
     // we keep the operation for backwards compatibility but it duplicates the "static-connectors" writable attribute
@@ -77,31 +72,36 @@ public class ClusterConnectionDefinition extends SimpleResourceDefinition {
     public static final SimpleAttributeDefinition ADDRESS = create("cluster-connection-address", STRING)
             .setXmlName(CommonAttributes.ADDRESS)
             .setDefaultValue(null)
-            .setFlags(RESTART_ALL_SERVICES)
+            .setAllowExpression(true)
+            .setRestartAllServices()
             .build();
 
     public static final SimpleAttributeDefinition ALLOW_DIRECT_CONNECTIONS_ONLY = create("allow-direct-connections-only", BOOLEAN)
-            .setDefaultValue(new ModelNode().set(false))
+            .setDefaultValue(new ModelNode(false))
             .setAllowNull(true)
-            .setFlags(RESTART_ALL_SERVICES)
+            .setAllowExpression(true)
+            .setAlternatives(CommonAttributes.DISCOVERY_GROUP_NAME)
+            .setRestartAllServices()
             .build();
 
     public static final SimpleAttributeDefinition CHECK_PERIOD = create("check-period", LONG)
-            .setDefaultValue(new ModelNode().set(DEFAULT_CLUSTER_FAILURE_CHECK_PERIOD))
+            .setDefaultValue(new ModelNode(HornetQDefaultConfiguration.getDefaultClusterFailureCheckPeriod()))
             .setAllowNull(true)
+            .setAllowExpression(true)
             .setMeasurementUnit(MILLISECONDS)
-            .setFlags(RESTART_ALL_SERVICES)
+            .setRestartAllServices()
             .build();
 
     public static final SimpleAttributeDefinition CONNECTION_TTL = create("connection-ttl", LONG)
-            .setDefaultValue(new ModelNode().set(DEFAULT_CLUSTER_CONNECTION_TTL))
+            .setDefaultValue(new ModelNode(HornetQDefaultConfiguration.getDefaultClusterConnectionTtl()))
             .setMeasurementUnit(MILLISECONDS)
             .setAllowNull(true)
-            .setFlags(RESTART_ALL_SERVICES)
+            .setAllowExpression(true)
+            .setRestartAllServices()
             .build();
 
     public static final SimpleAttributeDefinition CONNECTOR_REF = create("connector-ref", STRING)
-            .setFlags(RESTART_ALL_SERVICES)
+            .setRestartAllServices()
             .build();
 
     public static final PrimitiveListAttributeDefinition CONNECTOR_REFS = PrimitiveListAttributeDefinition.Builder.of(STATIC_CONNECTORS, STRING)
@@ -115,53 +115,76 @@ public class ClusterConnectionDefinition extends SimpleResourceDefinition {
 
     public static final SimpleAttributeDefinition DISCOVERY_GROUP_NAME = create(CommonAttributes.DISCOVERY_GROUP_NAME, STRING)
             .setAllowNull(true)
-            .setAlternatives(STATIC_CONNECTORS)
+            .setAlternatives(ALLOW_DIRECT_CONNECTIONS_ONLY.getName(), CONNECTOR_REFS.getName())
             .setAttributeMarshaller(AttributeMarshallers.DISCOVERY_GROUP_MARSHALLER)
             .setRestartAllServices()
             .build();
 
     public static final SimpleAttributeDefinition FORWARD_WHEN_NO_CONSUMERS = create("forward-when-no-consumers", BOOLEAN)
-            .setDefaultValue(new ModelNode().set(ConfigurationImpl.DEFAULT_CLUSTER_FORWARD_WHEN_NO_CONSUMERS))
+            .setDefaultValue(new ModelNode(HornetQDefaultConfiguration.isDefaultClusterForwardWhenNoConsumers()))
             .setAllowNull(true)
-            .setFlags(RESTART_ALL_SERVICES)
+            .setAllowExpression(true)
+            .setRestartAllServices()
             .build();
 
     public static final SimpleAttributeDefinition MAX_HOPS = create("max-hops", INT)
-            .setDefaultValue(new ModelNode().set(ConfigurationImpl.DEFAULT_CLUSTER_MAX_HOPS))
+            .setDefaultValue(new ModelNode(HornetQDefaultConfiguration.getDefaultClusterMaxHops()))
             .setAllowNull(true)
-            .setFlags(RESTART_ALL_SERVICES)
+            .setAllowExpression(true)
+            .setRestartAllServices()
             .build();
 
     public static final SimpleAttributeDefinition MAX_RETRY_INTERVAL = create("max-retry-interval", LONG)
-            .setDefaultValue(new ModelNode().set(DEFAULT_CLUSTER_MAX_RETRY_INTERVAL))
+            .setDefaultValue(new ModelNode(HornetQDefaultConfiguration.getDefaultClusterMaxRetryInterval()))
             .setAllowNull(true)
+            .setAllowExpression(true)
             .setMeasurementUnit(MILLISECONDS)
-            .setFlags(RESTART_ALL_SERVICES)
+            .setRestartAllServices()
+            .build();
+
+    public static final SimpleAttributeDefinition NOTIFICATION_ATTEMPTS = create("notification-attempts",INT)
+            .setDefaultValue(new ModelNode(HornetQDefaultConfiguration.getDefaultClusterNotificationAttempts()))
+            .setMeasurementUnit(MILLISECONDS)
+            .setAllowNull(true)
+            .setAllowExpression(true)
+            .setRestartAllServices()
+            .build();
+
+    public static final SimpleAttributeDefinition NOTIFICATION_INTERVAL = create("notification-interval",LONG)
+            .setDefaultValue(new ModelNode(HornetQDefaultConfiguration.getDefaultClusterNotificationInterval()))
+            .setMeasurementUnit(MILLISECONDS)
+            .setAllowNull(true)
+            .setAllowExpression(true)
+            .setRestartAllServices()
             .build();
 
     public static final SimpleAttributeDefinition RETRY_INTERVAL = create("retry-interval", LONG)
-            .setDefaultValue(new ModelNode().set(ConfigurationImpl.DEFAULT_CLUSTER_RETRY_INTERVAL))
+            .setDefaultValue(new ModelNode(HornetQDefaultConfiguration.getDefaultClusterRetryInterval()))
             .setMeasurementUnit(MILLISECONDS)
             .setAllowNull(true)
-            .setFlags(RESTART_ALL_SERVICES)
+            .setAllowExpression(true)
+            .setRestartAllServices()
             .build();
 
     public static final SimpleAttributeDefinition RECONNECT_ATTEMPTS = create("reconnect-attempts", INT)
-            .setDefaultValue(new ModelNode().set(DEFAULT_CLUSTER_RECONNECT_ATTEMPTS))
+            .setDefaultValue(new ModelNode(HornetQDefaultConfiguration.getDefaultClusterReconnectAttempts()))
             .setAllowNull(true)
-            .setFlags(RESTART_ALL_SERVICES)
+            .setAllowExpression(true)
+            .setRestartAllServices()
             .build();
 
     public static final SimpleAttributeDefinition RETRY_INTERVAL_MULTIPLIER = create("retry-interval-multiplier", BIG_DECIMAL)
-            .setDefaultValue(new ModelNode().set(DEFAULT_CLUSTER_RETRY_INTERVAL_MULTIPLIER))
+            .setDefaultValue(new ModelNode(HornetQDefaultConfiguration.getDefaultClusterRetryIntervalMultiplier()))
             .setAllowNull(true)
-            .setFlags(RESTART_ALL_SERVICES)
+            .setAllowExpression(true)
+            .setRestartAllServices()
             .build();
 
     public static final SimpleAttributeDefinition USE_DUPLICATE_DETECTION = create("use-duplicate-detection", BOOLEAN)
-            .setDefaultValue(new ModelNode().set(ConfigurationImpl.DEFAULT_CLUSTER_DUPLICATE_DETECTION))
+            .setDefaultValue(new ModelNode(HornetQDefaultConfiguration.isDefaultClusterDuplicateDetection()))
             .setAllowNull(true)
-            .setFlags(RESTART_ALL_SERVICES)
+            .setAllowExpression(true)
+            .setRestartAllServices()
             .build();
 
     public static final AttributeDefinition[] ATTRIBUTES = {
@@ -170,21 +193,39 @@ public class ClusterConnectionDefinition extends SimpleResourceDefinition {
             CONNECTION_TTL,
             CommonAttributes.MIN_LARGE_MESSAGE_SIZE,
             CommonAttributes.CALL_TIMEOUT,
+            CommonAttributes.CALL_FAILOVER_TIMEOUT,
             RETRY_INTERVAL, RETRY_INTERVAL_MULTIPLIER, MAX_RETRY_INTERVAL,
             RECONNECT_ATTEMPTS, USE_DUPLICATE_DETECTION,
             FORWARD_WHEN_NO_CONSUMERS, MAX_HOPS,
             CommonAttributes.BRIDGE_CONFIRMATION_WINDOW_SIZE,
+            NOTIFICATION_ATTEMPTS,
+            NOTIFICATION_INTERVAL,
             CONNECTOR_REFS,
             ALLOW_DIRECT_CONNECTIONS_ONLY,
             DISCOVERY_GROUP_NAME,
     };
 
+    public static final AttributeDefinition[] ATTRIBUTES_ADDED_IN_1_2_0 = {
+            CALL_FAILOVER_TIMEOUT,
+            NOTIFICATION_ATTEMPTS,
+            NOTIFICATION_INTERVAL
+    };
+
+    public static final AttributeDefinition[] ATTRIBUTES_WITH_EXPRESSION_ALLOWED_IN_1_2_0 = {
+            ADDRESS,
+            ALLOW_DIRECT_CONNECTIONS_ONLY, CHECK_PERIOD, CONNECTION_TTL, FORWARD_WHEN_NO_CONSUMERS, MAX_HOPS,
+            MAX_RETRY_INTERVAL,
+            CommonAttributes.MIN_LARGE_MESSAGE_SIZE, RETRY_INTERVAL, RETRY_INTERVAL_MULTIPLIER,
+            USE_DUPLICATE_DETECTION, CommonAttributes.CALL_TIMEOUT,
+            RECONNECT_ATTEMPTS, CommonAttributes.BRIDGE_CONFIRMATION_WINDOW_SIZE
+    };
+
     public static final SimpleAttributeDefinition NODE_ID = create("node-id", STRING)
-            .setFlags(STORAGE_RUNTIME)
+            .setStorageRuntime()
             .build();
 
     public static final SimpleAttributeDefinition TOPOLOGY = create("topology", STRING)
-            .setFlags(STORAGE_RUNTIME)
+            .setStorageRuntime()
             .build();
 
     public static final AttributeDefinition[] READONLY_ATTRIBUTES = {
@@ -193,7 +234,7 @@ public class ClusterConnectionDefinition extends SimpleResourceDefinition {
     };
 
     public ClusterConnectionDefinition(final boolean registerRuntimeOnly) {
-        super(PathElement.pathElement(CommonAttributes.CLUSTER_CONNECTION),
+        super(PATH,
                 MessagingExtension.getResourceDescriptionResolver(CommonAttributes.CLUSTER_CONNECTION),
                 ClusterConnectionAdd.INSTANCE,
                 ClusterConnectionRemove.INSTANCE);

@@ -49,16 +49,13 @@ class TransformationUtils {
         //
     }
 
-    public static ModelNode getSubsystemDefinitionForVersion(final String subsystemName, ModelVersion version) {
+    public static ModelNode getSubsystemDefinitionForVersion(final Class<?> classForDmrPackage, final String subsystemName, ModelVersion version) {
 
         StringBuilder key = new StringBuilder(subsystemName).append("-").append(version.getMajor()).append(".").append(version.getMinor());
-        if(version.getMicro()!=0){
-            key.append('.').append(version.getMicro());
-        }
-        key.append(".dmr");
+        key.append('.').append(version.getMicro()).append(".dmr");
         InputStream is = null;
         try {
-            is = TransformerRegistry.class.getResourceAsStream(key.toString());
+            is = classForDmrPackage.getResourceAsStream(key.toString());
             if (is == null) {
                 return null;
             }
@@ -77,19 +74,19 @@ class TransformationUtils {
         return null;
     }
 
-    public static ResourceDefinition loadSubsystemDefinition(final String subsystemName, ModelVersion version) {
-        final ModelNode desc = getSubsystemDefinitionForVersion(subsystemName, version);
+    public static ResourceDefinition loadSubsystemDefinitionFromFile(final Class<?> classForDmrPackage, final String subsystemName, ModelVersion version) {
+        final ModelNode desc = getSubsystemDefinitionForVersion(classForDmrPackage, subsystemName, version);
         if (desc == null) {
             return null;
         }
         return new LegacyResourceDefinition(desc);
     }
 
-    public static Resource modelToResource(final ImmutableManagementResourceRegistration reg, final ModelNode model, boolean includeUndefined) {
-        return modelToResource(reg, model, includeUndefined, PathAddress.EMPTY_ADDRESS);
+    public static Resource modelToResource(final PathAddress startAddress, final ImmutableManagementResourceRegistration reg, final ModelNode model, boolean includeUndefined) {
+        return modelToResource(startAddress, reg, model, includeUndefined, PathAddress.EMPTY_ADDRESS);
     }
 
-    private static Resource modelToResource(final ImmutableManagementResourceRegistration reg, final ModelNode model, boolean includeUndefined, PathAddress fullPath) {
+    private static Resource modelToResource(final PathAddress startAddress, final ImmutableManagementResourceRegistration reg, final ModelNode model, boolean includeUndefined, PathAddress fullPath) {
         Resource res = Resource.Factory.create();
         ModelNode value = new ModelNode();
         Set<String> allFields = new HashSet<String>(model.keys());
@@ -122,20 +119,20 @@ class TransformationUtils {
                 if (subModel.isDefined()) {
                     for (Property p : subModel.asPropertyList()) {
                         if (p.getValue().isDefined()) {
-                            res.registerChild(PathElement.pathElement(path.getKey(), p.getName()), modelToResource(sub, p.getValue(), includeUndefined, fullPath.append(path)));
+                            res.registerChild(PathElement.pathElement(path.getKey(), p.getName()), modelToResource(startAddress,sub, p.getValue(), includeUndefined, fullPath.append(path)));
                         }
                     }
                 }
             } else {
                 ModelNode subModel = model.get(path.getKeyValuePair());
                 if (subModel.isDefined()) {
-                    res.registerChild(path, modelToResource(sub, subModel, includeUndefined, fullPath.append(path)));
+                    res.registerChild(path, modelToResource(startAddress,sub, subModel, includeUndefined, fullPath.append(path)));
                 }
             }
             allFields.remove(path.getKey());
         }
         if (!allFields.isEmpty()){
-            throw ControllerMessages.MESSAGES.modelFieldsNotKnown(allFields, fullPath);
+            throw ControllerMessages.MESSAGES.modelFieldsNotKnown(allFields,startAddress.append(fullPath));
         }
         return res;
     }

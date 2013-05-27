@@ -28,6 +28,7 @@ import org.jboss.as.controller.SimpleAttributeDefinitionBuilder;
 import org.jboss.as.controller.operations.validation.IntRangeValidator;
 import org.jboss.as.controller.registry.AttributeAccess;
 import org.jboss.as.controller.registry.OperationEntry;
+import org.jboss.as.controller.transform.description.ResourceTransformationDescriptionBuilder;
 import org.jboss.as.ejb3.cache.impl.factory.NonClusteredBackingCacheEntryStoreSource;
 import org.jboss.dmr.ModelNode;
 import org.jboss.dmr.ModelType;
@@ -68,15 +69,19 @@ public class FilePassivationStoreResourceDefinition extends PassivationStoreReso
                     .setFlags(AttributeAccess.Flag.RESTART_NONE)
                     .build();
 
-    private static final AttributeDefinition[] ATTRIBUTES = new AttributeDefinition[] { IDLE_TIMEOUT, IDLE_TIMEOUT_UNIT, MAX_SIZE, RELATIVE_TO, GROUPS_PATH, SESSIONS_PATH, SUBDIRECTORY_COUNT };
+    private static final AttributeDefinition[] ATTRIBUTES = {IDLE_TIMEOUT, IDLE_TIMEOUT_UNIT, MAX_SIZE, RELATIVE_TO, GROUPS_PATH, SESSIONS_PATH, SUBDIRECTORY_COUNT};
 
     private static final FilePassivationStoreAdd ADD = new FilePassivationStoreAdd(ATTRIBUTES);
-    private static final FilePassivationStoreRemove REMOVE = new FilePassivationStoreRemove(ADD);
+    private static final PassivationStoreRemove REMOVE = new PassivationStoreRemove(ADD);
     private static final FilePassivationStoreWriteHandler WRITE_HANDLER = new FilePassivationStoreWriteHandler(ATTRIBUTES);
 
     public static final FilePassivationStoreResourceDefinition INSTANCE = new FilePassivationStoreResourceDefinition();
 
     private FilePassivationStoreResourceDefinition() {
         super(EJB3SubsystemModel.FILE_PASSIVATION_STORE, ADD, REMOVE, OperationEntry.Flag.RESTART_NONE, OperationEntry.Flag.RESTART_RESOURCE_SERVICES, WRITE_HANDLER, ATTRIBUTES);
+    }
+
+    static void registerTransformers_1_1_0(ResourceTransformationDescriptionBuilder parent) {
+        PassivationStoreResourceDefinition.registerTransformers_1_1_0(INSTANCE.getPathElement(), parent);
     }
 }

@@ -64,9 +64,7 @@ import org.jboss.logging.Logger;
 import org.jboss.msc.service.ServiceContainer;
 import org.jboss.msc.service.ServiceController;
 import org.jboss.msc.service.ServiceName;
-import org.jboss.msc.service.StopContext;
 
-import static org.jboss.as.ejb3.EjbLogger.EJB3_LOGGER;
 import static org.jboss.as.ejb3.EjbLogger.ROOT_LOGGER;
 import static org.jboss.as.ejb3.EjbMessages.MESSAGES;
 
@@ -102,6 +100,10 @@ public abstract class EJBComponent extends BasicComponent {
 
     private final InvocationMetrics invocationMetrics = new InvocationMetrics();
     private final ShutDownInterceptorFactory shutDownInterceptorFactory;
+    private final TransactionManager transactionManager;
+    private final TransactionSynchronizationRegistry transactionSynchronizationRegistry;
+    private final UserTransaction userTransaction;
+    private final ServerSecurityManager serverSecurityManager;
 
     /**
      * Construct a new instance.
@@ -115,7 +117,6 @@ public abstract class EJBComponent extends BasicComponent {
         this.applicationExceptions = Collections.unmodifiableMap(ejbComponentCreateService.getApplicationExceptions().getApplicationExceptions());
 
         this.utilities = ejbComponentCreateService.getEJBUtilities();
-
         final Map<MethodTransactionAttributeKey, TransactionAttributeType> txAttrs = ejbComponentCreateService.getTxAttrs();
         if (txAttrs == null || txAttrs.isEmpty()) {
             this.txAttrs = Collections.emptyMap();
@@ -147,16 +148,20 @@ public abstract class EJBComponent extends BasicComponent {
         this.ejbRemoteTransactionsRepository = ejbComponentCreateService.getEJBRemoteTransactionsRepository();
         this.timeoutInterceptors = Collections.unmodifiableMap(ejbComponentCreateService.getTimeoutInterceptors());
         this.shutDownInterceptorFactory = ejbComponentCreateService.getShutDownInterceptorFactory();
+        this.transactionManager = ejbComponentCreateService.getTransactionManager();
+        this.transactionSynchronizationRegistry = ejbComponentCreateService.getTransactionSynchronizationRegistry();
+        this.userTransaction = ejbComponentCreateService.getUserTransaction();
+        this.serverSecurityManager = ejbComponentCreateService.getServerSecurityManager();
     }
 
     protected <T> T createViewInstanceProxy(final Class<T> viewInterface, final Map<Object, Object> contextData) {
         if (viewInterface == null)
-            throw EJB3_LOGGER.viewInterfaceCannotBeNull();
+            throw MESSAGES.viewInterfaceCannotBeNull();
         if (viewServices.containsKey(viewInterface.getName())) {
             final ServiceName serviceName = viewServices.get(viewInterface.getName());
             return createViewInstanceProxy(viewInterface, contextData, serviceName);
         } else {
-            throw EJB3_LOGGER.viewNotFound(viewInterface.getName(), this.getComponentName());
+            throw MESSAGES.viewNotFound(viewInterface.getName(), this.getComponentName());
         }
     }
 
@@ -235,7 +240,7 @@ public abstract class EJBComponent extends BasicComponent {
     }
 
     public Principal getCallerPrincipal() {
-        return utilities.getSecurityManager().getCallerPrincipal();
+        return this.serverSecurityManager.getCallerPrincipal();
     }
 
     protected TransactionAttributeType getCurrentTransactionAttribute() {
@@ -315,7 +320,7 @@ public abstract class EJBComponent extends BasicComponent {
     }
 
     public ServerSecurityManager getSecurityManager() {
-        return utilities.getSecurityManager();
+        return this.serverSecurityManager;
     }
 
     public TimerService getTimerService() throws IllegalStateException {
@@ -323,10 +328,14 @@ public abstract class EJBComponent extends BasicComponent {
     }
 
     public TransactionAttributeType getTransactionAttributeType(final MethodIntf methodIntf, final Method method) {
-        TransactionAttributeType txAttr = txAttrs.get(new MethodTransactionAttributeKey(methodIntf, MethodIdentifier.getIdentifierForMethod(method)));
+        return getTransactionAttributeType(methodIntf, MethodIdentifier.getIdentifierForMethod(method));
+    }
+
+    public TransactionAttributeType getTransactionAttributeType(final MethodIntf methodIntf, final MethodIdentifier method) {
+        TransactionAttributeType txAttr = txAttrs.get(new MethodTransactionAttributeKey(methodIntf, method));
         //fall back to type bean if not found
         if (txAttr == null && methodIntf != MethodIntf.BEAN) {
-            txAttr = txAttrs.get(new MethodTransactionAttributeKey(MethodIntf.BEAN, MethodIdentifier.getIdentifierForMethod(method)));
+            txAttr = txAttrs.get(new MethodTransactionAttributeKey(MethodIntf.BEAN, method));
         }
         if (txAttr == null)
             return TransactionAttributeType.REQUIRED;
@@ -334,17 +343,21 @@ public abstract class EJBComponent extends BasicComponent {
     }
 
     public TransactionManager getTransactionManager() {
-        return utilities.getTransactionManager();
+        return this.transactionManager;
     }
 
     public TransactionSynchronizationRegistry getTransactionSynchronizationRegistry() {
-        return utilities.getTransactionSynchronizationRegistry();
+        return this.transactionSynchronizationRegistry;
     }
 
     public int getTransactionTimeout(final MethodIntf methodIntf, final Method method) {
-        Integer txTimeout = txTimeouts.get(new MethodTransactionAttributeKey(methodIntf, MethodIdentifier.getIdentifierForMethod(method)));
-        if(txTimeout == null && methodIntf != MethodIntf.BEAN) {
-            txTimeout = txTimeouts.get(new MethodTransactionAttributeKey(MethodIntf.BEAN, MethodIdentifier.getIdentifierForMethod(method)));
+        return getTransactionTimeout(methodIntf, MethodIdentifier.getIdentifierForMethod(method));
+    }
+
+    public int getTransactionTimeout(final MethodIntf methodIntf, final MethodIdentifier method) {
+        Integer txTimeout = txTimeouts.get(new MethodTransactionAttributeKey(methodIntf, method));
+        if (txTimeout == null && methodIntf != MethodIntf.BEAN) {
+            txTimeout = txTimeouts.get(new MethodTransactionAttributeKey(MethodIntf.BEAN, method));
         }
         if (txTimeout == null)
             return -1;
@@ -353,17 +366,15 @@ public abstract class EJBComponent extends BasicComponent {
     }
 
     public UserTransaction getUserTransaction() throws IllegalStateException {
-        if (!isBeanManagedTransaction())
-            throw MESSAGES.failToCallIsBeanManagedTransaction();
-        return utilities.getUserTransaction();
+        return this.userTransaction;
     }
 
-    private boolean isBeanManagedTransaction() {
+    public boolean isBeanManagedTransaction() {
         return isBeanManagedTransaction;
     }
 
     public boolean isCallerInRole(final String roleName) throws IllegalStateException {
-        return utilities.getSecurityManager().isCallerInRole(securityMetaData.getSecurityRoles(), securityMetaData.getSecurityRoleLinks(), roleName);
+        return this.serverSecurityManager.isCallerInRole(securityMetaData.getSecurityRoles(), securityMetaData.getSecurityRoleLinks(), roleName);
     }
 
     public boolean isStatisticsEnabled() {
@@ -479,7 +490,7 @@ public abstract class EJBComponent extends BasicComponent {
     }
 
     /**
-     * Returns the {@link EJBRemoteTransactionsRepository} if there is atleast one remote view (either
+     * Returns the {@link EJBRemoteTransactionsRepository} if there is at least one remote view (either
      * ejb3.x business remote, ejb2.x remote component or home view) is exposed. Else returns null.
      *
      * @return
@@ -489,7 +500,7 @@ public abstract class EJBComponent extends BasicComponent {
     }
 
     public AllowedMethodsInformation getAllowedMethodsInformation() {
-        return AllowedMethodsInformation.INSTANCE;
+        return isBeanManagedTransaction() ? AllowedMethodsInformation.INSTANCE_BMT : AllowedMethodsInformation.INSTANCE_CMT;
     }
 
     public InvocationMetrics getInvocationMetrics() {

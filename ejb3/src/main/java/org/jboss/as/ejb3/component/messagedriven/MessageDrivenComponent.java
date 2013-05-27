@@ -42,15 +42,19 @@ import org.jboss.as.ejb3.inflow.MessageEndpointService;
 import org.jboss.as.ejb3.pool.Pool;
 import org.jboss.as.ejb3.pool.StatelessObjectFactory;
 import org.jboss.as.naming.ManagedReference;
+import org.wildfly.security.manager.GetClassLoaderAction;
 import org.jboss.invocation.Interceptor;
 import org.jboss.invocation.InterceptorFactoryContext;
 import org.jboss.jca.core.spi.rar.Endpoint;
+import org.wildfly.security.manager.WildFlySecurityManager;
 
+import static java.security.AccessController.doPrivileged;
 import static java.util.Collections.emptyMap;
 import static javax.ejb.TransactionAttributeType.REQUIRED;
-import static org.jboss.as.ejb3.EjbLogger.EJB3_LOGGER;
 import static org.jboss.as.ejb3.EjbLogger.ROOT_LOGGER;
 import static org.jboss.as.ejb3.component.MethodIntf.BEAN;
+
+import static org.jboss.as.ejb3.EjbMessages.MESSAGES;
 
 /**
  * @author <a href="mailto:cdewolf@redhat.com">Carlo de Wolf</a>
@@ -100,6 +104,7 @@ public class MessageDrivenComponent extends EJBComponent implements PooledCompon
 
         this.activationSpec = activationSpec;
         this.messageListenerInterface = messageListenerInterface;
+        final ClassLoader componentClassLoader = doPrivileged(new GetClassLoaderAction(ejbComponentCreateService.getComponentClass()));
         final MessageEndpointService<?> service = new MessageEndpointService<Object>() {
             @Override
             public Class<Object> getMessageListenerInterface() {
@@ -113,6 +118,8 @@ public class MessageDrivenComponent extends EJBComponent implements PooledCompon
 
             @Override
             public boolean isDeliveryTransacted(Method method) throws NoSuchMethodException {
+                if(isBeanManagedTransaction())
+                    return false;
                 // an MDB doesn't expose a real view
                 return getTransactionAttributeType(BEAN, method) == REQUIRED;
             }
@@ -121,7 +128,7 @@ public class MessageDrivenComponent extends EJBComponent implements PooledCompon
             public Object obtain(long timeout, TimeUnit unit) {
                 // like this it's a disconnected invocation
 //                return getComponentView(messageListenerInterface).getViewForInstance(null);
-                return createViewInstanceProxy(messageListenerInterface, emptyMap());
+                return createViewInstanceProxy(getComponentClass(), emptyMap());
             }
 
             @Override
@@ -131,10 +138,10 @@ public class MessageDrivenComponent extends EJBComponent implements PooledCompon
 
             @Override
             public ClassLoader getClassLoader() {
-                return ejbComponentCreateService.getComponentClass().getClassLoader();
+                return componentClassLoader;
             }
         };
-        this.endpointFactory = new JBossMessageEndpointFactory(getComponentClass().getClassLoader(), service);
+        this.endpointFactory = new JBossMessageEndpointFactory(componentClassLoader, service, (Class<Object>) getComponentClass());
     }
 
     @Override
@@ -163,20 +170,20 @@ public class MessageDrivenComponent extends EJBComponent implements PooledCompon
     @Override
     public void start() {
         if (endpoint == null) {
-            throw EJB3_LOGGER.endpointUnAvailable(this.getComponentName());
+            throw MESSAGES.endpointUnAvailable(this.getComponentName());
         }
 
         getShutDownInterceptorFactory().start();
         super.start();
 
-        ClassLoader oldTccl = SecurityActions.getContextClassLoader();
+        ClassLoader oldTccl = WildFlySecurityManager.getCurrentContextClassLoaderPrivileged();
         try {
-            SecurityActions.setContextClassLoader(classLoader);
+            WildFlySecurityManager.setCurrentContextClassLoaderPrivileged(classLoader);
             this.endpoint.activate(endpointFactory, activationSpec);
         } catch (ResourceException e) {
             throw new RuntimeException(e);
         } finally {
-            SecurityActions.setContextClassLoader(oldTccl);
+            WildFlySecurityManager.setCurrentContextClassLoaderPrivileged(oldTccl);
         }
 
         if (this.pool != null) {
@@ -187,14 +194,14 @@ public class MessageDrivenComponent extends EJBComponent implements PooledCompon
     @Override
     public void stop() {
 
-        ClassLoader oldTccl = SecurityActions.getContextClassLoader();
+        ClassLoader oldTccl = WildFlySecurityManager.getCurrentContextClassLoaderPrivileged();
         try {
-            SecurityActions.setContextClassLoader(classLoader);
+            WildFlySecurityManager.setCurrentContextClassLoaderPrivileged(classLoader);
             endpoint.deactivate(endpointFactory, activationSpec);
         } catch (ResourceException re) {
-            throw EJB3_LOGGER.failureDuringEndpointDeactivation(this.getComponentName(), re);
+            throw MESSAGES.failureDuringEndpointDeactivation(this.getComponentName(), re);
         } finally {
-            SecurityActions.setContextClassLoader(oldTccl);
+            WildFlySecurityManager.setCurrentContextClassLoaderPrivileged(oldTccl);
         }
 
         getShutDownInterceptorFactory().shutdown();
@@ -208,6 +215,6 @@ public class MessageDrivenComponent extends EJBComponent implements PooledCompon
 
     @Override
     public AllowedMethodsInformation getAllowedMethodsInformation() {
-        return MessageDrivenAllowedMethodsInformation.INSTANCE;
+        return isBeanManagedTransaction() ? MessageDrivenAllowedMethodsInformation.INSTANCE_BMT : MessageDrivenAllowedMethodsInformation.INSTANCE_CMT;
     }
 }

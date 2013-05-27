@@ -21,15 +21,19 @@
 */
 package org.jboss.as.controller;
 
+import java.util.regex.Pattern;
+
 import org.jboss.dmr.ModelNode;
-import org.jboss.dmr.ModelType;
 
 /**
- * Resolves {@link ModelType#EXPRESSION} expressions in a {@link ModelNode}.
+ * Resolves {@link org.jboss.dmr.ModelType#EXPRESSION} expressions in a {@link ModelNode}.
  *
  * @author <a href="kabir.khan@jboss.com">Kabir Khan</a>
  */
 public interface ExpressionResolver {
+
+    /** A {@link Pattern} that can be used to identify strings that include expression syntax */
+    Pattern EXPRESSION_PATTERN = Pattern.compile(".*\\$\\{.*\\}.*");
 
     /**
      * Resolves any expressions in the passed in ModelNode.
@@ -39,13 +43,42 @@ public interface ExpressionResolver {
      * @param node the ModelNode containing expressions.
      * @return a copy of the node with expressions resolved
      *
-     * @throws OperationFailedException if there is a value of type {@link ModelType#EXPRESSION} in the node tree and
+     * @throws OperationFailedException if there is a value of type {@link org.jboss.dmr.ModelType#EXPRESSION} in the node tree and
      *            there is no system property or environment variable that matches the expression, or if a security
      *            manager exists and its {@link SecurityManager#checkPermission checkPermission} method doesn't allow
      *            access to the relevant system property or environment variable
      */
     ModelNode resolveExpressions(ModelNode node) throws OperationFailedException;
 
-    /** Default {@code ExpressionResolver} that simply calls {@link ModelNode#resolve()}. */
-    ExpressionResolver DEFAULT = new ExpressionResolverImpl();
+    /**
+     * An {@code ExpressionResolver} suitable for test cases that simply calls {@link ModelNode#resolve()}.
+     * Should not be used for production code as it does not support resolution from a security vault.
+     */
+    ExpressionResolver TEST_RESOLVER = new ExpressionResolverImpl();
+
+    /**
+     * Default {@code ExpressionResolver} that simply calls {@link ModelNode#resolve()}.
+     * Should not be used for production code as it does not support resolution from a security vault.
+     *
+     * @deprecated use {@link #TEST_RESOLVER} for test cases
+     */
+    @Deprecated
+    ExpressionResolver DEFAULT = TEST_RESOLVER;
+
+    /**
+     * An expression resolver that throws an {@code OperationFailedException} if any expressions are found.
+     * Intended for use with APIs where an {@code ExpressionResolver} is required but the caller requires
+     * that all expression have already been resolved.
+     */
+    ExpressionResolver REJECTING = new ExpressionResolverImpl() {
+        @Override
+        protected void resolvePluggableExpression(ModelNode node) throws OperationFailedException {
+            String expression = node.asString();
+            if (EXPRESSION_PATTERN.matcher(expression).matches()) {
+                throw ControllerMessages.MESSAGES.illegalUnresolvedModel(expression);
+            }
+            // It wasn't an expression any way; convert the node to type STRING
+            node.set(expression);
+        }
+    };
 }

@@ -26,8 +26,8 @@ import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.MAN
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.NATIVE_INTERFACE;
 
 import org.jboss.as.controller.AttributeDefinition;
+import org.jboss.as.controller.ModelVersion;
 import org.jboss.as.controller.PathElement;
-import org.jboss.as.controller.ResourceDefinition;
 import org.jboss.as.controller.SimpleAttributeDefinition;
 import org.jboss.as.controller.SimpleAttributeDefinitionBuilder;
 import org.jboss.as.controller.SimpleResourceDefinition;
@@ -45,7 +45,7 @@ import org.jboss.as.server.operations.NativeManagementWriteAttributeHandler;
 import org.jboss.dmr.ModelType;
 
 /**
- * {@link ResourceDefinition} for the native management interface resource.
+ * {@link org.jboss.as.controller.ResourceDefinition} for the native management interface resource.
  *
  * @author Brian Stansberry (c) 2011 Red Hat Inc.
  */
@@ -62,6 +62,7 @@ public class NativeManagementResourceDefinition extends SimpleResourceDefinition
                 .setAllowExpression(true).setValidator(new StringLengthValidator(1, Integer.MAX_VALUE, false, true))
                 .setAlternatives(ModelDescriptionConstants.SOCKET_BINDING)
                 .setFlags(AttributeAccess.Flag.RESTART_RESOURCE_SERVICES)
+                .setDeprecated(ModelVersion.create(1, 4))
                 .build();
 
     public static final SimpleAttributeDefinition NATIVE_PORT = new SimpleAttributeDefinitionBuilder(ModelDescriptionConstants.PORT, ModelType.INT, false)
@@ -69,6 +70,7 @@ public class NativeManagementResourceDefinition extends SimpleResourceDefinition
             .setAlternatives(ModelDescriptionConstants.SOCKET_BINDING)
             .setRequires(ModelDescriptionConstants.INTERFACE)
             .setFlags(AttributeAccess.Flag.RESTART_RESOURCE_SERVICES)
+            .setDeprecated(ModelVersion.create(1,4))
             .build();
 
     public static final SimpleAttributeDefinition SOCKET_BINDING = new SimpleAttributeDefinitionBuilder(ModelDescriptionConstants.SOCKET_BINDING, ModelType.STRING, true)

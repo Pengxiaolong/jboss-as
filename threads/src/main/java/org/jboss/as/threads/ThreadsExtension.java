@@ -21,18 +21,22 @@
  */
 package org.jboss.as.threads;
 
-import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.DESCRIBE;
+import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.SUBSYSTEM;
 import static org.jboss.as.threads.CommonAttributes.THREADS;
 
 import org.jboss.as.controller.Extension;
 import org.jboss.as.controller.ExtensionContext;
+import org.jboss.as.controller.ModelVersion;
+import org.jboss.as.controller.PathElement;
 import org.jboss.as.controller.SubsystemRegistration;
 import org.jboss.as.controller.descriptions.ResourceDescriptionResolver;
 import org.jboss.as.controller.descriptions.StandardResourceDescriptionResolver;
 import org.jboss.as.controller.operations.common.GenericSubsystemDescribeHandler;
 import org.jboss.as.controller.parsing.ExtensionParsingContext;
 import org.jboss.as.controller.registry.ManagementResourceRegistration;
-import org.jboss.as.controller.registry.OperationEntry;
+import org.jboss.as.controller.transform.description.ResourceTransformationDescriptionBuilder;
+import org.jboss.as.controller.transform.description.TransformationDescription;
+import org.jboss.as.controller.transform.description.TransformationDescriptionBuilder;
 
 /**
  * Extension for thread management.
@@ -42,12 +46,13 @@ import org.jboss.as.controller.registry.OperationEntry;
  */
 public class ThreadsExtension implements Extension {
 
-    public static String SUBSYSTEM_NAME = "threads";
+    public static final String SUBSYSTEM_NAME = "threads";
+    static final PathElement SUBSYSTEM_PATH = PathElement.pathElement(SUBSYSTEM, SUBSYSTEM_NAME);
 
     static final String RESOURCE_NAME = ThreadsExtension.class.getPackage().getName() + ".LocalDescriptions";
 
     private static final int MANAGEMENT_API_MAJOR_VERSION = 1;
-    private static final int MANAGEMENT_API_MINOR_VERSION = 0;
+    private static final int MANAGEMENT_API_MINOR_VERSION = 1;
     private static final int MANAGEMENT_API_MICRO_VERSION = 0;
 
     public static ResourceDescriptionResolver getResourceDescriptionResolver(final String keyPrefix, boolean useUnprefixedChildTypes) {
@@ -69,6 +74,10 @@ public class ThreadsExtension implements Extension {
         // Remoting subsystem description and operation handlers
         final ManagementResourceRegistration subsystem = registration.registerSubsystemModel(new ThreadSubsystemResourceDefinition(registerRuntimeOnly));
         subsystem.registerOperationHandler(GenericSubsystemDescribeHandler.DEFINITION, GenericSubsystemDescribeHandler.INSTANCE);
+
+        if (context.isRegisterTransformers()) {
+            registerTransformers1_0(registration);
+        }
     }
 
     @Override
@@ -76,5 +85,24 @@ public class ThreadsExtension implements Extension {
         context.setSubsystemXmlMapping(SUBSYSTEM_NAME, Namespace.CURRENT.getUriString(), ThreadsParser.INSTANCE);
         context.setSubsystemXmlMapping(SUBSYSTEM_NAME, Namespace.THREADS_1_0.getUriString(), ThreadsParser.INSTANCE);
     }
+
+    // Transformation
+
+    /**
+     * Register the transformers for older model versions.
+     *
+     * @param subsystem the subsystems registration
+     */
+    private static void registerTransformers1_0(final SubsystemRegistration subsystem) {
+        ResourceTransformationDescriptionBuilder builder = TransformationDescriptionBuilder.Factory.createSubsystemInstance();
+        BoundedQueueThreadPoolResourceDefinition.registerTransformers1_0(builder);
+        QueuelessThreadPoolResourceDefinition.registerTransformers1_0(builder);
+        ScheduledThreadPoolResourceDefinition.registerTransformers1_0(builder);
+        UnboundedQueueThreadPoolResourceDefinition.registerTransformers1_0(builder);
+        ThreadFactoryResourceDefinition.registerTransformers1_0(builder);
+        TransformationDescription.Tools.register(builder.build(), subsystem, ModelVersion.create(1, 0, 0));
+
+    }
+
 
 }

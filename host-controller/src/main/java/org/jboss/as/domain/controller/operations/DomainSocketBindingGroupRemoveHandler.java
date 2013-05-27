@@ -31,7 +31,6 @@ import java.util.Set;
 
 import org.jboss.as.controller.AbstractRemoveStepHandler;
 import org.jboss.as.controller.OperationContext;
-import org.jboss.as.controller.OperationContext.RollbackHandler;
 import org.jboss.as.controller.OperationContext.Stage;
 import org.jboss.as.controller.OperationFailedException;
 import org.jboss.as.controller.OperationStepHandler;
@@ -111,7 +110,7 @@ public class DomainSocketBindingGroupRemoveHandler extends AbstractRemoveStepHan
                     if (!runningServers.isEmpty()) {
                         throw new OperationFailedException("Could not remove socket-binding-group since the following servers are running: " + runningServers);
                     }
-                    context.completeStep(RollbackHandler.NOOP_ROLLBACK_HANDLER);
+                    context.stepCompleted();
                 }
             }, Stage.MODEL);
         }

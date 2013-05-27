@@ -34,6 +34,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.regex.Pattern;
 
 import org.jboss.as.controller.persistence.ConfigurationPersister.SnapshotInfo;
+import org.wildfly.security.manager.WildFlySecurityManager;
 
 /**
  * Encapsulates the configuration file and manages its history
@@ -53,6 +54,8 @@ public class ConfigurationFile {
 
     private static final int CURRENT_HISTORY_LENGTH = 100;
     private static final int HISTORY_DAYS = 30;
+    private static final String CURRENT_HISTORY_LENGTH_PROPERTY = "jboss.config.current-history-length";
+    private static final String HISTORY_DAYS_PROPERTY = "jboss.config.history-days";
     private static final String TIMESTAMP_STRING = "\\d\\d\\d\\d\\d\\d\\d\\d-\\d\\d\\d\\d\\d\\d\\d\\d\\d";
     private static final Pattern TIMESTAMP_PATTERN = Pattern.compile(TIMESTAMP_STRING);
     private static final String TIMESTAMP_FORMAT = "yyyyMMdd-HHmmssSSS";
@@ -292,7 +295,6 @@ public class ConfigurationFile {
             } else {
                 copySource = new File(mainFile.getParentFile(), mainFile.getName() + ".boot");
                 FilePersistenceUtils.deleteFile(copySource);
-                copySource.deleteOnExit();
             }
 
             try {
@@ -342,9 +344,14 @@ public class ConfigurationFile {
                 moveFile(lastFile, getVersionedFile(mainFile));
             }
             int seq = sequence.get();
-            if (seq > CURRENT_HISTORY_LENGTH) {
-                File delete = getVersionedFile(mainFile, seq - CURRENT_HISTORY_LENGTH);
-                if (delete.exists()) {
+            // delete unwanted backup files
+            int currentHistoryLength = getInteger(CURRENT_HISTORY_LENGTH_PROPERTY, CURRENT_HISTORY_LENGTH, 0);
+            if (seq > currentHistoryLength) {
+                for (int k = seq - currentHistoryLength; k > 0; k--) {
+                    File delete = getVersionedFile(mainFile, k);
+                    if (! delete.exists()) {
+                        break;
+                    }
                     delete.delete();
                 }
             }
@@ -446,17 +453,31 @@ public class ConfigurationFile {
             }
 
             //Copy any existing history directory to a timestamped backup directory
-            final Date date = new Date();
-            if (currentHistory.listFiles().length > 0) {
-                final String backupName = getTimeStamp(date);
-                final File old = new File(historyRoot, backupName);
+            Date date = new Date();
+            File[] currentHistoryFiles = currentHistory.listFiles();
+            if (currentHistoryFiles != null && currentHistoryFiles.length > 0) {
+                String backupName = getTimeStamp(date);
+                File old = new File(historyRoot, backupName);
                 if (!new File(currentHistory.getAbsolutePath()).renameTo(old)) {
-                    throw MESSAGES.cannotRename(currentHistory.getAbsolutePath(), old.getAbsolutePath());
+                    if (old.exists()) {
+                        // AS7-5801. Unit tests sometimes fail on File.renameTo due to only having 100 ms
+                        // precision on the timestamps we use for dir names on some systems. So, if that happens,
+                        // we bump the timestamp once and try again before failing
+                        date = new Date(date.getTime() + 100);
+                        backupName = getTimeStamp(date);
+                        old = new File(historyRoot, backupName);
+                        if (!new File(currentHistory.getAbsolutePath()).renameTo(old)) {
+                            throw MESSAGES.cannotRename(currentHistory.getAbsolutePath(), old.getAbsolutePath());
+                        }
+                    } else {
+                        throw MESSAGES.cannotRename(currentHistory.getAbsolutePath(), old.getAbsolutePath());
+                    }
                 }
             }
 
             //Delete any old history directories
-            final String cutoffFileName = getTimeStamp(subtractDays(date, HISTORY_DAYS));
+            int historyDays = getInteger(HISTORY_DAYS_PROPERTY, HISTORY_DAYS, 0);
+            final String cutoffFileName = getTimeStamp(subtractDays(date, historyDays));
             for (String name : historyRoot.list()) {
                 if (name.length() == cutoffFileName.length() && TIMESTAMP_PATTERN.matcher(name).matches() && name.compareTo(cutoffFileName) < 0) {
                     deleteRecursive(new File(historyRoot, name));
@@ -468,6 +489,20 @@ public class ConfigurationFile {
         currentHistory.mkdir();
         if (!currentHistory.exists()) {
             throw MESSAGES.cannotCreate(currentHistory.getAbsolutePath());
+        }
+    }
+
+    private int getInteger(final String name, final int defaultValue, final int minimalValue) {
+        int retVal = getInteger(name, defaultValue);
+        return (retVal < minimalValue) ? defaultValue : retVal;
+    }
+
+    private int getInteger(final String name, final int defaultValue) {
+        final String val = WildFlySecurityManager.getPropertyPrivileged(name, null);
+        try {
+            return val == null ? defaultValue : Integer.parseInt(val);
+        } catch (NumberFormatException ignored) {
+            return defaultValue;
         }
     }
 

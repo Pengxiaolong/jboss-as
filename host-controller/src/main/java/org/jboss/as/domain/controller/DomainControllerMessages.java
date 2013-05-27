@@ -26,17 +26,19 @@ import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.CON
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.IN_SERIES;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.SERVER_GROUP;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Set;
 
+import org.jboss.as.controller.ModelVersion;
 import org.jboss.as.controller.OperationFailedException;
 import org.jboss.as.controller.PathAddress;
 import org.jboss.as.controller.RunningMode;
 import org.jboss.dmr.ModelNode;
+import org.jboss.logging.Messages;
 import org.jboss.logging.annotations.Cause;
 import org.jboss.logging.annotations.Message;
 import org.jboss.logging.annotations.MessageBundle;
-import org.jboss.logging.Messages;
 import org.jboss.modules.ModuleLoadException;
 
 /**
@@ -279,7 +281,10 @@ public interface DomainControllerMessages {
      * @param address       the address the operation was to be executed on.
      *
      * @return the message.
+     *
+     * @deprecated use {@link org.jboss.as.controller.ControllerMessages#noHandlerForOperation(String, PathAddress)} or {@link org.jboss.as.controller.ControllerMessages#noSuchResourceType(PathAddress)}
      */
+    @Deprecated
     @Message(id = 10850, value = "No handler for operation %s at address %s")
     String noHandlerForOperation(String operationName, PathAddress address);
 
@@ -551,5 +556,26 @@ public interface DomainControllerMessages {
 
     @Message(id = 10877, value = "Failed to load module '%s'.")
     OperationFailedException failedToLoadModule(@Cause ModuleLoadException e,String module);
+
+    /**
+     * Warning messages when a transformer detects that the JSF subsystem uses a non-default value to setup on a legacy host controller.
+     *
+     * @param slot the non-default value of the slot attribute
+     * @return the message
+     */
+    @Message(id = 10878, value = "Invalid JSF slot value: '%s'. The host controller is not able to use a JSF slot value different from its default. This resource will be ignored on that host")
+    String invalidJSFSlotValue(String slot);
+
+    /**
+     * Warning messages when a transformer detects that an operation defines unknown attributes for a legacy subsystem.
+     *
+     * @param attributes the name of the attributes unknown from the legacy version
+     * @return the message
+     */
+    @Message(id = 10879, value = "Operation '%s' fails because the attributes are not known from the subsytem '%s' model version '%s': %s")
+    String unknownAttributesFromSubsystemVersion(String operationName, String subsystemName, ModelVersion version, Collection<String> attributes);
+
+    @Message(id = 10880, value = "No socket-binding-group named: %s")
+    OperationFailedException noSocketBindingGroupCalled(String socketBindingGroup);
 
 }

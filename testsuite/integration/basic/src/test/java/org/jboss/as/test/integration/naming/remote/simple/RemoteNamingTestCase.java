@@ -54,9 +54,7 @@ public class RemoteNamingTestCase {
     @Deployment
     public static Archive<?> deploy() {
         final JavaArchive jar = ShrinkWrap.create(JavaArchive.class, "test.jar");
-        jar.addClasses(BindingActivator.class);
-        jar.addAsManifestResource("naming/remote/simple/services", "services");
-        jar.addAsManifestResource("naming/remote/simple/MANIFEST.MF", "MANIFEST.MF");
+        jar.addClasses(BindingEjb.class);
         return jar;
     }
 
@@ -71,16 +69,37 @@ public class RemoteNamingTestCase {
 
     @Test
     public void testRemoteLookup() throws Exception {
-        assertEquals("TestValue", getRemoteContext().lookup("test"));
+        Context context = null;
+        try {
+            context = getRemoteContext();
+            assertEquals("TestValue", context.lookup("test"));
+        } finally {
+            if (context != null)
+                context.close();
+        }
     }
 
     @Test
     public void testRemoteContextLookup() throws Exception {
-        assertEquals("TestValue", ((Context) getRemoteContext().lookup("")).lookup("test"));
+        Context context = null;
+        try {
+            context = getRemoteContext();
+            assertEquals("TestValue", ((Context) context.lookup("")).lookup("test"));
+        } finally {
+            if (context != null)
+                context.close();
+        }
     }
 
     @Test
     public void testNestedLookup() throws Exception {
-        assertEquals("TestValue", ((Context)getRemoteContext().lookup("context")).lookup("test"));
+        Context context = null;
+        try {
+            context = getRemoteContext();
+            assertEquals("TestValue", ((Context) context.lookup("context")).lookup("test"));
+        } finally {
+            if (context != null)
+                context.close();
+        }
     }
 }

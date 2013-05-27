@@ -21,8 +21,6 @@
  */
 package org.jboss.as.weld.services;
 
-import java.security.AccessController;
-import java.security.PrivilegedAction;
 import java.util.Collections;
 import java.util.IdentityHashMap;
 import java.util.Map;
@@ -33,6 +31,7 @@ import org.jboss.as.weld.WeldMessages;
 import org.jboss.modules.ModuleClassLoader;
 import org.jboss.weld.bootstrap.api.Singleton;
 import org.jboss.weld.bootstrap.api.SingletonProvider;
+import org.wildfly.security.manager.WildFlySecurityManager;
 
 /**
  * Singleton Provider that uses the TCCL to figure out the current application.
@@ -44,7 +43,7 @@ public class ModuleGroupSingletonProvider extends SingletonProvider {
     /**
      * Map of the top level class loader to all class loaders in a deployment
      */
-    public static Map<ClassLoader, Set<ClassLoader>> deploymentClassLoaders = new ConcurrentHashMap<ClassLoader, Set<ClassLoader>>();
+    public static final Map<ClassLoader, Set<ClassLoader>> deploymentClassLoaders = new ConcurrentHashMap<ClassLoader, Set<ClassLoader>>();
 
     /**
      * Maps a top level class loader to all CL's in the deployment
@@ -65,21 +64,22 @@ public class ModuleGroupSingletonProvider extends SingletonProvider {
         return new TCCLSingleton<T>();
     }
 
+    @SuppressWarnings("unused")
     private static class TCCLSingleton<T> implements Singleton<T> {
 
         private volatile Map<ClassLoader, T> store = Collections.emptyMap();
 
         public T get() {
-            T instance = store.get(findParentModuleCl(getClassLoader()));
+            T instance = store.get(findParentModuleCl(WildFlySecurityManager.getCurrentContextClassLoaderPrivileged()));
             if (instance == null) {
-                throw WeldMessages.MESSAGES.singletonNotSet(getClassLoader());
+                throw WeldMessages.MESSAGES.singletonNotSet(WildFlySecurityManager.getCurrentContextClassLoaderPrivileged());
             }
             return instance;
         }
 
         public synchronized void set(T object) {
             final Map<ClassLoader, T> store = new IdentityHashMap<ClassLoader, T>(this.store);
-            ClassLoader classLoader = getClassLoader();
+            ClassLoader classLoader = WildFlySecurityManager.getCurrentContextClassLoaderPrivileged();
             store.put(classLoader, object);
             if (deploymentClassLoaders.containsKey(classLoader)) {
                 for (ClassLoader cl : deploymentClassLoaders.get(classLoader)) {
@@ -90,7 +90,7 @@ public class ModuleGroupSingletonProvider extends SingletonProvider {
         }
 
         public synchronized void clear() {
-            ClassLoader classLoader = getClassLoader();
+            ClassLoader classLoader = WildFlySecurityManager.getCurrentContextClassLoaderPrivileged();
             final Map<ClassLoader, T> store = new IdentityHashMap<ClassLoader, T>(this.store);
             store.remove(classLoader);
             if (deploymentClassLoaders.containsKey(classLoader)) {
@@ -102,7 +102,7 @@ public class ModuleGroupSingletonProvider extends SingletonProvider {
         }
 
         public boolean isSet() {
-            return store.containsKey(findParentModuleCl(getClassLoader()));
+            return store.containsKey(findParentModuleCl(WildFlySecurityManager.getCurrentContextClassLoaderPrivileged()));
         }
 
         /**
@@ -118,17 +118,26 @@ public class ModuleGroupSingletonProvider extends SingletonProvider {
             return c;
         }
 
-        private ClassLoader getClassLoader() {
-            SecurityManager sm = System.getSecurityManager();
-            if (sm != null) {
-                return AccessController.doPrivileged(new PrivilegedAction<ClassLoader>() {
-                    public ClassLoader run() {
-                        return Thread.currentThread().getContextClassLoader();
-                    }
-                });
-            } else {
-                return Thread.currentThread().getContextClassLoader();
-            }
+        /*
+         * Default implementation of the Weld 1.2 API
+         *
+         * This provides forward binary compatibility with Weld 1.2 (OSGi integration).
+         * It is OK to ignore the id parameter as TCCL is still used to identify the singleton in Java EE.
+         */
+        public T get(String id) {
+            return get();
+        }
+
+        public boolean isSet(String id) {
+            return isSet();
+        }
+
+        public void set(String id, T object) {
+            set(object);
+        }
+
+        public void clear(String id) {
+            clear();
         }
     }
 }

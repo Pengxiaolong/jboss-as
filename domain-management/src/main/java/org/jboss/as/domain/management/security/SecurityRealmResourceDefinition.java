@@ -23,15 +23,14 @@
 package org.jboss.as.domain.management.security;
 
 import org.jboss.as.controller.PathElement;
-import org.jboss.as.controller.ResourceDefinition;
 import org.jboss.as.controller.SimpleResourceDefinition;
 import org.jboss.as.controller.descriptions.ModelDescriptionConstants;
-import org.jboss.as.controller.descriptions.common.CommonDescriptions;
+import org.jboss.as.controller.descriptions.common.ControllerResolver;
 import org.jboss.as.controller.registry.ManagementResourceRegistration;
 import org.jboss.as.controller.registry.OperationEntry;
 
 /**
- * {@link ResourceDefinition} for a management security realm resource.
+ * {@link org.jboss.as.controller.ResourceDefinition} for a management security realm resource.
  *
  * @author Brian Stansberry (c) 2011 Red Hat Inc.
  * @author <a href="mailto:darran.lofthouse@jboss.com">Darran Lofthouse</a>
@@ -42,7 +41,7 @@ public class SecurityRealmResourceDefinition extends SimpleResourceDefinition {
 
     private SecurityRealmResourceDefinition() {
         super(PathElement.pathElement(ModelDescriptionConstants.SECURITY_REALM),
-                CommonDescriptions.getResourceDescriptionResolver("core.management.security-realm"),
+                ControllerResolver.getResolver("core.management.security-realm"),
                 SecurityRealmAddHandler.INSTANCE,
                 SecurityRealmRemoveHandler.INSTANCE,
                 OperationEntry.Flag.RESTART_NONE,

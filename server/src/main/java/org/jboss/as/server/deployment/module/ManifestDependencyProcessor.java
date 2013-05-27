@@ -25,13 +25,13 @@ package org.jboss.as.server.deployment.module;
 import java.util.List;
 import java.util.jar.Manifest;
 
-import org.jboss.as.server.ServerMessages;
 import org.jboss.as.server.deployment.Attachments;
 import org.jboss.as.server.deployment.DeploymentPhaseContext;
 import org.jboss.as.server.deployment.DeploymentUnit;
 import org.jboss.as.server.deployment.DeploymentUnitProcessingException;
 import org.jboss.as.server.deployment.DeploymentUnitProcessor;
 import org.jboss.as.server.deployment.DeploymentUtils;
+import org.jboss.as.server.deployment.ManifestHelper;
 import org.jboss.as.server.deployment.SubDeploymentMarker;
 import org.jboss.as.server.moduleservice.ServiceModuleLoader;
 import org.jboss.modules.Module;
@@ -71,7 +71,7 @@ public final class ManifestDependencyProcessor implements DeploymentUnitProcesso
             if (manifest == null)
                 continue;
 
-            final String dependencyString = manifest.getMainAttributes().getValue(DEPENDENCIES_ATTR);
+            final String dependencyString = ManifestHelper.getMainAttributeValue(manifest, DEPENDENCIES_ATTR);
             if (dependencyString == null)
                 continue;
 
@@ -83,10 +83,11 @@ public final class ManifestDependencyProcessor implements DeploymentUnitProcesso
 
             final String[] dependencyDefs = dependencyString.split(",");
             for (final String dependencyDef : dependencyDefs) {
-                final String[] dependencyParts = dependencyDef.trim().split(" ");
-                if (dependencyParts.length == 0) {
-                    throw ServerMessages.MESSAGES.invalidDependency(dependencyString);
+                final String trimmed = dependencyDef.trim();
+                if(trimmed.isEmpty()) {
+                    continue;
                 }
+                final String[] dependencyParts = trimmed.split(" ");
 
                 final ModuleIdentifier dependencyId = ModuleIdentifier.fromString(dependencyParts[0]);
                 final boolean export = containsParam(dependencyParts, EXPORT_PARAM);
@@ -107,6 +108,7 @@ public final class ManifestDependencyProcessor implements DeploymentUnitProcesso
                 final ModuleDependency dependency = new ModuleDependency(dependencyLoader, dependencyId, optional, export, services, true);
                 if(metaInf) {
                     dependency.addImportFilter(PathFilters.getMetaInfSubdirectoriesFilter(), true);
+                    dependency.addImportFilter(PathFilters.getMetaInfFilter(), true);
                 }
                 deploymentUnit.addToAttachmentList(Attachments.MANIFEST_DEPENDENCIES, dependency);
             }

@@ -22,40 +22,36 @@
 
 package org.jboss.as.host.controller;
 
+import static java.security.AccessController.doPrivileged;
 import static org.jboss.as.server.ServerLogger.AS_ROOT_LOGGER;
 import static org.jboss.as.server.ServerLogger.CONFIG_LOGGER;
 
 import java.lang.management.ManagementFactory;
 import java.lang.management.RuntimeMXBean;
-import java.security.AccessController;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 import java.util.TreeSet;
-import java.util.concurrent.Executor;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.SynchronousQueue;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
 import org.jboss.as.controller.ControlledProcessState;
+import org.jboss.as.remoting.management.ManagementRemotingServices;
 import org.jboss.as.server.BootstrapListener;
 import org.jboss.as.server.FutureServiceContainer;
-import org.jboss.as.threads.ThreadFactoryService;
+import org.wildfly.security.manager.GetAccessControlContextAction;
 import org.jboss.modules.Module;
 import org.jboss.msc.service.Service;
 import org.jboss.msc.service.ServiceContainer;
 import org.jboss.msc.service.ServiceController;
-import org.jboss.msc.service.ServiceListener;
 import org.jboss.msc.service.ServiceName;
 import org.jboss.msc.service.ServiceTarget;
 import org.jboss.msc.service.StartContext;
 import org.jboss.msc.service.StartException;
 import org.jboss.msc.service.StopContext;
-import org.jboss.msc.value.InjectedValue;
 import org.jboss.threads.AsyncFuture;
 import org.jboss.threads.JBossThreadFactory;
 
@@ -125,7 +121,7 @@ public class HostControllerService implements Service<AsyncFuture<ServiceContain
         }
 
         final BootstrapListener bootstrapListener = new BootstrapListener(serviceContainer, startTime, serviceTarget, futureContainer,  prettyVersion + " (Host Controller)");
-        serviceTarget.addListener(ServiceListener.Inheritance.ALL, bootstrapListener);
+        serviceTarget.addListener(bootstrapListener);
         myController.addListener(bootstrapListener);
 
         // The first default services are registered before the bootstrap operations are executed.
@@ -137,6 +133,7 @@ public class HostControllerService implements Service<AsyncFuture<ServiceContain
         // Executor Services
         final HostControllerExecutorService executorService = new HostControllerExecutorService();
         serviceTarget.addService(HC_EXECUTOR_SERVICE_NAME, executorService)
+                .addAliases(ManagementRemotingServices.SHUTDOWN_EXECUTOR_NAME) // Use this executor for mgmt shutdown for now
                 .install();
 
         // Install required path services. (Only install those identified as required)
@@ -173,7 +170,7 @@ public class HostControllerService implements Service<AsyncFuture<ServiceContain
     }
 
     static final class HostControllerExecutorService implements Service<ExecutorService> {
-        final ThreadFactory threadFactory = new JBossThreadFactory(new ThreadGroup("Host Controller Service Threads"), Boolean.FALSE, null, "%G - %t", null, null, AccessController.getContext());
+        final ThreadFactory threadFactory = new JBossThreadFactory(new ThreadGroup("Host Controller Service Threads"), Boolean.FALSE, null, "%G - %t", null, null, doPrivileged(GetAccessControlContextAction.getInstance()));
         private ExecutorService executorService;
 
         @Override

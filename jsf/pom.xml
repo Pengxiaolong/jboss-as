@@ -27,44 +27,21 @@
     <modelVersion>4.0.0</modelVersion>
 
     <parent>
-        <groupId>org.jboss.as</groupId>
-        <artifactId>jboss-as-parent</artifactId>
-        <version>7.2.0.Alpha1-SNAPSHOT</version>
+        <groupId>org.wildfly</groupId>
+        <artifactId>wildfly-parent</artifactId>
+        <version>8.0.0.Alpha2-SNAPSHOT</version>
     </parent>
 
-    <groupId>org.jboss.as</groupId>
-    <artifactId>jboss-as-jsf-parent</artifactId>
-    <version>7.2.0.Alpha1-SNAPSHOT</version>
+    <groupId>org.wildfly</groupId>
+    <artifactId>wildfly-jsf-parent</artifactId>
+    <version>8.0.0.Alpha2-SNAPSHOT</version>
     <packaging>pom</packaging>
 
-    <name>JBoss Application Server: JSF</name>
+    <name>WildFly: JSF</name>
 
     <modules>
        <module>subsystem</module>
        <module>injection</module>
     </modules>
 
-    <build>
-        <plugins>
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-surefire-plugin</artifactId>
-                <configuration>
-                    <enableAssertions>true</enableAssertions>
-                </configuration>
-            </plugin>
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-compiler-plugin</artifactId>
-                <configuration>
-                    <!-- Seems like a hacky way to pass multiple arguments, but it's the only way it worked. -->
-                    <fork>true</fork>
-                    <compilerArgument>-Djava.endorsed.dirs=${project.build.directory}/endorsed"
-                        "-AgeneratedTranslationFilesPath=${project.build.directory}/generated-translation-files
-                    </compilerArgument>
-                </configuration>
-            </plugin>
-
-        </plugins>
-    </build>
 </project>

@@ -44,9 +44,9 @@ import org.jboss.as.controller.extension.ExtensionRegistry;
 import org.jboss.as.controller.persistence.AbstractConfigurationPersister;
 import org.jboss.as.controller.persistence.ConfigurationPersistenceException;
 import org.jboss.as.controller.persistence.ExtensibleConfigurationPersister;
-import org.jboss.as.server.mgmt.domain.ServerBootOperationsService;
 import org.jboss.as.server.mgmt.domain.HostControllerClient;
 import org.jboss.as.server.mgmt.domain.HostControllerConnectionService;
+import org.jboss.as.server.mgmt.domain.ServerBootOperationsService;
 import org.jboss.as.server.parsing.StandaloneXml;
 import org.jboss.as.version.ProductConfig;
 import org.jboss.dmr.ModelNode;
@@ -59,6 +59,7 @@ import org.jboss.msc.service.ServiceName;
 import org.jboss.msc.service.ServiceRegistryException;
 import org.jboss.msc.service.ServiceTarget;
 import org.jboss.threads.AsyncFuture;
+import org.wildfly.security.manager.WildFlySecurityManager;
 
 /**
  * This is the task used by the Host Controller and passed to a Server instance
@@ -79,9 +80,10 @@ public final class ServerStartTask implements ServerTask, Serializable, ObjectIn
     private final String home;
     private final List<ServiceActivator> startServices;
     private final List<ModelNode> updates;
+    private final int initialOperationID;
     private final Properties properties = new Properties();
 
-    public ServerStartTask(final String hostControllerName, final String serverName, final int portOffset,
+    public ServerStartTask(final String hostControllerName, final String serverName, final int portOffset, final int initialOperationID,
                            final List<ServiceActivator> startServices, final List<ModelNode> updates, final Map<String, String> launchProperties) {
         assert serverName != null && serverName.length() > 0  : "Server name \"" + serverName + "\" is invalid; cannot be null or blank";
         assert hostControllerName != null && hostControllerName.length() > 0 : "Host Controller name \"" + hostControllerName + "\" is invalid; cannot be null or blank";
@@ -90,17 +92,17 @@ public final class ServerStartTask implements ServerTask, Serializable, ObjectIn
         this.portOffset = portOffset;
         this.startServices = startServices;
         this.updates = updates;
-
+        this.initialOperationID = initialOperationID;
         this.hostControllerName = hostControllerName;
 
-        this.home = SecurityActions.getSystemProperty("jboss.home.dir");
-        String serverBaseDir = SecurityActions.getSystemProperty("jboss.domain.servers.dir") + File.separatorChar + serverName;
+        this.home = WildFlySecurityManager.getPropertyPrivileged("jboss.home.dir", null);
+        String serverBaseDir = WildFlySecurityManager.getPropertyPrivileged("jboss.domain.servers.dir", null) + File.separatorChar + serverName;
         properties.setProperty(ServerEnvironment.SERVER_NAME, serverName);
         properties.setProperty(ServerEnvironment.HOME_DIR, home);
         properties.setProperty(ServerEnvironment.SERVER_BASE_DIR, serverBaseDir);
-        properties.setProperty(ServerEnvironment.CONTROLLER_TEMP_DIR, SecurityActions.getSystemProperty("jboss.domain.temp.dir"));
-        properties.setProperty(ServerEnvironment.DOMAIN_BASE_DIR, SecurityActions.getSystemProperty(ServerEnvironment.DOMAIN_BASE_DIR));
-        properties.setProperty(ServerEnvironment.DOMAIN_CONFIG_DIR, SecurityActions.getSystemProperty(ServerEnvironment.DOMAIN_CONFIG_DIR));
+        properties.setProperty(ServerEnvironment.CONTROLLER_TEMP_DIR, WildFlySecurityManager.getPropertyPrivileged("jboss.domain.temp.dir", null));
+        properties.setProperty(ServerEnvironment.DOMAIN_BASE_DIR, WildFlySecurityManager.getPropertyPrivileged(ServerEnvironment.DOMAIN_BASE_DIR, null));
+        properties.setProperty(ServerEnvironment.DOMAIN_CONFIG_DIR, WildFlySecurityManager.getPropertyPrivileged(ServerEnvironment.DOMAIN_CONFIG_DIR, null));
 
         // Provide any other properties that standalone Main.determineEnvironment() would read
         // from system properties and pass in to ServerEnvironment
@@ -121,11 +123,12 @@ public final class ServerStartTask implements ServerTask, Serializable, ObjectIn
     @Override
     public AsyncFuture<ServiceContainer> run(final List<ServiceActivator> runServices) {
         final Bootstrap bootstrap = Bootstrap.Factory.newInstance();
-        final ProductConfig productConfig = new ProductConfig(Module.getBootModuleLoader(), home);
+        final ProductConfig productConfig = new ProductConfig(Module.getBootModuleLoader(), home, properties);
         // Create server environment on the server, so that the system properties are getting initialized on the right side
         final ServerEnvironment providedEnvironment = new ServerEnvironment(hostControllerName, properties,
 
-        SecurityActions.getSystemEnvironment(), null, null, ServerEnvironment.LaunchType.DOMAIN, RunningMode.NORMAL, productConfig);
+                WildFlySecurityManager.getSystemEnvironmentPrivileged(), null, null, ServerEnvironment.LaunchType.DOMAIN, RunningMode.NORMAL, productConfig);
+        DomainServerCommunicationServices.updateOperationID(initialOperationID);
 
         // TODO perhaps have ConfigurationPersisterFactory as a Service
         final List<ServiceActivator> services = new ArrayList<ServiceActivator>(startServices);

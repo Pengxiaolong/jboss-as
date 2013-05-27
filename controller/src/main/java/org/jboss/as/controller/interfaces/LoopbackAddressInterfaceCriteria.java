@@ -26,8 +26,6 @@ import java.net.NetworkInterface;
 import java.net.SocketException;
 import java.net.UnknownHostException;
 
-import org.jboss.dmr.ModelNode;
-
 /**
  * A loopback criteria with a specified bind address.
  *
@@ -38,7 +36,7 @@ public class LoopbackAddressInterfaceCriteria extends AbstractInterfaceCriteria 
 
     private static final long serialVersionUID = 1L;
 
-    private ModelNode address;
+    private String address;
     private InetAddress resolved;
     private boolean unknownHostLogged;
 
@@ -54,7 +52,7 @@ public class LoopbackAddressInterfaceCriteria extends AbstractInterfaceCriteria 
         if (address == null)
             throw MESSAGES.nullVar("address");
         this.resolved = address;
-        this.address = new ModelNode(resolved.getHostAddress());
+        this.address = resolved.getHostAddress();
     }
 
     /**
@@ -65,7 +63,7 @@ public class LoopbackAddressInterfaceCriteria extends AbstractInterfaceCriteria 
      *
      * @throws IllegalArgumentException if <code>network</code> is <code>null</code>
      */
-    public LoopbackAddressInterfaceCriteria(final ModelNode address) {
+    public LoopbackAddressInterfaceCriteria(final String address) {
         if (address == null)
             throw MESSAGES.nullVar("address");
         this.address = address;
@@ -73,7 +71,7 @@ public class LoopbackAddressInterfaceCriteria extends AbstractInterfaceCriteria 
 
     public synchronized InetAddress getAddress() throws UnknownHostException {
         if (resolved == null) {
-            resolved = InetAddress.getByName(address.resolve().asString());
+            resolved = InetAddress.getByName(address);
         }
         return this.resolved;
     }

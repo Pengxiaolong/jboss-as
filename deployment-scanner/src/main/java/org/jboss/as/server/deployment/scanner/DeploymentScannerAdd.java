@@ -24,7 +24,6 @@ package org.jboss.as.server.deployment.scanner;
 
 import java.io.File;
 import java.io.IOException;
-import java.security.AccessController;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -47,11 +46,13 @@ import org.jboss.as.controller.ServiceVerificationHandler;
 import org.jboss.as.controller.SimpleAttributeDefinition;
 import org.jboss.as.controller.registry.Resource;
 import org.jboss.as.controller.services.path.PathManager;
+import org.wildfly.security.manager.GetAccessControlContextAction;
 import org.jboss.dmr.ModelNode;
 import org.jboss.msc.service.ServiceController;
 import org.jboss.msc.service.ServiceTarget;
 import org.jboss.threads.JBossThreadFactory;
 
+import static java.security.AccessController.doPrivileged;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.OP;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.OP_ADDR;
 import static org.jboss.as.server.deployment.scanner.DeploymentScannerDefinition.ALL_ATTRIBUTES;
@@ -104,7 +105,7 @@ class DeploymentScannerAdd implements OperationStepHandler {
             final Long deploymentTimeout = DEPLOYMENT_TIMEOUT.resolveModelAttribute(context, operation).asLong();
             final Integer scanInterval = SCAN_INTERVAL.resolveModelAttribute(context, operation).asInt();
 
-            final ThreadFactory threadFactory = new JBossThreadFactory(new ThreadGroup("DeploymentScanner-threads"), Boolean.FALSE, null, "%G - %t", null, null, AccessController.getContext());
+            final ThreadFactory threadFactory = new JBossThreadFactory(new ThreadGroup("DeploymentScanner-threads"), Boolean.FALSE, null, "%G - %t", null, null, doPrivileged(GetAccessControlContextAction.getInstance()));
             final ScheduledExecutorService scheduledExecutorService = Executors.newScheduledThreadPool(2, threadFactory);
 
             final FileSystemDeploymentService bootTimeScanner;
@@ -148,7 +149,7 @@ class DeploymentScannerAdd implements OperationStepHandler {
 
             if (bootTimeScan) {
                 final AtomicReference<ModelNode> deploymentOperation = new AtomicReference<ModelNode>();
-                final AtomicReference<ModelNode> deploymentResults = new AtomicReference<ModelNode>();
+                final AtomicReference<ModelNode> deploymentResults = new AtomicReference<ModelNode>(new ModelNode());
                 final CountDownLatch scanDoneLatch = new CountDownLatch(1);
                 final CountDownLatch deploymentDoneLatch = new CountDownLatch(1);
                 final DeploymentOperations deploymentOps = new BootTimeScannerDeployment(deploymentOperation, deploymentDoneLatch, deploymentResults, scanDoneLatch);
@@ -166,6 +167,7 @@ class DeploymentScannerAdd implements OperationStepHandler {
                     }
                 });
                 boolean interrupted = false;
+                boolean asyncCountDown = false;
                 try {
                     scanDoneLatch.await();
 
@@ -175,13 +177,20 @@ class DeploymentScannerAdd implements OperationStepHandler {
                         final PathAddress opPath = PathAddress.pathAddress(op.get(OP_ADDR));
                         final OperationStepHandler handler = context.getRootResourceRegistration().getOperationHandler(opPath, op.get(OP).asString());
                         context.addStep(result, op, handler, OperationContext.Stage.MODEL);
-                        try {
-                            stepCompleted = true;
-                            context.completeStep();
-                        } finally {
-                            deploymentResults.set(result);
-                            deploymentDoneLatch.countDown();
-                        }
+
+                        stepCompleted = true;
+                        context.completeStep(new OperationContext.ResultHandler() {
+                            @Override
+                            public void handleResult(OperationContext.ResultAction resultAction, OperationContext context, ModelNode operation) {
+                                try {
+                                    deploymentResults.set(result);
+                                } finally {
+                                    deploymentDoneLatch.countDown();
+                                }
+                            }
+                        });
+                        asyncCountDown = true;
+
                     } else {
                         stepCompleted = true;
                         context.completeStep(OperationContext.RollbackHandler.NOOP_ROLLBACK_HANDLER);
@@ -190,7 +199,9 @@ class DeploymentScannerAdd implements OperationStepHandler {
                     interrupted = true;
                     throw new RuntimeException(e);
                 } finally {
-                    deploymentDoneLatch.countDown();
+                    if (!asyncCountDown) {
+                        deploymentDoneLatch.countDown();
+                    }
                     if (interrupted) {
                         Thread.currentThread().interrupt();
                     }

@@ -22,11 +22,28 @@
 
 package org.jboss.as.host.controller;
 
+import java.io.DataInput;
+import java.io.IOException;
+import java.net.URI;
+import java.util.List;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Future;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+
+import javax.net.ssl.SSLContext;
+import javax.security.auth.callback.CallbackHandler;
+
 import org.jboss.as.controller.descriptions.ModelDescriptionConstants;
 import org.jboss.as.domain.controller.SlaveRegistrationException;
 import org.jboss.as.domain.management.CallbackHandlerFactory;
 import org.jboss.as.domain.management.SecurityRealm;
+import org.jboss.as.host.controller.discovery.DiscoveryOption;
 import org.jboss.as.host.controller.mgmt.DomainControllerProtocol;
+import org.jboss.as.network.NetworkUtils;
 import org.jboss.as.protocol.ProtocolChannelClient;
 import org.jboss.as.protocol.ProtocolConnectionConfiguration;
 import org.jboss.as.protocol.ProtocolConnectionManager;
@@ -43,22 +60,9 @@ import org.jboss.as.protocol.mgmt.ManagementRequestContext;
 import org.jboss.as.remoting.management.ManagementRemotingServices;
 import org.jboss.dmr.ModelNode;
 import org.jboss.remoting3.Channel;
-import org.jboss.remoting3.CloseHandler;
 import org.jboss.remoting3.Connection;
 import org.jboss.threads.AsyncFuture;
-
-import javax.net.ssl.SSLContext;
-import javax.security.auth.callback.CallbackHandler;
-import java.io.DataInput;
-import java.io.IOException;
-import java.util.List;
-import java.util.concurrent.Callable;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Future;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
+import org.wildfly.security.manager.WildFlySecurityManager;
 
 /**
  * A connection to a remote domain controller. Once successfully connected this {@code ManagementClientChannelStrategy}
@@ -75,7 +79,7 @@ class RemoteDomainConnection extends FutureManagementChannel {
     static {
         long interval = -1;
         try {
-            interval = Long.parseLong(SecurityActions.getSystemProperty("jboss.as.domain.ping.interval", "15000"));
+            interval = Long.parseLong(WildFlySecurityManager.getPropertyPrivileged("jboss.as.domain.ping.interval", "15000"));
         } catch (Exception e) {
             // TODO log
         } finally {
@@ -83,7 +87,7 @@ class RemoteDomainConnection extends FutureManagementChannel {
         }
         long timeout = -1;
         try {
-            timeout = Long.parseLong(SecurityActions.getSystemProperty("jboss.as.domain.ping.timeout", "30000"));
+            timeout = Long.parseLong(WildFlySecurityManager.getPropertyPrivileged("jboss.as.domain.ping.timeout", "30000"));
         } catch (Exception e) {
             // TODO log
         } finally {
@@ -102,10 +106,13 @@ class RemoteDomainConnection extends FutureManagementChannel {
     private final ExecutorService executorService;
     private final ScheduledExecutorService scheduledExecutorService;
     private final ManagementPongRequestHandler pongHandler = new ManagementPongRequestHandler();
+    private final List<DiscoveryOption> discoveryOptions;
+    private URI uri;
 
     RemoteDomainConnection(final String localHostName, final ModelNode localHostInfo,
                            final ProtocolChannelClient.Configuration configuration, final SecurityRealm realm,
-                           final String username, final ExecutorService executorService,
+                           final String username, final List<DiscoveryOption> discoveryOptions,
+                           final ExecutorService executorService,
                            final ScheduledExecutorService scheduledExecutorService,
                            final HostRegistrationCallback callback) {
         this.callback = callback;
@@ -114,6 +121,7 @@ class RemoteDomainConnection extends FutureManagementChannel {
         this.configuration = configuration;
         this.username = username;
         this.realm = realm;
+        this.discoveryOptions = discoveryOptions;
         this.executorService = executorService;
         this.channelHandler = new ManagementChannelHandler(this, executorService);
         this.scheduledExecutorService = scheduledExecutorService;
@@ -142,6 +150,15 @@ class RemoteDomainConnection extends FutureManagementChannel {
     @Override
     public Channel getChannel() throws IOException {
         return awaitChannel();
+    }
+
+    /**
+     * Set the configuration uri.
+     *
+     * @param uri the uri
+     */
+    protected void setUri(URI uri) {
+        this.uri = uri;
     }
 
     @Override
@@ -190,6 +207,7 @@ class RemoteDomainConnection extends FutureManagementChannel {
         final ProtocolConnectionConfiguration config = ProtocolConnectionConfiguration.copy(configuration);
         config.setCallbackHandler(callbackHandler);
         config.setSslContext(sslContext);
+        config.setUri(uri);
         // Connect
         return ProtocolConnectionUtils.connectSync(config);
     }
@@ -223,17 +241,26 @@ class RemoteDomainConnection extends FutureManagementChannel {
                 final ReconnectPolicy reconnectPolicy = ReconnectPolicy.RECONNECT;
                 int reconnectionCount = 0;
                 for(;;) {
-                    try {
-                        //
-                        reconnectPolicy.wait(reconnectionCount);
-                        HostControllerLogger.ROOT_LOGGER.debugf("trying to reconnect to remote host-controller");
-                        // Try to the connect to the remote host controller
-                        return connectionManager.connect();
-                    } catch (IOException e) {
-                        HostControllerLogger.ROOT_LOGGER.debugf(e, "failed to reconnect to the remote host-controller");
-                    } finally {
-                        reconnectionCount++;
+                    // Try to connect to the remote host controller by looping through all
+                    // discovery options
+                    String host = null;
+                    int port = -1;
+                    reconnectPolicy.wait(reconnectionCount);
+                    for (DiscoveryOption discoveryOption : discoveryOptions) {
+                        try {
+                            discoveryOption.discover();
+                            host = discoveryOption.getRemoteDomainControllerHost();
+                            port = discoveryOption.getRemoteDomainControllerPort();
+                            setUri(new URI("remote://" + NetworkUtils.formatPossibleIpv6Address(host) + ":" + port));
+                            HostControllerLogger.ROOT_LOGGER.debugf("trying to reconnect to remote host-controller");
+                            return connectionManager.connect();
+                        } catch (IOException e) {
+                            HostControllerLogger.ROOT_LOGGER.debugf(e, "failed to reconnect to the remote host-controller");
+                        } catch (IllegalStateException e) {
+                            HostControllerLogger.ROOT_LOGGER.debugf(e, "failed to reconnect to the remote host-controller");
+                        }
                     }
+                    reconnectionCount++;
                 }
             }
         });
@@ -272,7 +299,7 @@ class RemoteDomainConnection extends FutureManagementChannel {
         scheduledExecutorService.schedule(task, INTERVAL, TimeUnit.MILLISECONDS);
     }
 
-    static interface HostRegistrationCallback {
+    interface HostRegistrationCallback {
 
         /**
          * Get the versions for all registered subsystems.

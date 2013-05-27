@@ -22,15 +22,18 @@
 
 package org.jboss.as.controller;
 
+import static java.util.concurrent.TimeUnit.MILLISECONDS;
+
 import org.jboss.dmr.ModelNode;
 import org.jboss.msc.service.ServiceController;
-import org.jboss.msc.service.ServiceListener;
+import org.jboss.msc.service.StabilityMonitor;
 
 /**
  * Base class for operations that do nothing in {@link org.jboss.as.controller.OperationContext.Stage#MODEL} except
  * register a {@link org.jboss.as.controller.OperationContext.Stage#RUNTIME} step.
  *
  * @author Brian Stansberry (c) 2011 Red Hat Inc.
+ * @author <a href="mailto:ropalka@redhat.com">Richard Opalka</a>
  */
 public abstract class AbstractRuntimeOnlyHandler implements OperationStepHandler {
 
@@ -43,33 +46,23 @@ public abstract class AbstractRuntimeOnlyHandler implements OperationStepHandler
      *
      * @param controller the service to wait for
      * @throws OperationFailedException if the service is not available, or the thread was interrupted.
+     *
+     * @deprecated this method is unrelated to this class and will be removed in the next major release
      */
-    public void waitFor(ServiceController<?> controller) throws OperationFailedException {
-        ServiceWaitListener listener = null;
-        int time = 100;
-        while (time > 0) {
-            if (controller.getState() == ServiceController.State.UP) {
-                return;
-            }
+    @Deprecated
+    public void waitFor(final ServiceController<?> controller) throws OperationFailedException {
+        if (controller.getState() == ServiceController.State.UP) return;
 
-            if (listener == null) {
-                listener = new ServiceWaitListener();
-                controller.addListener(listener);
-            }
-            synchronized (listener) {
-                try {
-                    long start = System.currentTimeMillis();
-                    listener.wait(time);
-                    time -= System.currentTimeMillis() - start;
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                    controller.removeListener(listener);
-                    throw new OperationFailedException((new ModelNode()).set("Interrupted waiting for service: " + controller.getName()));
-                }
-            }
+        final StabilityMonitor monitor = new StabilityMonitor();
+        monitor.addController(controller);
+        try {
+            monitor.awaitStability(100, MILLISECONDS);
+        } catch (final InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new OperationFailedException((new ModelNode()).set("Interrupted waiting for service: " + controller.getName()));
+        } finally {
+            monitor.removeController(controller);
         }
-
-        controller.removeListener(listener);
 
         if (controller.getState() != ServiceController.State.UP) {
             throw new OperationFailedException(new ModelNode().set("Required service is not available: " + controller.getName()));
@@ -87,6 +80,12 @@ public abstract class AbstractRuntimeOnlyHandler implements OperationStepHandler
         context.addStep(new OperationStepHandler() {
             @Override
             public void execute(OperationContext context, ModelNode operation) throws OperationFailedException {
+                // make sure the resource exists before executing a runtime operation.
+                // if that's not the case, the operation will report an error with a comprehensive failure
+                // description instead of a subsequent exception (such as a NPE).
+                if (resourceMustExist(context, operation)) {
+                    context.readResource(PathAddress.EMPTY_ADDRESS, false);
+                }
                 executeRuntimeStep(context, operation);
             }
         }, OperationContext.Stage.RUNTIME);
@@ -95,11 +94,27 @@ public abstract class AbstractRuntimeOnlyHandler implements OperationStepHandler
     }
 
     /**
+     * By default the handler will check whether the resource exist before calling @{link #executeRuntimeStep(OperationContext, ModelNode)}.
+     *
+     * This method can be overridden in the special case where a runtime operation must be executed without a corresponding resource.
+     *
+     * @return true if the resource must exist for this runtime handler to be executed.
+     *
+     * @param context the operation context
+     * @param operation the operation being executed
+     */
+    protected boolean resourceMustExist(OperationContext context, ModelNode operation) {
+        return true;
+    }
+
+    /**
      * Execute this step in {@link org.jboss.as.controller.OperationContext.Stage#RUNTIME}.
      * If the operation fails, {@link OperationContext#getFailureDescription() context.getFailureDescroption()}
-     * must be called, or {@link OperationFailedException} must be thrown, before calling {@link OperationContext#completeStep() context.completeStep()}.
+     * must be called, or {@link OperationFailedException} must be thrown, before calling one of the
+     * {@link org.jboss.as.controller.OperationContext#completeStep(OperationContext.ResultHandler) context.completeStep variants}.
      * If the operation succeeded, {@link OperationContext#getResult() context.getResult()} should
-     * be called and the result populated with the outcome, after which {@link OperationContext#completeStep() context.completeStep()}
+     * be called and the result populated with the outcome, after which one of the
+     * {@link org.jboss.as.controller.OperationContext#completeStep(OperationContext.ResultHandler) context.completeStep variants}
      * must be called.
      *
      * @param context the operation context
@@ -107,51 +122,4 @@ public abstract class AbstractRuntimeOnlyHandler implements OperationStepHandler
      * @throws OperationFailedException if the operation failed <b>before</b> calling {@code context.completeStep()}
      */
     protected abstract void executeRuntimeStep(OperationContext context, ModelNode operation) throws OperationFailedException;
-
-    private static class ServiceWaitListener<T> implements ServiceListener<T> {
-        @Override
-        public void listenerAdded(ServiceController<? extends T> serviceController) {
-        }
-
-        @Override
-        public void transition(ServiceController<? extends T> serviceController, ServiceController.Transition transition) {
-         if (transition.getAfter() == ServiceController.Substate.UP) {
-                synchronized (this) {
-                    notify();
-                }
-            }
-        }
-
-        @Override
-        public void serviceRemoveRequested(ServiceController<? extends T> serviceController) {
-        }
-
-        @Override
-        public void serviceRemoveRequestCleared(ServiceController<? extends T> serviceController) {
-        }
-
-        @Override
-        public void dependencyFailed(ServiceController<? extends T> serviceController) {
-        }
-
-        @Override
-        public void dependencyFailureCleared(ServiceController<? extends T> serviceController) {
-        }
-
-        @Override
-        public void immediateDependencyUnavailable(ServiceController<? extends T> serviceController) {
-        }
-
-        @Override
-        public void immediateDependencyAvailable(ServiceController<? extends T> serviceController) {
-        }
-
-        @Override
-        public void transitiveDependencyUnavailable(ServiceController<? extends T> serviceController) {
-        }
-
-        @Override
-        public void transitiveDependencyAvailable(ServiceController<? extends T> serviceController) {
-        }
-    }
 }

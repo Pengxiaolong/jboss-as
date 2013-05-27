@@ -22,8 +22,9 @@
 package org.jboss.as.security;
 
 import org.jboss.as.controller.ListAttributeDefinition;
+import org.jboss.as.controller.OperationContext;
 import org.jboss.as.controller.OperationFailedException;
-import org.jboss.as.controller.PathElement;
+import org.jboss.as.controller.OperationStepHandler;
 import org.jboss.as.controller.SimpleResourceDefinition;
 import org.jboss.as.controller.registry.ManagementResourceRegistration;
 import org.jboss.dmr.ModelNode;
@@ -35,16 +36,23 @@ public class AuthorizationResourceDefinition extends SimpleResourceDefinition {
 
     public static final AuthorizationResourceDefinition INSTANCE = new AuthorizationResourceDefinition();
 
-    public static final ListAttributeDefinition POLICY_MODULES = new LoginModulesAttributeDefinition(Constants.POLICY_MODULES, Constants.POLICY_MODULE);
+    public static final ListAttributeDefinition POLICY_MODULES = new LegacySupport.LoginModulesAttributeDefinition(Constants.POLICY_MODULES, Constants.POLICY_MODULE);
+    private static final OperationStepHandler LEGACY_ADD_HANDLER = new LegacySupport.LegacyModulesConverter(Constants.POLICY_MODULE, POLICY_MODULES);
 
     private AuthorizationResourceDefinition() {
-        super(PathElement.pathElement(Constants.AUTHORIZATION, Constants.CLASSIC),
+        super(SecurityExtension.PATH_AUTHORIZATION_CLASSIC,
                 SecurityExtension.getResourceDescriptionResolver(Constants.AUTHORIZATION),
                 AuthorizationResourceDefinitionAdd.INSTANCE, new SecurityDomainReloadRemoveHandler());
     }
 
     public void registerAttributes(final ManagementResourceRegistration resourceRegistration) {
-        resourceRegistration.registerReadWriteAttribute(POLICY_MODULES, null, new SecurityDomainReloadWriteHandler(POLICY_MODULES));
+        resourceRegistration.registerReadWriteAttribute(POLICY_MODULES, new LegacySupport.LegacyModulesAttributeReader(Constants.POLICY_MODULE), new LegacySupport.LegacyModulesAttributeWriter(Constants.POLICY_MODULE));
+    }
+
+    @Override
+    public void registerChildren(ManagementResourceRegistration resourceRegistration) {
+        super.registerChildren(resourceRegistration);
+        resourceRegistration.registerSubModel(new LoginModuleResourceDefinition(Constants.POLICY_MODULE));
     }
 
     static class AuthorizationResourceDefinitionAdd extends SecurityDomainReloadAddHandler {
@@ -52,8 +60,16 @@ public class AuthorizationResourceDefinition extends SimpleResourceDefinition {
 
         @Override
         protected void populateModel(ModelNode operation, ModelNode model) throws OperationFailedException {
-            POLICY_MODULES.validateAndSet(operation, model);
+
         }
+
+        @Override
+               protected void updateModel(OperationContext context, ModelNode operation) throws OperationFailedException {
+                   super.updateModel(context, operation);
+                   if (operation.hasDefined(POLICY_MODULES.getName())) {
+                       context.addStep(new ModelNode(), operation, LEGACY_ADD_HANDLER, OperationContext.Stage.MODEL, true);
+                   }
+               }
 
     }
 

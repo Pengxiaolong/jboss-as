@@ -23,8 +23,6 @@
 package org.jboss.as.ejb3.component.stateful;
 
 
-import static org.jboss.as.ejb3.EjbMessages.MESSAGES;
-
 import java.lang.reflect.Method;
 import java.util.Collection;
 import java.util.Collections;
@@ -35,22 +33,27 @@ import javax.ejb.EJBLocalObject;
 import javax.ejb.EJBObject;
 import javax.ejb.TransactionManagementType;
 
+import org.jboss.as.ee.component.Attachments;
 import org.jboss.as.ee.component.Component;
 import org.jboss.as.ee.component.ComponentConfiguration;
 import org.jboss.as.ee.component.ComponentConfigurator;
 import org.jboss.as.ee.component.ComponentDescription;
 import org.jboss.as.ee.component.ComponentInstanceInterceptorFactory;
+import org.jboss.as.ee.component.EEApplicationClasses;
 import org.jboss.as.ee.component.ViewConfiguration;
 import org.jboss.as.ee.component.ViewConfigurator;
 import org.jboss.as.ee.component.ViewDescription;
+import org.jboss.as.ee.component.interceptors.InterceptorClassDescription;
 import org.jboss.as.ee.component.interceptors.InterceptorOrder;
 import org.jboss.as.ee.component.serialization.WriteReplaceInterface;
+import org.jboss.as.ee.metadata.MetadataCompleteMarker;
 import org.jboss.as.ejb3.cache.CacheInfo;
 import org.jboss.as.ejb3.component.EJBViewDescription;
 import org.jboss.as.ejb3.component.MethodIntf;
 import org.jboss.as.ejb3.component.interceptors.ComponentTypeIdentityInterceptorFactory;
 import org.jboss.as.ejb3.component.session.SessionBeanComponentDescription;
 import org.jboss.as.ejb3.deployment.EjbJarDescription;
+import org.jboss.as.ejb3.tx.LifecycleCMTTxInterceptor;
 import org.jboss.as.ejb3.tx.StatefulBMTInterceptor;
 import org.jboss.as.server.deployment.DeploymentPhaseContext;
 import org.jboss.as.server.deployment.DeploymentUnitProcessingException;
@@ -66,6 +69,8 @@ import org.jboss.metadata.ejb.spec.SessionBeanMetaData;
 import org.jboss.modules.ModuleLoader;
 import org.jboss.msc.service.ServiceName;
 
+import static org.jboss.as.ejb3.EjbMessages.MESSAGES;
+
 /**
  * User: jpai
  */
@@ -77,6 +82,8 @@ public class StatefulComponentDescription extends SessionBeanComponentDescriptio
     private final Map<MethodIdentifier, StatefulRemoveMethod> removeMethods = new HashMap<MethodIdentifier, StatefulRemoveMethod>();
     private StatefulTimeoutInfo statefulTimeout;
     private CacheInfo cache;
+    // by default stateful beans are passivation capable, but beans can override it via annotation or deployment descriptor, starting EJB 3.2
+    private boolean passivationApplicable = true;
 
     /**
      * Map of init method, to the corresponding home create method on the home interface
@@ -177,6 +184,22 @@ public class StatefulComponentDescription extends SessionBeanComponentDescriptio
                         }
                     };
                     configuration.addComponentInterceptor(bmtComponentInterceptorFactory, InterceptorOrder.Component.BMT_TRANSACTION_INTERCEPTOR, false);
+                }
+            });
+        } else {
+            getConfigurators().add(new ComponentConfigurator() {
+                @Override
+                public void configure(final DeploymentPhaseContext context, final ComponentDescription description, final ComponentConfiguration configuration) throws DeploymentUnitProcessingException {
+                    final EEApplicationClasses applicationClasses = context.getDeploymentUnit().getAttachment(Attachments.EE_APPLICATION_CLASSES_DESCRIPTION);
+                    InterceptorClassDescription interceptorConfig = ComponentDescription.mergeInterceptorConfig(configuration.getComponentClass(), applicationClasses.getClassByName(description.getComponentClassName()), description, MetadataCompleteMarker.isMetadataComplete(context.getDeploymentUnit()));
+
+                    configuration.addPostConstructInterceptor(new LifecycleCMTTxInterceptor.Factory(interceptorConfig.getPostConstruct(), false), InterceptorOrder.ComponentPostConstruct.TRANSACTION_INTERCEPTOR);
+                    configuration.addPreDestroyInterceptor(new LifecycleCMTTxInterceptor.Factory(interceptorConfig.getPreDestroy(), false), InterceptorOrder.ComponentPreDestroy.TRANSACTION_INTERCEPTOR);
+
+                    if (description.isPassivationApplicable()) {
+                        configuration.addPrePassivateInterceptor(new LifecycleCMTTxInterceptor.Factory(interceptorConfig.getPrePassivate(), false), InterceptorOrder.ComponentPassivation.TRANSACTION_INTERCEPTOR);
+                        configuration.addPostActivateInterceptor(new LifecycleCMTTxInterceptor.Factory(interceptorConfig.getPostActivate(), false), InterceptorOrder.ComponentPassivation.TRANSACTION_INTERCEPTOR);
+                    }
                 }
             });
         }
@@ -369,6 +392,10 @@ public class StatefulComponentDescription extends SessionBeanComponentDescriptio
 
     @Override
     public boolean isPassivationApplicable() {
-        return true;
+        return this.passivationApplicable;
+    }
+
+    public void setPassivationApplicable(final boolean passivationApplicable) {
+        this.passivationApplicable = passivationApplicable;
     }
 }

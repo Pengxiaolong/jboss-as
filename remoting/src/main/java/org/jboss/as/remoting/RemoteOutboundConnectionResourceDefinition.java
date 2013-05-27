@@ -25,6 +25,7 @@ package org.jboss.as.remoting;
 import org.jboss.as.controller.AttributeDefinition;
 import org.jboss.as.controller.OperationStepHandler;
 import org.jboss.as.controller.PathElement;
+import org.jboss.as.controller.ServiceRemoveStepHandler;
 import org.jboss.as.controller.SimpleAttributeDefinition;
 import org.jboss.as.controller.SimpleAttributeDefinitionBuilder;
 import org.jboss.as.controller.operations.validation.StringLengthValidator;
@@ -43,8 +44,10 @@ class RemoteOutboundConnectionResourceDefinition extends AbstractOutboundConnect
             .setAllowExpression(true).setValidator(new StringLengthValidator(1, Integer.MAX_VALUE, false, true))
             .setFlags(AttributeAccess.Flag.RESTART_ALL_SERVICES).build();
 
-    public static final SimpleAttributeDefinition USERNAME = new SimpleAttributeDefinitionBuilder(CommonAttributes.USERNAME,
-            ModelType.STRING, true).setValidator(new StringLengthValidator(1, Integer.MAX_VALUE, true, false)).build();
+    public static final SimpleAttributeDefinition USERNAME = new SimpleAttributeDefinitionBuilder(CommonAttributes.USERNAME, ModelType.STRING, true)
+            .setAllowExpression(true)
+            .setValidator(new StringLengthValidator(1, Integer.MAX_VALUE, true, true))
+            .build();
 
     public static final SimpleAttributeDefinition SECURITY_REALM = new SimpleAttributeDefinitionBuilder(
             CommonAttributes.SECURITY_REALM, ModelType.STRING, true).setValidator(
@@ -58,7 +61,8 @@ class RemoteOutboundConnectionResourceDefinition extends AbstractOutboundConnect
 
     private RemoteOutboundConnectionResourceDefinition() {
         super(ADDRESS, RemotingExtension.getResourceDescriptionResolver(CommonAttributes.REMOTE_OUTBOUND_CONNECTION),
-                RemoteOutboundConnectionAdd.INSTANCE, RemoteOutboundConnectionRemoveHandler.INSTANCE);
+                RemoteOutboundConnectionAdd.INSTANCE,
+                new ServiceRemoveStepHandler(AbstractOutboundConnectionService.OUTBOUND_CONNECTION_BASE_SERVICE_NAME, RemoteOutboundConnectionAdd.INSTANCE));
     }
 
     @Override

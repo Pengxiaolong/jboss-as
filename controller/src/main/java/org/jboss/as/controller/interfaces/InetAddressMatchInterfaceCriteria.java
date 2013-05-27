@@ -1,3 +1,25 @@
+/*
+ * JBoss, Home of Professional Open Source.
+ * Copyright 2012, Red Hat, Inc., and individual contributors
+ * as indicated by the @author tags. See the copyright.txt file in the
+ * distribution for a full listing of individual contributors.
+ *
+ * This is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU Lesser General Public License as
+ * published by the Free Software Foundation; either version 2.1 of
+ * the License, or (at your option) any later version.
+ *
+ * This software is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with this software; if not, write to the Free
+ * Software Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA
+ * 02110-1301 USA, or see the FSF site: http://www.fsf.org.
+ */
+
 /**
  *
  */
@@ -21,7 +43,6 @@ import java.util.Map;
 import java.util.Set;
 
 import org.jboss.as.controller.ControllerLogger;
-import org.jboss.dmr.ModelNode;
 
 /**
  * {@link InterfaceCriteria} that tests whether a given address is matches
@@ -33,8 +54,7 @@ public class InetAddressMatchInterfaceCriteria extends AbstractInterfaceCriteria
 
     private static final long serialVersionUID = 149404752878332750L;
 
-    private ModelNode address;
-    private String addressString;
+    private String address;
     private InetAddress resolved;
     private boolean unknownHostLogged;
     private boolean anyLocalLogged;
@@ -43,21 +63,7 @@ public class InetAddressMatchInterfaceCriteria extends AbstractInterfaceCriteria
         if (address == null)
             throw MESSAGES.nullVar("address");
         this.resolved = address;
-        this.address = new ModelNode(resolved.getHostAddress());
-    }
-
-    /**
-     * Creates a new InetAddressMatchInterfaceCriteria
-     *
-     * @param address a valid value to pass to {@link InetAddress#getByName(String)}
-     *                Cannot be {@code null}
-     *
-     * @throws IllegalArgumentException if <code>network</code> is <code>null</code>
-     */
-    public InetAddressMatchInterfaceCriteria(final ModelNode address) {
-        if (address == null)
-            throw MESSAGES.nullVar("address");
-        this.address = address;
+        this.address = resolved.getHostAddress();
     }
 
     /**
@@ -72,16 +78,12 @@ public class InetAddressMatchInterfaceCriteria extends AbstractInterfaceCriteria
         if (address == null || address.isEmpty() || address.trim().isEmpty()) {
             throw MESSAGES.nullVar("address");
         }
-        this.addressString = address;
+        this.address = address;
     }
 
     public synchronized InetAddress getAddress() throws UnknownHostException {
         if (resolved == null) {
-            if (address != null) {
-                resolved = InetAddress.getByName(address.resolve().asString());
-            } else {
-                resolved = InetAddress.getByName(addressString);
-            }
+            resolved = InetAddress.getByName(address);
         }
         return this.resolved;
     }
@@ -151,11 +153,7 @@ public class InetAddressMatchInterfaceCriteria extends AbstractInterfaceCriteria
 
     @Override
     public int hashCode() {
-        if (address != null) {
-            return address.hashCode();
-        } else {
-            return addressString.hashCode();
-        }
+        return address.hashCode();
     }
 
     @Override
@@ -163,8 +161,6 @@ public class InetAddressMatchInterfaceCriteria extends AbstractInterfaceCriteria
         if (o instanceof InetAddressMatchInterfaceCriteria) {
             if (address != null) {
                 return address.equals(((InetAddressMatchInterfaceCriteria)o).address);
-            } else if (addressString != null) {
-                return addressString.equals(((InetAddressMatchInterfaceCriteria)o).addressString);
             }
         }
         return false;
@@ -177,7 +173,7 @@ public class InetAddressMatchInterfaceCriteria extends AbstractInterfaceCriteria
             nis.add(entry.getKey().getName());
             addresses.addAll(entry.getValue());
         }
-        String toMatch = resolved != null ? resolved.getHostAddress() : addressString;
+        String toMatch = resolved != null ? resolved.getHostAddress() : address;
 
 
         ControllerLogger.ROOT_LOGGER.multipleMatchingAddresses(toMatch, addresses, nis);

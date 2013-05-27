@@ -24,14 +24,16 @@ package org.jboss.as.cli.handlers;
 
 import java.io.BufferedReader;
 import java.io.File;
-import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.FileReader;
 import java.io.IOException;
+import java.net.MalformedURLException;
+import java.net.URL;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
+import java.util.concurrent.Executors;
 
 import org.jboss.as.cli.CommandContext;
 import org.jboss.as.cli.CommandFormatException;
@@ -41,14 +43,16 @@ import org.jboss.as.cli.Util;
 import org.jboss.as.cli.impl.ArgumentWithValue;
 import org.jboss.as.cli.impl.ArgumentWithoutValue;
 import org.jboss.as.cli.impl.CommaSeparatedCompleter;
+import org.jboss.as.cli.impl.FileSystemPathArgument;
 import org.jboss.as.cli.operation.OperationFormatException;
 import org.jboss.as.cli.operation.ParsedCommandLine;
 import org.jboss.as.cli.operation.impl.DefaultOperationRequestAddress;
 import org.jboss.as.controller.client.ModelControllerClient;
 import org.jboss.as.controller.client.Operation;
 import org.jboss.as.controller.client.OperationBuilder;
-import org.jboss.as.protocol.StreamUtils;
 import org.jboss.dmr.ModelNode;
+import org.jboss.vfs.TempFileProvider;
+import org.jboss.vfs.VFSUtils;
 import org.jboss.vfs.spi.MountHandle;
 
 /**
@@ -60,6 +64,7 @@ public class DeployHandler extends DeploymentHandler {
     private final ArgumentWithoutValue force;
     private final ArgumentWithoutValue l;
     private final ArgumentWithoutValue path;
+    private final ArgumentWithoutValue url;
     private final ArgumentWithoutValue name;
     private final ArgumentWithoutValue rtName;
     private final ArgumentWithValue serverGroups;
@@ -79,20 +84,12 @@ public class DeployHandler extends DeploymentHandler {
         l.setExclusive(true);
 
         final FilenameTabCompleter pathCompleter = Util.isWindows() ? new WindowsFilenameTabCompleter(ctx) : new DefaultFilenameTabCompleter(ctx);
-        path = new ArgumentWithValue(this, pathCompleter, 0, "--path") {
-            @Override
-            public String getValue(ParsedCommandLine args) {
-                String value = super.getValue(args);
-                if(value != null) {
-                    if(value.length() >= 0 && value.charAt(0) == '"' && value.charAt(value.length() - 1) == '"') {
-                        value = value.substring(1, value.length() - 1);
-                    }
-                    value = pathCompleter.translatePath(value);
-                }
-                return value;
-            }
-        };
+        path = new FileSystemPathArgument(this, pathCompleter, 0, "--path");
         path.addCantAppearAfter(l);
+
+        url = new ArgumentWithValue(this, "--url");
+        url.addCantAppearAfter(path);
+        path.addCantAppearAfter(url);
 
         force = new ArgumentWithoutValue(this, "--force", "-f");
         force.addRequiredPreceding(path);
@@ -103,7 +100,7 @@ public class DeployHandler extends DeploymentHandler {
 
                 ParsedCommandLine args = ctx.getParsedCommandLine();
                 try {
-                    if(path.isPresent(args)) {
+                    if(path.isPresent(args) || url.isPresent(args)) {
                         return -1;
                     }
                 } catch (CommandFormatException e) {
@@ -143,6 +140,7 @@ public class DeployHandler extends DeploymentHandler {
             }}, "--name");
         name.addCantAppearAfter(l);
         path.addCantAppearAfter(name);
+        url.addCantAppearAfter(name);
 
         rtName = new ArgumentWithValue(this, "--runtime-name");
         rtName.addRequiredPreceding(path);
@@ -225,11 +223,30 @@ public class DeployHandler extends DeploymentHandler {
             f = null;
         }
 
+        final URL deploymentUrl;
+        final String urlString = this.url.getValue(args);
+        if(urlString != null) {
+            if(f != null) {
+                throw new CommandFormatException("Either one of the filesystem path or --url argument can be specified at a time.");
+            }
+            try {
+                deploymentUrl = new URL(urlString);
+            } catch (MalformedURLException e) {
+                throw new CommandFormatException("Failed to parse URL", e);
+            }
+        } else {
+            deploymentUrl = null;
+        }
+
         if (isCliArchive(f)) {
             final ModelNode request = buildRequestWOValidation(ctx);
             if(request == null) {
                 throw new CommandFormatException("Operation request wasn't built.");
             }
+
+            // if script had no server-side commands, just return
+            if (!request.get("steps").isDefined()) return;
+
             try {
                 final ModelNode result = client.execute(request);
                 if(Util.isSuccess(result)) {
@@ -245,9 +262,14 @@ public class DeployHandler extends DeploymentHandler {
         String name = this.name.getValue(args);
         if(name == null) {
             if(f == null) {
-                throw new CommandFormatException("Either path or --name is required.");
+                if(deploymentUrl == null) {
+                    throw new CommandFormatException("Filesystem path, --url or --name is required.");
+                } else {
+                    name = deploymentUrl.getPath();
+                }
+            } else {
+                name = f.getName();
             }
-            name = f.getName();
         }
 
         final String runtimeName = rtName.getValue(args);
@@ -258,9 +280,6 @@ public class DeployHandler extends DeploymentHandler {
         final boolean allServerGroups = this.allServerGroups.isPresent(args);
 
         if(force) {
-            if(f == null) {
-                throw new CommandFormatException(this.force.getFullName() + " requires a filesystem path of the deployment to be added to the deployment repository.");
-            }
             if(disabled || serverGroups != null || allServerGroups) {
                 throw new CommandFormatException(this.force.getFullName() +
                         " only replaces the content in the deployment repository and can't be used in combination with any of " +
@@ -268,11 +287,11 @@ public class DeployHandler extends DeploymentHandler {
             }
 
             if(Util.isDeploymentInRepository(name, client)) {
-                replaceDeployment(ctx, f, name, runtimeName);
+                replaceDeployment(ctx, f, deploymentUrl, name, runtimeName);
                 return;
             } else if(ctx.isDomainMode()) {
                 // add deployment to the repository (enabled in standalone, disabled in domain (i.e. not associated with any sg))
-                final ModelNode request = buildAddRequest(ctx, f, name, runtimeName, unmanaged);
+                final ModelNode request = buildAddRequest(ctx, f, deploymentUrl, name, runtimeName, unmanaged);
                 execute(ctx, request, f, unmanaged);
                 return;
             }
@@ -280,10 +299,6 @@ public class DeployHandler extends DeploymentHandler {
         }
 
         if(disabled) {
-            if(f == null) {
-                throw new CommandFormatException(this.disabled.getFullName() + " requires a filesystem path of the deployment to be added to the deployment repository.");
-            }
-
             if(serverGroups != null || allServerGroups) {
                 throw new CommandFormatException(this.serverGroups.getFullName() + " and " + this.allServerGroups.getFullName() +
                         " can't be used in combination with " + this.disabled.getFullName() + '.');
@@ -295,7 +310,7 @@ public class DeployHandler extends DeploymentHandler {
             }
 
             // add deployment to the repository disabled
-            final ModelNode request = buildAddRequest(ctx, f, name, runtimeName, unmanaged);
+            final ModelNode request = buildAddRequest(ctx, f, deploymentUrl, name, runtimeName, unmanaged);
             execute(ctx, request, f, unmanaged);
             return;
         }
@@ -316,7 +331,7 @@ public class DeployHandler extends DeploymentHandler {
             } else if(serverGroups == null) {
                 final StringBuilder buf = new StringBuilder();
                 buf.append("One of ");
-                if(f != null) {
+                if(f != null || deploymentUrl != null) {
                     buf.append(this.disabled.getFullName()).append(", ");
                 }
                 buf.append(this.allServerGroups.getFullName() + " or " + this.serverGroups.getFullName() + " is missing.");
@@ -348,7 +363,7 @@ public class DeployHandler extends DeploymentHandler {
             deployRequest.get(Util.ADDRESS, Util.DEPLOYMENT).set(name);
         }
 
-        if(f != null) {
+        if(f != null || deploymentUrl != null) {
             if(Util.isDeploymentInRepository(name, client)) {
                 throw new CommandFormatException("'" + name + "' already exists in the deployment repository (use " +
                 this.force.getFullName() + " to replace the existing content in the repository).");
@@ -357,7 +372,7 @@ public class DeployHandler extends DeploymentHandler {
             request.get(Util.OPERATION).set(Util.COMPOSITE);
             request.get(Util.ADDRESS).setEmptyList();
             final ModelNode steps = request.get(Util.STEPS);
-            steps.add(buildAddRequest(ctx, f, name, runtimeName, unmanaged));
+            steps.add(buildAddRequest(ctx, f, deploymentUrl, name, runtimeName, unmanaged));
             steps.add(deployRequest);
             execute(ctx, request, f, unmanaged);
             return;
@@ -471,9 +486,11 @@ public class DeployHandler extends DeploymentHandler {
                         " can't be used in combination with a CLI archive.");
             }
 
+            TempFileProvider tempFileProvider;
             MountHandle root;
             try {
-                root = extractArchive(f);
+                tempFileProvider = TempFileProvider.create("cli", Executors.newSingleThreadScheduledExecutor());
+                root = extractArchive(f, tempFileProvider);
             } catch (IOException e) {
                 throw new OperationFormatException("Unable to extract archive '" + f.getAbsolutePath() + "' to temporary location");
             }
@@ -521,9 +538,8 @@ public class DeployHandler extends DeploymentHandler {
                 // reset current dir in context
                 ctx.setCurrentDir(currentDir);
                 discardBatch(ctx, holdbackBatch);
-                try {
-                    root.close();
-                } catch (IOException ignore) {}
+
+                VFSUtils.safeClose(root, tempFileProvider);
             }
         }
 
@@ -608,7 +624,7 @@ public class DeployHandler extends DeploymentHandler {
             request.get(Util.RUNTIME_NAME).set(runtimeName);
         }
 
-        byte[] bytes = readBytes(f);
+        byte[] bytes = Util.readBytes(f);
         request.get(Util.CONTENT).get(0).get(Util.BYTES).set(bytes);
         return request;
     }
@@ -625,7 +641,7 @@ public class DeployHandler extends DeploymentHandler {
             content.get(Util.PATH).set(f.getAbsolutePath());
             content.get(Util.ARCHIVE).set(f.isFile());
         } else {
-            byte[] bytes = readBytes(f);
+            byte[] bytes = Util.readBytes(f);
             request.get(Util.CONTENT).get(0).get(Util.BYTES).set(bytes);
         }
         return request;
@@ -637,7 +653,7 @@ public class DeployHandler extends DeploymentHandler {
 
         ModelNode result;
         try {
-            if(!unmanaged) {
+            if(!unmanaged && f != null) {
                 OperationBuilder op = new OperationBuilder(request);
                 op.addFileAsAttachment(f);
                 request.get(Util.CONTENT).get(0).get(Util.INPUT_STREAM_INDEX).set(0);
@@ -655,24 +671,31 @@ public class DeployHandler extends DeploymentHandler {
         }
     }
 
-    protected ModelNode buildAddRequest(CommandContext ctx, final File f, String name, final String runtimeName, boolean unmanaged) {
+    protected ModelNode buildAddRequest(CommandContext ctx, final File f, final URL url, String name, final String runtimeName, boolean unmanaged) throws CommandFormatException {
         final ModelNode request = new ModelNode();
         request.get(Util.OPERATION).set(Util.ADD);
         request.get(Util.ADDRESS, Util.DEPLOYMENT).set(name);
         if (runtimeName != null) {
             request.get(Util.RUNTIME_NAME).set(runtimeName);
         }
-        if(unmanaged) {
-            final ModelNode content = request.get(Util.CONTENT).get(0);
-            content.get(Util.PATH).set(f.getAbsolutePath());
-            content.get(Util.ARCHIVE).set(f.isFile());
+        final ModelNode content = request.get(Util.CONTENT).get(0);
+        if(f == null) {
+            if(url == null) {
+                addRequiresDeployment();
+            }
+            content.get(Util.URL).set(url.toExternalForm());
         } else {
-            request.get(Util.CONTENT).get(0).get(Util.INPUT_STREAM_INDEX).set(0);
+            if (unmanaged) {
+                content.get(Util.PATH).set(f.getAbsolutePath());
+                content.get(Util.ARCHIVE).set(f.isFile());
+            } else {
+                content.get(Util.INPUT_STREAM_INDEX).set(0);
+            }
         }
         return request;
     }
 
-    protected void replaceDeployment(CommandContext ctx, final File f, String name, final String runtimeName) throws CommandFormatException {
+    protected void replaceDeployment(CommandContext ctx, final File f, final URL url, String name, final String runtimeName) throws CommandFormatException {
         // replace
         final ModelNode request = new ModelNode();
         request.get(Util.OPERATION).set(Util.FULL_REPLACE_DEPLOYMENT);
@@ -680,25 +703,27 @@ public class DeployHandler extends DeploymentHandler {
         if(runtimeName != null) {
             request.get(Util.RUNTIME_NAME).set(runtimeName);
         }
-        request.get(Util.CONTENT).get(0).get(Util.INPUT_STREAM_INDEX).set(0);
+        final ModelNode content = request.get(Util.CONTENT).get(0);
+        if(f == null) {
+            if(url == null) {
+                forceRequiresDeployment();
+            }
+            content.get(Util.URL).set(url.toExternalForm());
+        } else {
+            content.get(Util.INPUT_STREAM_INDEX).set(0);
+        }
         execute(ctx, request, f, false);
     }
 
-    protected byte[] readBytes(File f) throws OperationFormatException {
-        byte[] bytes;
-        FileInputStream is = null;
-        try {
-            is = new FileInputStream(f);
-            bytes = new byte[(int) f.length()];
-            int read = is.read(bytes);
-            if(read != bytes.length) {
-                throw new OperationFormatException("Failed to read bytes from " + f.getAbsolutePath() + ": " + read + " from " + f.length());
-            }
-        } catch (Exception e) {
-            throw new OperationFormatException("Failed to read file " + f.getAbsolutePath(), e);
-        } finally {
-            StreamUtils.safeClose(is);
-        }
-        return bytes;
+    protected void addRequiresDeployment() throws CommandFormatException {
+        throw new CommandFormatException("Filesystem path or --url pointing to the deployment is required.");
+    }
+
+    protected void forceRequiresDeployment() throws CommandFormatException {
+        argumentRequiresDeployment(this.force);
+    }
+
+    protected void argumentRequiresDeployment(ArgumentWithoutValue arg) throws CommandFormatException {
+        throw new CommandFormatException(arg.getFullName() + " requires a filesystem path or --url pointing to the deployment to be added to the repository.");
     }
 }

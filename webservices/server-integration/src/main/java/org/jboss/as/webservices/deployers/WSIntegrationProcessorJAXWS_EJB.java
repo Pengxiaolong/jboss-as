@@ -26,6 +26,7 @@ import static org.jboss.as.webservices.util.ASHelper.getAnnotations;
 import static org.jboss.as.webservices.util.ASHelper.getJaxwsDeployment;
 import static org.jboss.as.webservices.util.ASHelper.getRequiredAttachment;
 import static org.jboss.as.webservices.util.DotNames.DECLARE_ROLES_ANNOTATION;
+import static org.jboss.as.webservices.util.DotNames.PERMIT_ALL_ANNOTATION;
 import static org.jboss.as.webservices.util.DotNames.ROLES_ALLOWED_ANNOTATION;
 import static org.jboss.as.webservices.util.DotNames.WEB_CONTEXT_ANNOTATION;
 import static org.jboss.as.webservices.util.DotNames.WEB_SERVICE_ANNOTATION;
@@ -77,27 +78,29 @@ public final class WSIntegrationProcessorJAXWS_EJB implements DeploymentUnitProc
 
     private static void processAnnotation(final DeploymentUnit unit, final DotName annotation) {
         final List<AnnotationInstance> webServiceAnnotations = getAnnotations(unit, annotation);
-        final EEModuleDescription moduleDescription = getRequiredAttachment(unit, EE_MODULE_DESCRIPTION);
-        final JAXWSDeployment jaxwsDeployment = getJaxwsDeployment(unit);
+        if (!webServiceAnnotations.isEmpty()) {
+            final EEModuleDescription moduleDescription = getRequiredAttachment(unit, EE_MODULE_DESCRIPTION);
+            final JAXWSDeployment jaxwsDeployment = getJaxwsDeployment(unit);
 
-        for (final AnnotationInstance webServiceAnnotation : webServiceAnnotations) {
-            final AnnotationTarget target = webServiceAnnotation.target();
-            final ClassInfo webServiceClassInfo = (ClassInfo) target;
-            final String webServiceClassName = webServiceClassInfo.name().toString();
-            final List<ComponentDescription> componentDescriptions = moduleDescription.getComponentsByClassName(webServiceClassName);
-            final List<SessionBeanComponentDescription> sessionBeans = getSessionBeans(componentDescriptions);
-            final Set<String> securityRoles = getSecurityRoles(unit, webServiceClassInfo); // TODO: assembly processed for each endpoint!
-            final WebContextAnnotationWrapper webCtx = getWebContextWrapper(webServiceClassInfo);
-            final String authMethod = webCtx.getAuthMethod();
-            final boolean isSecureWsdlAccess = webCtx.isSecureWsdlAccess();
-            final String transportGuarantee = webCtx.getTransportGuarantee();
+            for (final AnnotationInstance webServiceAnnotation : webServiceAnnotations) {
+                final AnnotationTarget target = webServiceAnnotation.target();
+                final ClassInfo webServiceClassInfo = (ClassInfo) target;
+                final String webServiceClassName = webServiceClassInfo.name().toString();
+                final List<ComponentDescription> componentDescriptions = moduleDescription.getComponentsByClassName(webServiceClassName);
+                final List<SessionBeanComponentDescription> sessionBeans = getSessionBeans(componentDescriptions);
+                final Set<String> securityRoles = getDeclaredSecurityRoles(unit, webServiceClassInfo); // TODO: assembly processed for each endpoint!
+                final WebContextAnnotationWrapper webCtx = getWebContextWrapper(webServiceClassInfo);
+                final String authMethod = webCtx.getAuthMethod();
+                final boolean isSecureWsdlAccess = webCtx.isSecureWsdlAccess();
+                final String transportGuarantee = webCtx.getTransportGuarantee();
 
 
-            for (final SessionBeanComponentDescription sessionBean : sessionBeans) {
-                if (sessionBean.isStateless() || sessionBean.isSingleton()) {
-                    final EJBViewDescription ejbViewDescription = sessionBean.addWebserviceEndpointView();
-                    final ServiceName ejbViewName = ejbViewDescription.getServiceName();
-                    jaxwsDeployment.addEndpoint(new EJBEndpoint(sessionBean, ejbViewName, securityRoles, authMethod, isSecureWsdlAccess, transportGuarantee));
+                for (final SessionBeanComponentDescription sessionBean : sessionBeans) {
+                    if (sessionBean.isStateless() || sessionBean.isSingleton()) {
+                        final EJBViewDescription ejbViewDescription = sessionBean.addWebserviceEndpointView();
+                        final ServiceName ejbViewName = ejbViewDescription.getServiceName();
+                        jaxwsDeployment.addEndpoint(new EJBEndpoint(sessionBean, ejbViewName, securityRoles, authMethod, isSecureWsdlAccess, transportGuarantee));
+                    }
                 }
             }
         }
@@ -119,7 +122,7 @@ public final class WSIntegrationProcessorJAXWS_EJB implements DeploymentUnitProc
         return sessionBeans;
     }
 
-    private static Set<String> getSecurityRoles(final DeploymentUnit unit, final ClassInfo webServiceClassInfo) {
+    private static Set<String> getDeclaredSecurityRoles(final DeploymentUnit unit, final ClassInfo webServiceClassInfo) {
         final Set<String> securityRoles = new HashSet<String>();
 
         // process assembly-descriptor DD section
@@ -143,9 +146,11 @@ public final class WSIntegrationProcessorJAXWS_EJB implements DeploymentUnitProc
         if (webServiceClassInfo.annotations().containsKey(ROLES_ALLOWED_ANNOTATION)) {
             final List<AnnotationInstance> allowedRoles = webServiceClassInfo.annotations().get(ROLES_ALLOWED_ANNOTATION);
             for (final AnnotationInstance allowedRole : allowedRoles) {
-               for (final String roleName : allowedRole.value().asStringArray()) {
-                  securityRoles.add(roleName);
-               }
+                if (allowedRole.target().equals(webServiceClassInfo)) {
+                   for (final String roleName : allowedRole.value().asStringArray()) {
+                      securityRoles.add(roleName);
+                   }
+                }
             }
         }
 
@@ -153,9 +158,19 @@ public final class WSIntegrationProcessorJAXWS_EJB implements DeploymentUnitProc
         if (webServiceClassInfo.annotations().containsKey(DECLARE_ROLES_ANNOTATION)) {
             final List<AnnotationInstance> declareRoles = webServiceClassInfo.annotations().get(DECLARE_ROLES_ANNOTATION);
             for (final AnnotationInstance declareRole : declareRoles) {
-               for (final String roleName : declareRole.value().asStringArray()) {
-                  securityRoles.add(roleName);
-               }
+                if (declareRole.target().equals(webServiceClassInfo)) {
+                   for (final String roleName : declareRole.value().asStringArray()) {
+                      securityRoles.add(roleName);
+                   }
+                }
+            }
+        }
+
+        // process @PermitAll annotation
+        if (webServiceClassInfo.annotations().containsKey(PERMIT_ALL_ANNOTATION)) {
+            final AnnotationInstance permitAll = webServiceClassInfo.annotations().get(PERMIT_ALL_ANNOTATION).iterator().next();
+            if (permitAll.target().equals(webServiceClassInfo)) {
+                securityRoles.add("*");
             }
         }
 

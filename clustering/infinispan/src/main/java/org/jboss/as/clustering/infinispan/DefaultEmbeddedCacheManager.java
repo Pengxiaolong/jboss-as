@@ -26,46 +26,30 @@ import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.Set;
 
+import org.infinispan.AbstractDelegatingAdvancedCache;
 import org.infinispan.AdvancedCache;
 import org.infinispan.Cache;
 import org.infinispan.configuration.cache.Configuration;
-import org.infinispan.configuration.cache.LegacyConfigurationAdaptor;
 import org.infinispan.configuration.global.GlobalConfiguration;
-import org.infinispan.configuration.global.GlobalConfigurationBuilder;
-import org.infinispan.configuration.global.LegacyGlobalConfigurationAdaptor;
 import org.infinispan.manager.AbstractDelegatingEmbeddedCacheManager;
 import org.infinispan.manager.CacheContainer;
 import org.infinispan.manager.DefaultCacheManager;
 import org.infinispan.manager.EmbeddedCacheManager;
 
 /**
+ * EmbeddedCacheManager decorator that overrides the default cache semantics of a cache manager.
  * @author Paul Ferraro
  */
 public class DefaultEmbeddedCacheManager extends AbstractDelegatingEmbeddedCacheManager {
 
-    @SuppressWarnings("deprecation")
-    private static org.infinispan.config.GlobalConfiguration adapt(GlobalConfiguration config) {
-        org.infinispan.config.GlobalConfiguration global = LegacyGlobalConfigurationAdaptor.adapt(config);
-        global.fluent().globalJmxStatistics().cacheManagerName(config.globalJmxStatistics().cacheManagerName());
-        return global;
-    }
-
-    @SuppressWarnings("deprecation")
-    private static GlobalConfiguration adapt(org.infinispan.config.GlobalConfiguration global) {
-        GlobalConfigurationBuilder builder = new GlobalConfigurationBuilder().read(LegacyGlobalConfigurationAdaptor.adapt(global));
-        return builder.globalJmxStatistics().cacheManagerName(global.getCacheManagerName()).build();
-    }
-
     private final String defaultCache;
 
-    @SuppressWarnings("deprecation")
     public DefaultEmbeddedCacheManager(GlobalConfiguration global, String defaultCache) {
-        this(new DefaultCacheManager(adapt(global), false), defaultCache);
+        this(new DefaultCacheManager(global, null, false), defaultCache);
     }
 
-    @SuppressWarnings("deprecation")
     public DefaultEmbeddedCacheManager(GlobalConfiguration global, Configuration config, String defaultCache) {
-        this(new DefaultCacheManager(adapt(global), LegacyConfigurationAdaptor.adapt(config), false), defaultCache);
+        this(new DefaultCacheManager(global, config, false), defaultCache);
     }
 
     public DefaultEmbeddedCacheManager(EmbeddedCacheManager container, String defaultCache) {
@@ -121,8 +105,8 @@ public class DefaultEmbeddedCacheManager extends AbstractDelegatingEmbeddedCache
      * @see org.infinispan.manager.EmbeddedCacheManager#getCache(java.lang.String, boolean)
      */
     @Override
-    public <K, V> Cache<K, V> getCache(String cacheName, boolean start) {
-        Cache<K, V> cache = this.cm.<K, V>getCache(this.getCacheName(cacheName), start);
+    public <K, V> Cache<K, V> getCache(String cacheName, boolean createIfAbsent) {
+        Cache<K, V> cache = this.cm.<K, V>getCache(this.getCacheName(cacheName), createIfAbsent);
         return (cache != null) ? new DelegatingCache<K, V>(cache) : null;
     }
 
@@ -187,11 +171,6 @@ public class DefaultEmbeddedCacheManager extends AbstractDelegatingEmbeddedCache
         return ((name == null) || name.equals(CacheContainer.DEFAULT_CACHE_NAME)) ? this.defaultCache : name;
     }
 
-    @Override
-    public GlobalConfiguration getCacheManagerConfiguration() {
-        return adapt(this.getGlobalConfiguration());
-    }
-
     /**
      * {@inheritDoc}
      * @see java.lang.Object#hashCode()
@@ -210,18 +189,19 @@ public class DefaultEmbeddedCacheManager extends AbstractDelegatingEmbeddedCache
         return this.cm.getCacheManagerConfiguration().globalJmxStatistics().cacheManagerName();
     }
 
-    class DelegatingCache<K, V> extends AbstractAdvancedCache<K, V> {
+    class DelegatingCache<K, V> extends AbstractDelegatingAdvancedCache<K, V> {
         DelegatingCache(AdvancedCache<K, V> cache) {
-            super(cache);
+            super(cache, new AdvancedCacheWrapper<K, V>() {
+                    @Override
+                    public AdvancedCache<K, V> wrap(AdvancedCache<K, V> cache) {
+                        return new DelegatingCache<K, V>(cache);
+                    }
+                }
+            );
         }
 
         DelegatingCache(Cache<K, V> cache) {
             this(cache.getAdvancedCache());
-        }
-
-        @Override
-        protected AdvancedCache<K, V> wrap(AdvancedCache<K, V> cache) {
-            return new DelegatingCache<K, V>(cache);
         }
 
         @Override

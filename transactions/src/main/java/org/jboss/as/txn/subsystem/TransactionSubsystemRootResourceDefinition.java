@@ -23,26 +23,25 @@
 package org.jboss.as.txn.subsystem;
 
 import org.jboss.as.controller.AttributeDefinition;
+import org.jboss.as.controller.OperationStepHandler;
 import org.jboss.as.controller.ReloadRequiredRemoveStepHandler;
 import org.jboss.as.controller.ReloadRequiredWriteAttributeHandler;
-import org.jboss.as.controller.ResourceDefinition;
 import org.jboss.as.controller.SimpleAttributeDefinition;
 import org.jboss.as.controller.SimpleAttributeDefinitionBuilder;
 import org.jboss.as.controller.SimpleResourceDefinition;
 import org.jboss.as.controller.client.helpers.MeasurementUnit;
-import org.jboss.as.controller.descriptions.ModelDescriptionConstants;
-import org.jboss.as.controller.operations.validation.BytesValidator;
 import org.jboss.as.controller.operations.validation.IntRangeValidator;
 import org.jboss.as.controller.operations.validation.StringBytesLengthValidator;
 import org.jboss.as.controller.operations.validation.StringLengthValidator;
 import org.jboss.as.controller.registry.AttributeAccess;
 import org.jboss.as.controller.registry.ManagementResourceRegistration;
 import org.jboss.as.controller.registry.OperationEntry;
+import org.jboss.as.controller.services.path.PathResourceDefinition;
 import org.jboss.dmr.ModelNode;
 import org.jboss.dmr.ModelType;
 
 /**
- * {@link ResourceDefinition} for the root resource of the transaction subsystem.
+ * {@link org.jboss.as.controller.ResourceDefinition} for the root resource of the transaction subsystem.
  *
  * @author Brian Stansberry (c) 2011 Red Hat Inc.
  */
@@ -95,14 +94,15 @@ public class TransactionSubsystemRootResourceDefinition extends SimpleResourceDe
             .setXmlName(Attribute.SOCKET_PROCESS_ID_MAX_PORTS.getLocalName())
             .setAllowExpression(true).build();
 
-    public static final SimpleAttributeDefinition RELATIVE_TO = new SimpleAttributeDefinitionBuilder(ModelDescriptionConstants.RELATIVE_TO, ModelType.STRING, true)
+    public static final SimpleAttributeDefinition RELATIVE_TO = new SimpleAttributeDefinitionBuilder(PathResourceDefinition.RELATIVE_TO)
             .setDefaultValue(new ModelNode().set("jboss.server.data.dir"))
             .setFlags(AttributeAccess.Flag.RESTART_ALL_SERVICES)
             .setAllowExpression(true).build();
 
-    public static final SimpleAttributeDefinition PATH = new SimpleAttributeDefinitionBuilder(ModelDescriptionConstants.PATH, ModelType.STRING, true)
+    public static final SimpleAttributeDefinition PATH = new SimpleAttributeDefinitionBuilder(PathResourceDefinition.PATH)
             .setDefaultValue(new ModelNode().set("var"))
             .setFlags(AttributeAccess.Flag.RESTART_ALL_SERVICES)
+            .setAllowNull(true)
             .setAllowExpression(true).build();
 
     //coordinator environment
@@ -140,12 +140,59 @@ public class TransactionSubsystemRootResourceDefinition extends SimpleResourceDe
     public static final SimpleAttributeDefinition JTS = new SimpleAttributeDefinitionBuilder(CommonAttributes.JTS, ModelType.BOOLEAN, true)
             .setDefaultValue(new ModelNode().set(false))
             .setFlags(AttributeAccess.Flag.RESTART_JVM)  //I think the use of statics in arjunta will require a JVM restart
-            .setAllowExpression(true).build();
+            .setAllowExpression(false).build();
 
     public static final SimpleAttributeDefinition USEHORNETQSTORE = new SimpleAttributeDefinitionBuilder(CommonAttributes.USEHORNETQSTORE, ModelType.BOOLEAN, true)
             .setDefaultValue(new ModelNode().set(false))
             .setFlags(AttributeAccess.Flag.RESTART_JVM)
-            .setAllowExpression(true).build();
+            .setAlternatives(CommonAttributes.USE_JDBC_STORE)
+            .setAllowExpression(false).build();
+
+    public static final SimpleAttributeDefinition USE_JDBC_STORE = new SimpleAttributeDefinitionBuilder(CommonAttributes.USE_JDBC_STORE, ModelType.BOOLEAN, true)
+                .setDefaultValue(new ModelNode(false))
+                .setFlags(AttributeAccess.Flag.RESTART_JVM)
+                .setAlternatives(CommonAttributes.USEHORNETQSTORE)
+                .setAllowExpression(false).build();
+    public static final SimpleAttributeDefinition JDBC_STORE_DATASOURCE = new SimpleAttributeDefinitionBuilder(CommonAttributes.JDBC_STORE_DATASOURCE, ModelType.STRING, true)
+                .setFlags(AttributeAccess.Flag.RESTART_JVM)
+                .setXmlName(Attribute.DATASOURCE_JNDI_NAME.getLocalName())
+                .setAllowExpression(true)
+                .setRequires(CommonAttributes.USE_JDBC_STORE).build();
+    public static final SimpleAttributeDefinition JDBC_ACTION_STORE_TABLE_PREFIX =
+            new SimpleAttributeDefinitionBuilder(CommonAttributes.JDBC_ACTION_STORE_TABLE_PREFIX, ModelType.STRING, true)
+            .setFlags(AttributeAccess.Flag.RESTART_JVM)
+            .setXmlName(Attribute.TABLE_PREFIX.getLocalName())
+            .setAllowExpression(true)
+            .setRequires(CommonAttributes.USE_JDBC_STORE).build();
+    public static final SimpleAttributeDefinition JDBC_ACTION_STORE_DROP_TABLE = new SimpleAttributeDefinitionBuilder(CommonAttributes.JDBC_ACTION_STORE_DROP_TABLE, ModelType.BOOLEAN, true)
+            .setDefaultValue(new ModelNode(false))
+            .setFlags(AttributeAccess.Flag.RESTART_JVM)
+            .setXmlName(Attribute.DROP_TABLE.getLocalName())
+            .setAllowExpression(true)
+            .setRequires(CommonAttributes.USE_JDBC_STORE).build();
+    public static final SimpleAttributeDefinition JDBC_COMMUNICATION_STORE_TABLE_PREFIX = new SimpleAttributeDefinitionBuilder(CommonAttributes.JDBC_COMMUNICATION_STORE_TABLE_PREFIX, ModelType.STRING, true)
+            .setFlags(AttributeAccess.Flag.RESTART_JVM)
+            .setXmlName(Attribute.TABLE_PREFIX.getLocalName())
+            .setAllowExpression(true)
+            .setRequires(CommonAttributes.USE_JDBC_STORE).build();
+    public static final SimpleAttributeDefinition JDBC_COMMUNICATION_STORE_DROP_TABLE = new SimpleAttributeDefinitionBuilder(CommonAttributes.JDBC_COMMUNICATION_STORE_DROP_TABLE, ModelType.BOOLEAN, true)
+            .setDefaultValue(new ModelNode(false))
+            .setFlags(AttributeAccess.Flag.RESTART_JVM)
+            .setXmlName(Attribute.DROP_TABLE.getLocalName())
+            .setAllowExpression(true)
+            .setRequires(CommonAttributes.USE_JDBC_STORE).build();
+    public static final SimpleAttributeDefinition JDBC_STATE_STORE_TABLE_PREFIX = new SimpleAttributeDefinitionBuilder(CommonAttributes.JDBC_STATE_STORE_TABLE_PREFIX, ModelType.STRING, true)
+            .setFlags(AttributeAccess.Flag.RESTART_JVM)
+            .setXmlName(Attribute.TABLE_PREFIX.getLocalName())
+            .setAllowExpression(true)
+            .setRequires(CommonAttributes.USE_JDBC_STORE).build();
+    public static final SimpleAttributeDefinition JDBC_STATE_STORE_DROP_TABLE = new SimpleAttributeDefinitionBuilder(CommonAttributes.JDBC_STATE_STORE_DROP_TABLE, ModelType.BOOLEAN, true)
+            .setDefaultValue(new ModelNode(false))
+            .setFlags(AttributeAccess.Flag.RESTART_JVM)
+            .setXmlName(Attribute.DROP_TABLE.getLocalName())
+            .setAllowExpression(true)
+            .setRequires(CommonAttributes.USE_JDBC_STORE).build();
+
 
     private final boolean registerRuntimeOnly;
 
@@ -163,12 +210,32 @@ public class TransactionSubsystemRootResourceDefinition extends SimpleResourceDe
             OBJECT_STORE_RELATIVE_TO, OBJECT_STORE_PATH, JTS, USEHORNETQSTORE
     };
 
+    static final AttributeDefinition[] ATTRIBUTES_WITH_EXPRESSIONS_AFTER_1_1_0 = new AttributeDefinition[] {
+            DEFAULT_TIMEOUT, ENABLE_STATISTICS, ENABLE_TSM_STATUS, NODE_IDENTIFIER, OBJECT_STORE_PATH, OBJECT_STORE_RELATIVE_TO,
+            PATH, PROCESS_ID_SOCKET_BINDING, PROCESS_ID_SOCKET_MAX_PORTS, RECOVERY_LISTENER, RELATIVE_TO, BINDING, STATUS_BINDING
+    };
+
+    static final AttributeDefinition[] ATTRIBUTES_WITH_EXPRESSIONS_AFTER_1_1_1 = new AttributeDefinition[] {
+            JTS, USEHORNETQSTORE
+    };
+
+    static final AttributeDefinition[] attributes_1_2 = new AttributeDefinition[] {USE_JDBC_STORE, JDBC_STORE_DATASOURCE,
+                JDBC_ACTION_STORE_DROP_TABLE, JDBC_ACTION_STORE_TABLE_PREFIX,
+                JDBC_COMMUNICATION_STORE_DROP_TABLE, JDBC_COMMUNICATION_STORE_TABLE_PREFIX,
+                JDBC_STATE_STORE_DROP_TABLE, JDBC_STATE_STORE_TABLE_PREFIX
+    };
+
 
     @Override
     public void registerAttributes(ManagementResourceRegistration resourceRegistration) {
         // Register all attributes
+        OperationStepHandler writeHandler = new ReloadRequiredWriteAttributeHandler(attributes);
         for(final AttributeDefinition def : attributes) {
-            resourceRegistration.registerReadWriteAttribute(def, null, new ReloadRequiredWriteAttributeHandler(def));
+            resourceRegistration.registerReadWriteAttribute(def, null, writeHandler);
+        }
+        writeHandler = new ReloadRequiredWriteAttributeHandler(attributes_1_2);
+        for(final AttributeDefinition def : attributes_1_2) {
+            resourceRegistration.registerReadWriteAttribute(def, null, writeHandler);
         }
 
         if (registerRuntimeOnly) {

@@ -22,42 +22,45 @@
 
 package org.jboss.as.logging;
 
-import org.jboss.as.controller.AttributeDefinition;
-
 import java.util.HashMap;
 import java.util.Map;
+
+import org.jboss.as.controller.AttributeDefinition;
+import org.jboss.as.controller.services.path.PathResourceDefinition;
 
 /**
  *
  */
 enum Attribute {
 
-    UNKNOWN(null),
+    UNKNOWN((String) null),
 
     APPEND(CommonAttributes.APPEND),
     AUTOFLUSH(CommonAttributes.AUTOFLUSH),
-    CATEGORY(CommonAttributes.CATEGORY),
-    CLASS(CommonAttributes.CLASS),
+    CATEGORY(LoggerResourceDefinition.CATEGORY),
+    CLASS(CustomHandlerResourceDefinition.CLASS),
+    ENABLED(CommonAttributes.ENABLED),
     MIN_INCLUSIVE(CommonAttributes.MIN_INCLUSIVE),
     MIN_LEVEL(CommonAttributes.MIN_LEVEL),
-    MAX_BACKUP_INDEX(CommonAttributes.MAX_BACKUP_INDEX),
+    MAX_BACKUP_INDEX(SizeRotatingHandlerResourceDefinition.MAX_BACKUP_INDEX),
     MAX_INCLUSIVE(CommonAttributes.MAX_INCLUSIVE),
     MAX_LEVEL(CommonAttributes.MAX_LEVEL),
-    MODULE(CommonAttributes.MODULE),
-    NAME(CommonAttributes.HANDLER_NAME),
+    MODULE(CustomHandlerResourceDefinition.MODULE),
+    NAME("name"),
     NEW_LEVEL(CommonAttributes.NEW_LEVEL),
-    OVERFLOW_ACTION(CommonAttributes.OVERFLOW_ACTION),
-    PATH(CommonAttributes.PATH),
+    OVERFLOW_ACTION(AsyncHandlerResourceDefinition.OVERFLOW_ACTION),
+    PATH(PathResourceDefinition.PATH),
     PATTERN(CommonAttributes.PATTERN),
-    QUEUE_LENGTH(CommonAttributes.QUEUE_LENGTH),
-    RELATIVE_TO(CommonAttributes.RELATIVE_TO),
+    QUEUE_LENGTH(AsyncHandlerResourceDefinition.QUEUE_LENGTH),
+    RELATIVE_TO(PathResourceDefinition.RELATIVE_TO),
     REPLACEMENT(CommonAttributes.REPLACEMENT),
     REPLACE_ALL(CommonAttributes.REPLACE_ALL),
-    ROTATE_SIZE(CommonAttributes.ROTATE_SIZE),
-    SUFFIX(CommonAttributes.SUFFIX),
-    TARGET(CommonAttributes.TARGET),
-    USE_PARENT_HANDLERS(CommonAttributes.USE_PARENT_HANDLERS),
-    VALUE(CommonAttributes.VALUE),;
+    ROTATE_SIZE(SizeRotatingHandlerResourceDefinition.ROTATE_SIZE),
+    SUFFIX(PeriodicHandlerResourceDefinition.SUFFIX),
+    SYSLOG_TYPE("syslog-type"),
+    TARGET(ConsoleHandlerResourceDefinition.TARGET),
+    USE_PARENT_HANDLERS(LoggerResourceDefinition.USE_PARENT_HANDLERS),
+    VALUE("value"),;
 
     private final String name;
     private final AttributeDefinition definition;
@@ -69,6 +72,11 @@ enum Attribute {
             this.name = definition.getXmlName();
         }
         this.definition = definition;
+    }
+
+    Attribute(final String name) {
+        this.name = name;
+        this.definition = null;
     }
 
     /**

@@ -40,6 +40,7 @@ import org.jboss.as.controller.client.ModelControllerClient;
 import org.jboss.shrinkwrap.api.Archive;
 import org.jboss.shrinkwrap.descriptor.api.Descriptor;
 import org.jboss.util.NotImplementedException;
+import org.xnio.IoUtils;
 
 /**
  * A JBossAS deployable container
@@ -51,7 +52,6 @@ public abstract class CommonDeployableContainer<T extends CommonContainerConfigu
 
     private static final String JBOSS_URL_PKG_PREFIX = "org.jboss.ejb.client.naming";
 
-    private final Logger log = Logger.getLogger(CommonDeployableContainer.class.getName());
     private T containerConfig;
 
     @Inject
@@ -86,6 +86,7 @@ public abstract class CommonDeployableContainer<T extends CommonContainerConfigu
         ModelControllerClient modelControllerClient = null;
         try {
             modelControllerClient = ModelControllerClient.Factory.create(
+                    containerConfig.getManagementProtocol(),
                     containerConfig.getManagementAddress(),
                     containerConfig.getManagementPort(),
                     getCallbackHandler());
@@ -93,7 +94,7 @@ public abstract class CommonDeployableContainer<T extends CommonContainerConfigu
             throw new RuntimeException(e);
         }
 
-        ManagementClient client = new ManagementClient(modelControllerClient, containerConfig.getManagementAddress(), containerConfig.getManagementPort());
+        ManagementClient client = new ManagementClient(modelControllerClient, containerConfig.getManagementAddress(), containerConfig.getManagementPort(), containerConfig.getManagementProtocol());
         managementClient.set(client);
 
         ArchiveDeployer deployer = new ArchiveDeployer(modelControllerClient);
@@ -163,9 +164,10 @@ public abstract class CommonDeployableContainer<T extends CommonContainerConfigu
 
     private void safeCloseClient() {
         try {
-            getManagementClient().close();
-        } catch (Exception e) {
-            log.log(Level.WARNING, "Caught exception closing ModelControllerClient", e);
+            IoUtils.safeClose(getManagementClient());
+        } catch (final Exception e) {
+            Logger.getLogger(this.getClass().getName()).log(Level.WARNING,
+                "Caught exception closing ModelControllerClient", e);
         }
     }
 }

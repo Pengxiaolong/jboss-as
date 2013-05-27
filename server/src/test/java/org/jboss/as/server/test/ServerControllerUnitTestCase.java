@@ -36,8 +36,6 @@ import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 
-import junit.framework.Assert;
-
 import org.jboss.as.controller.AbstractControllerService;
 import org.jboss.as.controller.AttributeDefinition;
 import org.jboss.as.controller.ControlledProcessState;
@@ -63,7 +61,6 @@ import org.jboss.as.controller.resource.InterfaceDefinition;
 import org.jboss.as.controller.services.path.PathManagerService;
 import org.jboss.as.repository.ContentRepository;
 import org.jboss.as.repository.DeploymentFileRepository;
-import org.jboss.as.server.ServerControllerModelUtil;
 import org.jboss.as.server.ServerEnvironment;
 import org.jboss.as.server.Services;
 import org.jboss.as.server.controller.resources.ServerRootResourceDefinition;
@@ -80,6 +77,7 @@ import org.jboss.msc.service.StartException;
 import org.jboss.staxmapper.XMLElementWriter;
 import org.jboss.vfs.VirtualFile;
 import org.junit.After;
+import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
 
@@ -279,7 +277,7 @@ public class ServerControllerUnitTestCase {
 
 
         ModelControllerService(final ControlledProcessState processState, final StringConfigurationPersister persister, final DelegatingResourceDefinition rootResourceDefinition) {
-            super(ProcessType.EMBEDDED_SERVER, new RunningModeControl(RunningMode.ADMIN_ONLY), persister, processState, rootResourceDefinition, null, ExpressionResolver.DEFAULT);
+            super(ProcessType.EMBEDDED_SERVER, new RunningModeControl(RunningMode.ADMIN_ONLY), persister, processState, rootResourceDefinition, null, ExpressionResolver.TEST_RESOLVER);
             this.persister = persister;
             this.processState = processState;
             this.rootResourceDefinition = rootResourceDefinition;
@@ -288,15 +286,13 @@ public class ServerControllerUnitTestCase {
             properties.put("jboss.home.dir", ".");
 
             final String hostControllerName = "hostControllerName"; // Host Controller name may not be null when in a managed domain
-            environment = new ServerEnvironment(hostControllerName, properties, new HashMap<String, String>(), null, null, ServerEnvironment.LaunchType.DOMAIN, null, new ProductConfig(Module.getBootModuleLoader(), "."));
+            environment = new ServerEnvironment(hostControllerName, properties, new HashMap<String, String>(), null, null, ServerEnvironment.LaunchType.DOMAIN, null, new ProductConfig(Module.getBootModuleLoader(), ".", properties));
             extensionRegistry = new ExtensionRegistry(ProcessType.STANDALONE_SERVER, new RunningModeControl(RunningMode.NORMAL));
         }
 
         @Override
         protected void initModel(Resource rootResource, ManagementResourceRegistration rootRegistration) {
             this.rootRegistration = rootRegistration;
-            ServerControllerModelUtil.initOperations(rootRegistration, MockRepository.INSTANCE, persister, environment,
-                    processState, null, null, extensionRegistry, false, MOCK_PATH_MANAGER);
         }
 
         @Override
@@ -316,7 +312,7 @@ public class ServerControllerUnitTestCase {
         @Override
         public void start(StartContext context) throws StartException {
             rootResourceDefinition.setDelegate(new ServerRootResourceDefinition(MockRepository.INSTANCE,
-                    persister, environment, processState, null, null, extensionRegistry, false, MOCK_PATH_MANAGER));
+                    persister, environment, processState, null, null, extensionRegistry, false, MOCK_PATH_MANAGER, null));
             super.start(context);
         }
     }
@@ -481,7 +477,11 @@ public class ServerControllerUnitTestCase {
         }
 
         @Override
-        public void removeContent(byte[] hash) {
+        public void removeContent(byte[] hash, Object reference) {
+        }
+
+        @Override
+        public void addContentReference(byte[] hash, Object reference) {
         }
 
     }

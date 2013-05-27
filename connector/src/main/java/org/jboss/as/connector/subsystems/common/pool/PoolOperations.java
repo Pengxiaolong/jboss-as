@@ -1,10 +1,35 @@
+/*
+ * JBoss, Home of Professional Open Source.
+ * Copyright 2012, Red Hat, Inc., and individual contributors
+ * as indicated by the @author tags. See the copyright.txt file in the
+ * distribution for a full listing of individual contributors.
+ *
+ * This is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU Lesser General Public License as
+ * published by the Free Software Foundation; either version 2.1 of
+ * the License, or (at your option) any later version.
+ *
+ * This software is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with this software; if not, write to the Free
+ * Software Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA
+ * 02110-1301 USA, or see the FSF site: http://www.fsf.org.
+ */
+
 package org.jboss.as.connector.subsystems.common.pool;
+
+import static org.jboss.as.connector.logging.ConnectorMessages.MESSAGES;
+import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.OP_ADDR;
 
 import java.util.ArrayList;
 import java.util.List;
 
-import org.jboss.as.connector.util.ConnectorServices;
 import org.jboss.as.connector.subsystems.datasources.Util;
+import org.jboss.as.connector.util.ConnectorServices;
 import org.jboss.as.controller.OperationContext;
 import org.jboss.as.controller.OperationFailedException;
 import org.jboss.as.controller.OperationStepHandler;
@@ -17,9 +42,6 @@ import org.jboss.jca.core.api.management.Connector;
 import org.jboss.jca.core.api.management.DataSource;
 import org.jboss.jca.core.api.management.ManagementRepository;
 import org.jboss.msc.service.ServiceController;
-
-import static org.jboss.as.connector.logging.ConnectorMessages.MESSAGES;
-import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.OP_ADDR;
 
 public abstract class PoolOperations implements OperationStepHandler {
 
@@ -77,8 +99,8 @@ public abstract class PoolOperations implements OperationStepHandler {
     protected abstract ModelNode invokeCommandOn(Pool pool) throws Exception;
 
     public static class FlushIdleConnectionInPool extends PoolOperations {
-        public static FlushIdleConnectionInPool DS_INSTANCE = new FlushIdleConnectionInPool(new DsPoolMatcher());
-        public static FlushIdleConnectionInPool RA_INSTANCE = new FlushIdleConnectionInPool(new RaPoolMatcher());
+        public static final FlushIdleConnectionInPool DS_INSTANCE = new FlushIdleConnectionInPool(new DsPoolMatcher());
+        public static final FlushIdleConnectionInPool RA_INSTANCE = new FlushIdleConnectionInPool(new RaPoolMatcher());
 
         protected FlushIdleConnectionInPool(PoolMatcher matcher) {
             super(matcher);
@@ -93,8 +115,8 @@ public abstract class PoolOperations implements OperationStepHandler {
     }
 
     public static class FlushAllConnectionInPool extends PoolOperations {
-        public static FlushAllConnectionInPool DS_INSTANCE = new FlushAllConnectionInPool(new DsPoolMatcher());
-        public static FlushAllConnectionInPool RA_INSTANCE = new FlushAllConnectionInPool(new RaPoolMatcher());
+        public static final FlushAllConnectionInPool DS_INSTANCE = new FlushAllConnectionInPool(new DsPoolMatcher());
+        public static final FlushAllConnectionInPool RA_INSTANCE = new FlushAllConnectionInPool(new RaPoolMatcher());
 
         protected FlushAllConnectionInPool(PoolMatcher matcher) {
             super(matcher);
@@ -109,8 +131,8 @@ public abstract class PoolOperations implements OperationStepHandler {
     }
 
     public static class TestConnectionInPool extends PoolOperations {
-        public static TestConnectionInPool DS_INSTANCE = new TestConnectionInPool(new DsPoolMatcher());
-        public static TestConnectionInPool RA_INSTANCE = new TestConnectionInPool(new RaPoolMatcher());
+        public static final TestConnectionInPool DS_INSTANCE = new TestConnectionInPool(new DsPoolMatcher());
+        public static final TestConnectionInPool RA_INSTANCE = new TestConnectionInPool(new RaPoolMatcher());
 
         protected TestConnectionInPool(PoolMatcher matcher) {
             super(matcher);
@@ -128,7 +150,7 @@ public abstract class PoolOperations implements OperationStepHandler {
 
     }
 
-    private static interface PoolMatcher {
+    private interface PoolMatcher {
         List<Pool> match(String jndiName, ManagementRepository repository);
     }
 

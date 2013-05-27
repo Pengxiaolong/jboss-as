@@ -25,11 +25,9 @@ package org.jboss.as.modcluster;
 import org.jboss.as.controller.AttributeDefinition;
 import org.jboss.as.controller.ReloadRequiredRemoveStepHandler;
 import org.jboss.as.controller.ReloadRequiredWriteAttributeHandler;
-import org.jboss.as.controller.ResourceDefinition;
 import org.jboss.as.controller.SimpleAttributeDefinition;
 import org.jboss.as.controller.SimpleAttributeDefinitionBuilder;
 import org.jboss.as.controller.SimpleResourceDefinition;
-import org.jboss.as.controller.registry.AttributeAccess;
 import org.jboss.as.controller.registry.ManagementResourceRegistration;
 import org.jboss.dmr.ModelNode;
 import org.jboss.dmr.ModelType;
@@ -39,7 +37,7 @@ import java.util.HashMap;
 import java.util.Map;
 
 /**
- * {@link ResourceDefinition} implementation for the core mod-cluster SSL configuration resource.
+ * {@link org.jboss.as.controller.ResourceDefinition} implementation for the core mod-cluster SSL configuration resource.
  * <p/>
  *
  * @author Brian Stansberry (c) 2011 Red Hat Inc.
@@ -47,38 +45,41 @@ import java.util.Map;
 public class ModClusterSSLResourceDefinition extends SimpleResourceDefinition {
 
     public static final SimpleAttributeDefinition KEY_ALIAS = SimpleAttributeDefinitionBuilder.create(CommonAttributes.KEY_ALIAS, ModelType.STRING, true)
-            .setFlags(AttributeAccess.Flag.RESTART_ALL_SERVICES)
+            .setAllowExpression(true)
+            .setRestartAllServices()
             .build();
 
     public static final SimpleAttributeDefinition PASSWORD = SimpleAttributeDefinitionBuilder.create(CommonAttributes.PASSWORD, ModelType.STRING, true)
             .setAllowExpression(true)
             .setDefaultValue(new ModelNode("changeit"))
-            .setFlags(AttributeAccess.Flag.RESTART_ALL_SERVICES)
+            .setRestartAllServices()
             .build();
 
     public static final SimpleAttributeDefinition CERTIFICATE_KEY_FILE = SimpleAttributeDefinitionBuilder.create(CommonAttributes.CERTIFICATE_KEY_FILE, ModelType.STRING, true)
             .setAllowExpression(true)
             .setDefaultValue(new ModelNode().setExpression("${user.home}/.keystore"))
-            .setFlags(AttributeAccess.Flag.RESTART_ALL_SERVICES)
+            .setRestartAllServices()
             .build();
 
     public static final SimpleAttributeDefinition CIPHER_SUITE = SimpleAttributeDefinitionBuilder.create(CommonAttributes.CIPHER_SUITE, ModelType.STRING, true)
-            .setFlags(AttributeAccess.Flag.RESTART_ALL_SERVICES)
+            .setAllowExpression(true)
+            .setRestartAllServices()
             .build();
 
     public static final SimpleAttributeDefinition PROTOCOL = SimpleAttributeDefinitionBuilder.create(CommonAttributes.PROTOCOL, ModelType.STRING, true)
+            .setAllowExpression(true)
             .setDefaultValue(new ModelNode("TLS"))
-            .setFlags(AttributeAccess.Flag.RESTART_ALL_SERVICES)
+            .setRestartAllServices()
             .build();
 
     public static final SimpleAttributeDefinition CA_CERTIFICATE_FILE = SimpleAttributeDefinitionBuilder.create(CommonAttributes.CA_CERTIFICATE_FILE, ModelType.STRING, true)
             .setAllowExpression(true)
-            .setFlags(AttributeAccess.Flag.RESTART_ALL_SERVICES)
+            .setRestartAllServices()
             .build();
 
     public static final SimpleAttributeDefinition CA_REVOCATION_URL = SimpleAttributeDefinitionBuilder.create(CommonAttributes.CA_REVOCATION_URL, ModelType.STRING, true)
             .setAllowExpression(true)
-            .setFlags(AttributeAccess.Flag.RESTART_ALL_SERVICES)
+            .setRestartAllServices()
             .build();
 
     static final SimpleAttributeDefinition[] ATTRIBUTES = {

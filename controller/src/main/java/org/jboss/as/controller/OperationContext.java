@@ -29,7 +29,6 @@ import org.jboss.as.controller.registry.ImmutableManagementResourceRegistration;
 import org.jboss.as.controller.registry.ManagementResourceRegistration;
 import org.jboss.as.controller.registry.Resource;
 import org.jboss.dmr.ModelNode;
-import org.jboss.dmr.ModelType;
 import org.jboss.msc.service.ServiceController;
 import org.jboss.msc.service.ServiceName;
 import org.jboss.msc.service.ServiceRegistry;
@@ -77,6 +76,20 @@ public interface OperationContext extends ExpressionResolver {
      * @throws IllegalArgumentException if the step handler is not valid for this controller type
      */
     void addStep(final ModelNode operation, final OperationStepHandler step, final Stage stage) throws IllegalArgumentException;
+
+    /**
+     * Add an execution step to this operation process, writing any output to the response object
+     * associated with the current step.
+     * Runtime operation steps are automatically added after configuration operation steps.  Since only one operation
+     * may perform runtime work at a time, this method may block until other runtime operations have completed.
+     *
+     * @param operation the operation body to pass into the added step
+     * @param step the step to add
+     * @param stage the stage at which the operation applies
+     * @param addFirst add the handler before the others
+     * @throws IllegalArgumentException if the step handler is not valid for this controller type
+     */
+    void addStep(final ModelNode operation, final OperationStepHandler step, final Stage stage, boolean addFirst) throws IllegalArgumentException;
 
     /**
      * Add an execution step to this operation process.  Runtime operation steps are automatically added after
@@ -170,25 +183,8 @@ public interface OperationContext extends ExpressionResolver {
     ModelNode getResponseHeaders();
 
     /**
-     * Complete a step, returning the overall operation result.  The step handler calling this operation should append
-     * its result status to the operation result before calling this method.  The return value should be checked
-     * to determine whether the operation step should be rolled back.
-     * <p>
-     * <strong>Note:</strong>This {@code completeStep} variant results in a recursive invocation of the next
-     * {@link OperationStepHandler} that has been added (if any). When operations involve a great number of steps that
-     * use this variant (e.g. during server or  Host Controller boot), deep call stacks can result and
-     * {@link StackOverflowError}s are a possibility. For this reason, handlers that are likely to be executed during
-     * boot are encouraged to use the non-recursive {@link #completeStep(RollbackHandler)} variant.
-     * </p>
-     *
-     * @return the operation result action to take
-     *
-     */
-    ResultAction completeStep();
-
-    /**
      * Complete a step, while registering for
-     * {@link RollbackHandler#handleRollback(OperationContext, ModelNode)} a notification if the work done by the
+     * {@link RollbackHandler#handleRollback(OperationContext, ModelNode) a notification} if the work done by the
      * caller needs to be rolled back}.
      *
      * @param rollbackHandler the handler for any rollback notification. Cannot be {@code null}.
@@ -196,9 +192,19 @@ public interface OperationContext extends ExpressionResolver {
     void completeStep(RollbackHandler rollbackHandler);
 
     /**
+     * Complete a step, while registering for
+     * {@link ResultHandler#handleResult(ResultAction, OperationContext, ModelNode) a notification} when the overall
+     * result of the operation is known. Handlers that register for notifications will receive the notifications in
+     * the reverse of the order in which their steps execute.
+     *
+     * @param resultHandler the handler for the result notification. Cannot be {@code null}.
+     */
+    void completeStep(ResultHandler resultHandler);
+
+    /**
      * Called by an {@link OperationStepHandler} to indicate it has completed its handling of a step and is
      * uninterested in the result of subsequent steps. This is a convenience method that is equivalent to a call to
-     * {@link #completeStep(RollbackHandler) completeStep(OperationContext.RollbackHandler.NO_OP_ROLLBACK_HANDLER)}.
+     * {@link #completeStep(ResultHandler) completeStep(OperationContext.ResultHandler.NO_OP_RESULT_HANDLER)}.
      * <p>
      * A common user of this method would be a {@link Stage#MODEL} handler. Typically such a handler would not need
      * to take any further action in the case of a {@link ResultAction#KEEP successful result} for the overall operation.
@@ -223,18 +229,6 @@ public interface OperationContext extends ExpressionResolver {
      * @return   the running mode. Will not be {@code null}
      */
     RunningMode getRunningMode();
-
-    /**
-     * Get the operation context type.  This can be used to determine whether an operation is executing on a
-     * server or on a host controller, etc.
-     *
-     * @return the operation context type
-     *
-     * @deprecated Use {@link OperationContext#getProcessType()} and {@link OperationContext#getRunningMode()} or for the most common usage, {@link OperationContext#isNormalServer()}
-     */
-    @Deprecated
-    @SuppressWarnings("deprecation")
-    Type getType();
 
     /**
      * Determine whether the controller is currently performing boot tasks.
@@ -610,7 +604,7 @@ public interface OperationContext extends ExpressionResolver {
      * @param node the ModelNode containing expressions.
      * @return a copy of the node with expressions resolved
      *
-     * @throws OperationFailedException if there is a value of type {@link ModelType#EXPRESSION} in the node tree and
+     * @throws OperationFailedException if there is a value of type {@link org.jboss.dmr.ModelType#EXPRESSION} in the node tree and
      *            there is no system property or environment variable that matches the expression, or if a security
      *            manager exists and its {@link SecurityManager#checkPermission checkPermission} method doesn't allow
      *            access to the relevant system property or environment variable
@@ -665,10 +659,6 @@ public interface OperationContext extends ExpressionResolver {
      */
     enum Stage {
         /**
-         * A pseudo-stage which will execute immediately after the current running step.
-         */
-        IMMEDIATE,
-        /**
          * The step applies to the model (read or write).
          */
         MODEL,
@@ -711,48 +701,6 @@ public interface OperationContext extends ExpressionResolver {
     }
 
     /**
-     * The type of controller this operation is being applied to.
-     *
-     * @deprecated Use {@link OperationContext#getProcessType()} and {@link OperationContext#getRunningMode()}
-     */
-    @Deprecated
-    enum Type {
-        /**
-         * A host controller with an active runtime.
-         */
-        HOST,
-        /**
-         * A running server instance with an active runtime container.
-         */
-        SERVER,
-        /**
-         * A server instance which is in {@link RunningMode#ADMIN_ONLY admin-only} mode.
-         */
-        MANAGEMENT;
-
-        /**
-         * Provides the {@code Type} that matches the given {@code processType} and {@code runningMode}.
-         *
-         * @param processType the process type. Cannot be {@code null}
-         * @param runningMode the running mode. Cannot be {@code null}
-         * @return the type
-         */
-        @Deprecated
-        @SuppressWarnings("deprecation")
-        static Type getType(final ProcessType processType, final RunningMode runningMode) {
-            if (processType.isServer()) {
-                if (runningMode == RunningMode.NORMAL) {
-                    return SERVER;
-                } else {
-                    return MANAGEMENT;
-                }
-            } else {
-                return HOST;
-            }
-        }
-    }
-
-    /**
      * The result action.
      */
     enum ResultAction {
@@ -766,6 +714,10 @@ public interface OperationContext extends ExpressionResolver {
         ROLLBACK,
     }
 
+    /**
+     * Handler for a callback to an {@link OperationStepHandler} indicating that the overall operation is being
+     * rolled back and the handler should revert any change it has made.
+     */
     interface RollbackHandler {
 
         /**
@@ -820,6 +772,47 @@ public interface OperationContext extends ExpressionResolver {
          *                 that registered this rollback handler.
          */
         void handleRollback(OperationContext context, ModelNode operation);
+    }
+
+    /**
+     * Handler for a callback to an {@link OperationStepHandler} indicating that the result of the overall operation is
+     * known and the handler can take any necessary actions to deal with that result.
+     */
+    interface ResultHandler {
+
+        /**
+         * A {@link ResultHandler} that does nothing in the callback. Intended for use by operation step
+         * handlers that do not need to do any clean up work -- e.g. those that only perform reads or those
+         * that only perform persistent configuration changes. (Persistent configuration changes need not be
+         * explicitly rolled back as the {@link OperationContext} will handle that automatically.)
+         */
+        ResultHandler NOOP_RESULT_HANDLER = new ResultHandler() {
+            /**
+             * Does nothing.
+             *
+             * @param resultAction ignored
+             * @param context  ignored
+             * @param operation ignored
+             */
+            @Override
+            public void handleResult(ResultAction resultAction, OperationContext context, ModelNode operation) {
+                // no-op
+            }
+        };
+
+        /**
+         * Callback to an {@link OperationStepHandler} indicating that the result of the overall operation is
+         * known and the handler can take any necessary actions to deal with that result.
+         *
+         * @param resultAction the overall result of the operation
+         * @param context  the operation execution context; will be the same as what was passed to the
+         *                 {@link OperationStepHandler#execute(OperationContext, ModelNode)} method invocation
+         *                 that registered this rollback handler.
+         * @param operation the operation being rolled back; will be the same as what was passed to the
+         *                 {@link OperationStepHandler#execute(OperationContext, ModelNode)} method invocation
+         *                 that registered this rollback handler.
+         */
+        void handleResult(ResultAction resultAction, OperationContext context, ModelNode operation);
     }
 
     /**

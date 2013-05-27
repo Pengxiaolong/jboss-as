@@ -26,8 +26,8 @@ import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.HTT
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.MANAGEMENT_INTERFACE;
 
 import org.jboss.as.controller.AttributeDefinition;
+import org.jboss.as.controller.ModelVersion;
 import org.jboss.as.controller.PathElement;
-import org.jboss.as.controller.ResourceDefinition;
 import org.jboss.as.controller.SimpleAttributeDefinition;
 import org.jboss.as.controller.SimpleAttributeDefinitionBuilder;
 import org.jboss.as.controller.SimpleResourceDefinition;
@@ -45,7 +45,7 @@ import org.jboss.dmr.ModelNode;
 import org.jboss.dmr.ModelType;
 
 /**
- * {@link ResourceDefinition} for the HTTP management interface resource.
+ * {@link org.jboss.as.controller.ResourceDefinition} for the HTTP management interface resource.
  *
  * @author Brian Stansberry (c) 2011 Red Hat Inc.
  */
@@ -60,18 +60,21 @@ public class HttpManagementResourceDefinition extends SimpleResourceDefinition {
     public static final SimpleAttributeDefinition INTERFACE = new SimpleAttributeDefinitionBuilder(ModelDescriptionConstants.INTERFACE, ModelType.STRING, false)
                 .setAllowExpression(true).setValidator(new StringLengthValidator(1, Integer.MAX_VALUE, false, true))
                 .setAlternatives(ModelDescriptionConstants.SOCKET_BINDING, ModelDescriptionConstants.SECURE_SOCKET_BINDING)
+                .setDeprecated(ModelVersion.create(1,4))
                 .build();
 
     public static final SimpleAttributeDefinition HTTP_PORT = new SimpleAttributeDefinitionBuilder(ModelDescriptionConstants.PORT, ModelType.INT, true)
             .setAllowExpression(true).setValidator(new IntRangeValidator(0, 65535, true, true))
             .setAlternatives(ModelDescriptionConstants.SOCKET_BINDING, ModelDescriptionConstants.SECURE_SOCKET_BINDING)
             .setRequires(ModelDescriptionConstants.INTERFACE)
+            .setDeprecated(ModelVersion.create(1,4))
             .build();
 
     public static final SimpleAttributeDefinition HTTPS_PORT = new SimpleAttributeDefinitionBuilder(ModelDescriptionConstants.SECURE_PORT, ModelType.INT, true)
             .setAllowExpression(true).setValidator(new IntRangeValidator(0, 65535, true, true))
             .setAlternatives(ModelDescriptionConstants.SOCKET_BINDING, ModelDescriptionConstants.SECURE_SOCKET_BINDING)
             .setRequires(ModelDescriptionConstants.INTERFACE)
+            .setDeprecated(ModelVersion.create(1,4))
             .build();
 
     public static final SimpleAttributeDefinition SOCKET_BINDING = new SimpleAttributeDefinitionBuilder(ModelDescriptionConstants.SOCKET_BINDING, ModelType.STRING, true)
@@ -91,7 +94,11 @@ public class HttpManagementResourceDefinition extends SimpleResourceDefinition {
             .setDefaultValue(new ModelNode(true))
             .build();
 
-    public static final AttributeDefinition[] ATTRIBUTE_DEFINITIONS = new AttributeDefinition[] {INTERFACE, HTTP_PORT, HTTPS_PORT, SECURITY_REALM, SOCKET_BINDING, SECURE_SOCKET_BINDING,CONSOLE_ENABLED};
+    public static final SimpleAttributeDefinition HTTP_UPGRADE_ENABLED = new SimpleAttributeDefinitionBuilder(ModelDescriptionConstants.HTTP_UPGRADE_ENABLED, ModelType.BOOLEAN, true)
+            .setXmlName(Attribute.HTTP_UPGRADE_ENABLED.getLocalName())
+            .setDefaultValue(new ModelNode(false))
+            .build();
+    public static final AttributeDefinition[] ATTRIBUTE_DEFINITIONS = new AttributeDefinition[] {INTERFACE, HTTP_PORT, HTTPS_PORT, SECURITY_REALM, SOCKET_BINDING, SECURE_SOCKET_BINDING,CONSOLE_ENABLED, HTTP_UPGRADE_ENABLED};
 
     public static final HttpManagementResourceDefinition INSTANCE = new HttpManagementResourceDefinition();
 

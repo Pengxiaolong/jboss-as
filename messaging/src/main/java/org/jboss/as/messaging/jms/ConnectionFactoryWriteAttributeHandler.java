@@ -23,16 +23,19 @@
 package org.jboss.as.messaging.jms;
 
 import static org.jboss.as.controller.OperationContext.Stage.MODEL;
+import static org.jboss.as.messaging.HornetQActivationService.isHornetQServerActive;
 import static org.jboss.as.messaging.MessagingMessages.MESSAGES;
 
 import org.hornetq.api.core.management.ResourceNames;
 import org.hornetq.api.jms.management.ConnectionFactoryControl;
 import org.hornetq.core.server.HornetQServer;
 import org.jboss.as.controller.AbstractWriteAttributeHandler;
+import org.jboss.as.controller.AttributeDefinition;
 import org.jboss.as.controller.OperationContext;
 import org.jboss.as.controller.OperationFailedException;
 import org.jboss.as.controller.PathAddress;
 import org.jboss.as.controller.descriptions.ModelDescriptionConstants;
+import org.jboss.as.controller.registry.AttributeAccess;
 import org.jboss.as.messaging.AlternativeAttributeCheckHandler;
 import org.jboss.as.messaging.CommonAttributes;
 import org.jboss.as.messaging.MessagingServices;
@@ -67,6 +70,12 @@ public class ConnectionFactoryWriteAttributeHandler extends AbstractWriteAttribu
                                            final String attributeName, final ModelNode newValue,
                                            final ModelNode currentValue,
                                            final HandbackHolder<Void> handbackHolder) throws OperationFailedException {
+        AttributeDefinition attr = getAttributeDefinition(attributeName);
+        if (attr.getFlags().contains(AttributeAccess.Flag.RESTART_ALL_SERVICES)) {
+            // Restart required
+            return true;
+        }
+
         ServiceRegistry registry = context.getServiceRegistry(true);
         final ServiceName hqServiceName = MessagingServices.getHornetQServiceName(PathAddress.pathAddress(operation.get(ModelDescriptionConstants.OP_ADDR)));
         ServiceController<?> hqService = registry.getService(hqServiceName);
@@ -80,6 +89,9 @@ public class ConnectionFactoryWriteAttributeHandler extends AbstractWriteAttribu
             // No, don't barf; just let the update apply to the model and put the server in a reload-required state
             return true;
         } else {
+            if (!isHornetQServerActive(context, operation)) {
+                return false;
+            }
             // Actually apply the update
             applyOperationToHornetQService(context, getName(operation), attributeName, newValue, hqService);
             return false;
@@ -115,9 +127,11 @@ public class ConnectionFactoryWriteAttributeHandler extends AbstractWriteAttribu
                 control.setClientFailureCheckPeriod(value.asLong());
             } else if (attributeName.equals(CommonAttributes.CALL_TIMEOUT.getName())) {
                 control.setCallTimeout(value.asLong());
-            } else if (attributeName.equals(Common.DUPS_OK_BATCH_SIZE.getName())) {
+            } else if (attributeName.equals(CommonAttributes.CALL_FAILOVER_TIMEOUT.getName())) {
+                control.setCallFailoverTimeout(value.asLong());
+            }else if (attributeName.equals(Common.DUPS_OK_BATCH_SIZE.getName())) {
                 control.setDupsOKBatchSize(value.asInt());
-            } else if (attributeName.equals(CommonAttributes.CONSUMER_MAX_RATE.getName())) {
+            } else if (attributeName.equals(Common.CONSUMER_MAX_RATE.getName())) {
                 control.setConsumerMaxRate(value.asInt());
             } else if (attributeName.equals(Common.CONSUMER_WINDOW_SIZE.getName())) {
                 control.setConsumerWindowSize(value.asInt());
@@ -141,11 +155,11 @@ public class ConnectionFactoryWriteAttributeHandler extends AbstractWriteAttribu
                 control.setMinLargeMessageSize(value.asInt());
             } else if (attributeName.equals(Common.AUTO_GROUP.getName())) {
                 control.setAutoGroup(value.asBoolean());
-            } else if (attributeName.equals(CommonAttributes.RETRY_INTERVAL.getName())) {
+            } else if (attributeName.equals(Common.RETRY_INTERVAL.getName())) {
                 control.setRetryInterval(value.asLong());
-            } else if (attributeName.equals(CommonAttributes.RETRY_INTERVAL_MULTIPLIER.getName())) {
+            } else if (attributeName.equals(Common.RETRY_INTERVAL_MULTIPLIER.getName())) {
                 control.setRetryIntervalMultiplier(value.asDouble());
-            } else if (attributeName.equals(CommonAttributes.RECONNECT_ATTEMPTS.getName())) {
+            } else if (attributeName.equals(Common.RECONNECT_ATTEMPTS.getName())) {
                 control.setReconnectAttempts(value.asInt());
             } else if (attributeName.equals(Common.FAILOVER_ON_INITIAL_CONNECTION.getName())) {
                 control.setFailoverOnInitialConnection(value.asBoolean());

@@ -24,14 +24,22 @@ package org.jboss.as.messaging;
 
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.OP_ADDR;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.SOCKET_BINDING;
+import static org.jboss.as.messaging.BroadcastGroupDefinition.CONNECTOR_REFS;
+import static org.jboss.as.messaging.BroadcastGroupDefinition.validateConnectors;
+import static org.jboss.as.messaging.CommonAttributes.JGROUPS_STACK;
+import static org.jboss.as.messaging.MessagingMessages.MESSAGES;
 
 import java.net.InetAddress;
 import java.net.NetworkInterface;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Set;
 
-import org.hornetq.core.config.BroadcastGroupConfiguration;
+import org.hornetq.api.core.BroadcastEndpointFactoryConfiguration;
+import org.hornetq.api.core.BroadcastGroupConfiguration;
+import org.hornetq.api.core.JGroupsBroadcastGroupConfiguration;
+import org.hornetq.api.core.UDPBroadcastGroupConfiguration;
 import org.hornetq.core.config.Configuration;
 import org.jboss.as.controller.AbstractAddStepHandler;
 import org.jboss.as.controller.OperationContext;
@@ -40,6 +48,7 @@ import org.jboss.as.controller.PathAddress;
 import org.jboss.as.controller.ServiceVerificationHandler;
 import org.jboss.as.controller.descriptions.ModelDescriptionConstants;
 import org.jboss.as.controller.interfaces.InetAddressUtil;
+import org.jboss.as.controller.registry.Resource;
 import org.jboss.as.network.NetworkInterfaceBinding;
 import org.jboss.as.network.SocketBinding;
 import org.jboss.dmr.ModelNode;
@@ -49,6 +58,7 @@ import org.jboss.msc.service.ServiceName;
 import org.jboss.msc.service.ServiceRegistry;
 import org.jboss.msc.service.ServiceTarget;
 import org.jboss.msc.value.ImmediateValue;
+import org.jgroups.JChannel;
 
 /**
  * Handler for adding a broadcast group.
@@ -65,8 +75,19 @@ public class BroadcastGroupAdd extends AbstractAddStepHandler {
     }
 
     @Override
+    protected void populateModel(OperationContext context, ModelNode operation, Resource resource) throws OperationFailedException {
+        super.populateModel(context, operation, resource);
+
+        ModelNode connectorRefs = resource.getModel().get(CONNECTOR_REFS.getName());
+        if (connectorRefs.isDefined()) {
+            validateConnectors(context, operation, connectorRefs);
+        }
+    }
+
+    @Override
     protected void populateModel(ModelNode operation, ModelNode model) throws OperationFailedException {
         model.setEmptyObject();
+
         VALIDATOR.validateAndSet(operation, model);
     }
 
@@ -83,7 +104,9 @@ public class BroadcastGroupAdd extends AbstractAddStepHandler {
             final String name = address.getLastElement().getValue();
 
             final ServiceTarget target = context.getServiceTarget();
-            if(model.hasDefined(RemoteTransportDefinition.SOCKET_BINDING.getName())) {
+            if(model.hasDefined(JGROUPS_STACK.getName())) {
+                // nothing to do, in that case, the clustering.jgroups subsystem will have setup the stack
+            } else if(model.hasDefined(RemoteTransportDefinition.SOCKET_BINDING.getName())) {
                 final GroupBindingService bindingService = new GroupBindingService();
                 target.addService(GroupBindingService.getBroadcastBaseServiceName(hqServiceName).append(name), bindingService)
                         .addDependency(SocketBinding.JBOSS_BINDING_NAME.append(model.get(SOCKET_BINDING).asString()), SocketBinding.class, bindingService.getBindingRef())
@@ -120,27 +143,32 @@ public class BroadcastGroupAdd extends AbstractAddStepHandler {
     static void addBroadcastGroupConfigs(final OperationContext context, final Configuration configuration, final ModelNode model)  throws OperationFailedException {
         if (model.hasDefined(CommonAttributes.BROADCAST_GROUP)) {
             final List<BroadcastGroupConfiguration> configs = configuration.getBroadcastGroupConfigurations();
+            final Set<String> connectors = configuration.getConnectorConfigurations().keySet();
             for (Property prop : model.get(CommonAttributes.BROADCAST_GROUP).asPropertyList()) {
-                configs.add(createBroadcastGroupConfiguration(context, prop.getName(), prop.getValue()));
+                configs.add(createBroadcastGroupConfiguration(context, connectors, prop.getName(), prop.getValue()));
 
             }
         }
     }
 
-    static BroadcastGroupConfiguration createBroadcastGroupConfiguration(final OperationContext context, final String name, final ModelNode model) throws OperationFailedException {
+    static BroadcastGroupConfiguration createBroadcastGroupConfiguration(final OperationContext context, final Set<String> connectors, final String name, final ModelNode model) throws OperationFailedException {
 
         final long broadcastPeriod = BroadcastGroupDefinition.BROADCAST_PERIOD.resolveModelAttribute(context, model).asLong();
         final List<String> connectorRefs = new ArrayList<String>();
         if (model.hasDefined(CommonAttributes.CONNECTORS)) {
             for (ModelNode ref : model.get(CommonAttributes.CONNECTORS).asList()) {
-                connectorRefs.add(ref.asString());
+                final String refName = ref.asString();
+                if(!connectors.contains(refName)){
+                    throw MESSAGES.wrongConnectorRefInBroadCastGroup(name,refName, connectors);
+                }
+                connectorRefs.add(refName);
             }
         }
         // Requires runtime service
-        return new BroadcastGroupConfiguration(name, null, 0, null, 0, broadcastPeriod, connectorRefs);
+        return new BroadcastGroupConfiguration(name, broadcastPeriod, connectorRefs, null);
     }
 
-    static BroadcastGroupConfiguration createBroadcastGroupConfiguration(final String name, final BroadcastGroupConfiguration config, final SocketBinding socketBinding) {
+    static BroadcastGroupConfiguration createBroadcastGroupConfiguration(final String name, final BroadcastGroupConfiguration config, final SocketBinding socketBinding) throws Exception {
 
         final String localAddress = socketBinding.getAddress().getHostAddress();
         final String groupAddress = socketBinding.getMulticastAddress().getHostAddress();
@@ -149,7 +177,16 @@ public class BroadcastGroupAdd extends AbstractAddStepHandler {
         final long broadcastPeriod = config.getBroadcastPeriod();
         final List<String> connectorRefs = config.getConnectorInfos();
 
-        return new BroadcastGroupConfiguration(name, localAddress, localPort, groupAddress, groupPort, broadcastPeriod, connectorRefs);
+        final BroadcastEndpointFactoryConfiguration endpointFactoryConfiguration = new UDPBroadcastGroupConfiguration(groupAddress, groupPort, localAddress, localPort);
+        return new BroadcastGroupConfiguration(name, broadcastPeriod, connectorRefs, endpointFactoryConfiguration);
     }
 
+    static BroadcastGroupConfiguration createBroadcastGroupConfiguration(final String name, final BroadcastGroupConfiguration config, final JChannel channel, final String channelName) throws Exception {
+
+        final long broadcastPeriod = config.getBroadcastPeriod();
+        final List<String> connectorRefs = config.getConnectorInfos();
+
+        final BroadcastEndpointFactoryConfiguration endpointFactoryConfiguration = new JGroupsBroadcastGroupConfiguration((JChannel) channel, channelName);
+        return new BroadcastGroupConfiguration(name, broadcastPeriod, connectorRefs, endpointFactoryConfiguration);
+    }
 }

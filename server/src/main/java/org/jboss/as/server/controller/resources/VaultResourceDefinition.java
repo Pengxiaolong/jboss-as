@@ -27,9 +27,9 @@ import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.VAU
 import org.jboss.as.controller.AttributeDefinition;
 import org.jboss.as.controller.MapAttributeDefinition;
 import org.jboss.as.controller.PathElement;
+import org.jboss.as.controller.PropertiesAttributeDefinition;
 import org.jboss.as.controller.SimpleAttributeDefinition;
 import org.jboss.as.controller.SimpleAttributeDefinitionBuilder;
-import org.jboss.as.controller.SimpleMapAttributeDefinition;
 import org.jboss.as.controller.SimpleResourceDefinition;
 import org.jboss.as.controller.descriptions.ModelDescriptionConstants;
 import org.jboss.as.controller.operations.validation.ModelTypeValidator;
@@ -44,24 +44,24 @@ import org.jboss.as.server.services.security.VaultWriteAttributeHandler;
 import org.jboss.dmr.ModelType;
 
 /**
- *
  * @author <a href="kabir.khan@jboss.com">Kabir Khan</a>
  */
 public class VaultResourceDefinition extends SimpleResourceDefinition {
 
-    public static SimpleAttributeDefinition CODE = SimpleAttributeDefinitionBuilder.create(ModelDescriptionConstants.CODE, ModelType.STRING, true)
+    public static final SimpleAttributeDefinition CODE = SimpleAttributeDefinitionBuilder.create(ModelDescriptionConstants.CODE, ModelType.STRING, true)
             .addFlag(Flag.RESTART_ALL_SERVICES)
             .setValidator(new ModelTypeValidator(ModelType.STRING, true))
+            .setAllowExpression(true)
             .build();
 
-    public static MapAttributeDefinition VAULT_OPTIONS = new SimpleMapAttributeDefinition.Builder(ModelDescriptionConstants.VAULT_OPTIONS, true)
+    public static final PropertiesAttributeDefinition VAULT_OPTIONS = new PropertiesAttributeDefinition.Builder(ModelDescriptionConstants.VAULT_OPTIONS, true)
             .addFlag(Flag.RESTART_ALL_SERVICES)
-            //.setValidator(new MapValidator(new StringLengthValidator(1), true, 0, Integer.MAX_VALUE))
+            .setAllowExpression(true)
             .setCorrector(MapAttributeDefinition.LIST_TO_MAP_CORRECTOR)
-            .setValidator(new StringLengthValidator(1))
+            .setValidator(new StringLengthValidator(1, true, true))
             .build();
 
-    public static AttributeDefinition[] ALL_ATTRIBUTES = new AttributeDefinition[] {CODE, VAULT_OPTIONS};
+    public static AttributeDefinition[] ALL_ATTRIBUTES = new AttributeDefinition[]{CODE, VAULT_OPTIONS};
 
     public VaultResourceDefinition(AbstractVaultReader vaultReader) {
         super(PathElement.pathElement(CORE_SERVICE, VAULT),

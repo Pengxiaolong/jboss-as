@@ -1,0 +1,59 @@
+<subsystem xmlns="urn:jboss:domain:undertow:1.0" default-virtual-host="default-virtual-host" default-servlet-container="default-servlet-container"
+           default-server="some-server" instance-id="some-id">
+
+    <buffer-caches>
+        <buffer-cache name="default" buffer-size="1024" buffers-per-region="1024" max-regions="10"/>
+    </buffer-caches>
+
+    <server name="default-server" default-host="localhost" servlet-container="blah">
+        <ajp-listener name="ajp-connector" socket-binding="ajp"/>
+        <http-listener name="default" socket-binding="http"/>
+
+        <host name="default-host" alias="localhost, some.host">
+            <location name="/" handler="welcome-content">
+                <filter-ref name="security-other"/>
+                <filter-ref name="connection-limit"/>
+                <!--<filter-ref name="headers"/>-->
+            </location>
+        </host>
+
+    </server>
+
+
+    <servlet-container name="default">
+        <jsp-config development="${prop.development:true}"
+                    disabled="${prop.disabled:false}"
+                    keep-generated="${prop.keep-generated:true}"
+                    trim-spaces="${prop.trim-spaces:true}"
+                    tag-pooling="${prop.tag-pooling:true}"
+                    mapped-file="${prop.mapped-file:true}"
+                    check-interval="${prop.check-interval:20}"
+                    modification-test-interval="${prop.modification-test-interval:1000}"
+                    recompile-on-fail="${prop.recompile-on-fail:true}"
+                    smap="${prop.smap:true}"
+                    dump-smap="${prop.dump-smap:true}"
+                    generate-strings-as-char-arrays="${prop.generate-strings-as-char-arrays:true}"
+                    error-on-use-bean-invalid-class-attribute="${prop.error-on-use-bean-invalid-class-attribute:true}"
+                    scratch-dir="${prop.scratch-dir:/some/dir}"
+                    source-vm="${prop.source-vm:1.7}"
+                    target-vm="${prop.target-vm:1.7}"
+                    java-encoding="${prop.java-encoding:utf-8}"
+                    x-powered-by="${prop.x-powered-by:true}"
+                    display-source-fragment="${prop.display-source-fragment:true}"/>
+    </servlet-container>
+
+    <error-handlers>
+        <error-page name="404-handler" code="404" path="/opt/data/404.html"/>
+        <simple-error-page name="401-handler" code="401"/>
+    </error-handlers>
+
+    <handlers>
+        <file name="welcome-content" path="${jboss.home.dir}/welcome-content" directory-listing="true"/>
+    </handlers>
+    <filters>
+        <basic-auth name="security-other" security-domain="other"/>
+        <connection-limit name="limit-connections" max-concurrent-requests="15000"/>
+        <!--<response-header name="headers" header-name="MY_HEADER" header-value="someValue"/>-->
+    </filters>
+
+</subsystem>

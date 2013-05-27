@@ -39,7 +39,6 @@ import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.INT
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.LDAP_CONNECTION;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.LOCAL_DESTINATION_OUTBOUND_SOCKET_BINDING;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.MANAGEMENT;
-import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.NAME;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.NAMESPACES;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.OP;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.OP_ADDR;
@@ -47,7 +46,6 @@ import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.PAT
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.PORT_OFFSET;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.PROFILE;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.PROFILE_NAME;
-import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.REGULAR_EXPRESSION;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.RELATIVE_TO;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.REMOTE_DESTINATION_OUTBOUND_SOCKET_BINDING;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.RUNTIME_NAME;
@@ -67,7 +65,6 @@ import static org.jboss.as.host.controller.HostControllerMessages.MESSAGES;
 
 import java.io.File;
 import java.util.AbstractList;
-import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -75,25 +72,26 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+import org.jboss.as.controller.AttributeDefinition;
 import org.jboss.as.controller.ExpressionResolver;
 import org.jboss.as.controller.OperationFailedException;
 import org.jboss.as.controller.PathAddress;
 import org.jboss.as.controller.PathElement;
-import org.jboss.as.controller.extension.ExtensionAddHandler;
-import org.jboss.as.controller.operations.common.InterfaceAddHandler;
+import org.jboss.as.controller.SimpleAttributeDefinition;
 import org.jboss.as.controller.operations.common.NamespaceAddHandler;
 import org.jboss.as.controller.operations.common.SchemaLocationAddHandler;
 import org.jboss.as.controller.operations.common.SocketBindingAddHandler;
 import org.jboss.as.controller.operations.common.Util;
 import org.jboss.as.controller.parsing.Attribute;
+import org.jboss.as.controller.resource.InterfaceDefinition;
 import org.jboss.as.controller.services.path.PathAddHandler;
 import org.jboss.as.domain.controller.DomainController;
 import org.jboss.as.repository.HostFileRepository;
 import org.jboss.as.server.controller.resources.SystemPropertyResourceDefinition;
 import org.jboss.as.server.operations.SystemPropertyAddHandler;
 import org.jboss.as.server.services.net.BindingGroupAddHandler;
-import org.jboss.as.server.services.net.LocalDestinationOutboundSocketBindingAddHandler;
-import org.jboss.as.server.services.net.RemoteDestinationOutboundSocketBindingAddHandler;
+import org.jboss.as.server.services.net.LocalDestinationOutboundSocketBindingResourceDefinition;
+import org.jboss.as.server.services.net.RemoteDestinationOutboundSocketBindingResourceDefinition;
 import org.jboss.dmr.ModelNode;
 import org.jboss.dmr.Property;
 
@@ -122,8 +120,12 @@ public final class ManagedServerOperationsFactory {
      * @param domainController the domain controller
      * @return the list of boot operations
      */
-    public static ModelNode createBootUpdates(final String serverName, final ModelNode domainModel, final ModelNode hostModel, final DomainController domainController, final ExpressionResolver expressionResolver) {
-        final ManagedServerOperationsFactory factory = new ManagedServerOperationsFactory(serverName, domainModel, hostModel, domainController);
+    public static ModelNode createBootUpdates(final String serverName, final ModelNode domainModel, final ModelNode hostModel,
+                                              final DomainController domainController, final ExpressionResolver expressionResolver) {
+        final ManagedServerOperationsFactory factory = new ManagedServerOperationsFactory(serverName, domainModel,
+                hostModel, domainController, expressionResolver);
+
+
         return factory.getBootUpdates();
     }
 
@@ -134,17 +136,35 @@ public final class ManagedServerOperationsFactory {
     private final ModelNode serverGroup;
     private final String profileName;
     private final DomainController domainController;
+    private final ExpressionResolver expressionResolver;
 
-    ManagedServerOperationsFactory(final String serverName, final ModelNode domainModel, final ModelNode hostModel, final DomainController domainController) {
+    ManagedServerOperationsFactory(final String serverName, final ModelNode domainModel, final ModelNode hostModel,
+                                   final DomainController domainController, final ExpressionResolver expressionResolver) {
         this.serverName = serverName;
         this.domainModel = domainModel;
         this.hostModel = hostModel;
-        this.serverModel = hostModel.require(SERVER_CONFIG).require(serverName);
         this.domainController = domainController;
+        this.expressionResolver = expressionResolver;
+        this.serverModel = resolveExpressions(hostModel.require(SERVER_CONFIG).require(serverName));
 
         final String serverGroupName = serverModel.require(GROUP).asString();
-        this.serverGroup = domainModel.require(SERVER_GROUP).require(serverGroupName);
+        this.serverGroup = resolveExpressions(domainModel.require(SERVER_GROUP).require(serverGroupName));
         this.profileName = serverGroup.require(PROFILE).asString();
+    }
+
+    /**
+     * Resolve expressions in the given model (if there are any)
+     */
+    private ModelNode resolveExpressions(final ModelNode unresolved) {
+        if (unresolved == null) {
+            return null;
+        }
+        try {
+            return expressionResolver.resolveExpressions(unresolved.clone());
+        } catch (OperationFailedException e) {
+            // Fail
+            throw new IllegalStateException(e.getMessage(), e);
+        }
     }
 
     ModelNode getBootUpdates() {
@@ -228,7 +248,7 @@ public final class ManagedServerOperationsFactory {
         addExtensions(extensionNames, hostModel.get(EXTENSION));
 
         for (String name : extensionNames) {
-            updates.add(ExtensionAddHandler.getAddExtensionOperation(pathAddress(PathElement.pathElement(EXTENSION, name))));
+            updates.add(Util.createAddOperation(PathAddress.pathAddress(PathElement.pathElement(EXTENSION, name))));
         }
     }
 
@@ -245,7 +265,7 @@ public final class ManagedServerOperationsFactory {
         addPaths(paths, serverModel.get(PATH));
 
         for (Map.Entry<String, ModelNode> entry : paths.entrySet()) {
-            updates.add(PathAddHandler.getAddPathOperation(pathAddress(PathElement.pathElement(PATH, entry.getKey())), entry.getValue().get(PATH), entry.getValue().get(RELATIVE_TO)));
+            updates.add(PathAddHandler.getAddPathOperation(PathAddress.pathAddress(PathElement.pathElement(PATH, entry.getKey())), entry.getValue().get(PATH), entry.getValue().get(RELATIVE_TO)));
         }
     }
 
@@ -273,7 +293,7 @@ public final class ManagedServerOperationsFactory {
     }
 
     private Map<String, String> getAllSystemProperties(boolean boottimeOnly) {
-        Map<String, String> props = new HashMap<String, String>();
+        Map<String, String> props = new LinkedHashMap<String, String>();
 
         addSystemProperties(domainModel, props, boottimeOnly);
         addSystemProperties(serverGroup, props, boottimeOnly);
@@ -395,9 +415,18 @@ public final class ManagedServerOperationsFactory {
         addInterfaces(interfaces, hostModel.get(SERVER_CONFIG, serverName, INTERFACE));
 
         for (Map.Entry<String, ModelNode> entry : interfaces.entrySet()) {
-            updates.add(InterfaceAddHandler.getAddInterfaceOperation(pathAddress(PathElement.pathElement(INTERFACE, entry.getKey())), entry.getValue()));
+            updates.add(getAddInterfaceOperation(PathAddress.pathAddress(PathElement.pathElement(INTERFACE, entry.getKey())), entry.getValue()));
         }
     }
+    private static ModelNode getAddInterfaceOperation(PathAddress address, ModelNode criteria) {
+           ModelNode op = Util.createAddOperation(address);
+           for (final AttributeDefinition def : InterfaceDefinition.ROOT_ATTRIBUTES) {
+               if(criteria.hasDefined(def.getName())) {
+                   op.get(def.getName()).set(criteria.get(def.getName()));
+               }
+           }
+           return op;
+       }
 
     private void addInterfaces(Map<String, ModelNode> map, ModelNode iface) {
         if (iface.isDefined()) {
@@ -423,7 +452,7 @@ public final class ManagedServerOperationsFactory {
         if (group == null) {
             throw MESSAGES.undefinedSocketBindingGroup(bindingRef);
         }
-        final ModelNode groupAddress = pathAddress(PathElement.pathElement(SOCKET_BINDING_GROUP, bindingRef));
+        final PathAddress groupAddress = PathAddress.pathAddress(PathElement.pathElement(SOCKET_BINDING_GROUP, bindingRef));
         final ModelNode groupAdd = BindingGroupAddHandler.getOperation(groupAddress, group);
         groupAdd.get(PORT_OFFSET).set(portOffSet);
         updates.add(groupAdd);
@@ -437,7 +466,7 @@ public final class ManagedServerOperationsFactory {
                 final String ref = include.asString();
                 if (processed.add(ref)) {
                     final ModelNode includedGroup = groups.get(ref);
-                    if (group == null) {
+                    if (includedGroup == null) {
                         throw MESSAGES.undefinedSocketBindingGroup(ref);
                     }
                     mergeBindingGroups(updates, groups, groupName, includedGroup, processed);
@@ -447,20 +476,19 @@ public final class ManagedServerOperationsFactory {
     }
 
     private void addSocketBindings(List<ModelNode> updates, ModelNode group, final String groupName, ModelNode defaultInterface) {
-        if (!group.hasDefined(SOCKET_BINDING)) {
-            return;
-        }
-        for (final Property socketBinding : group.get(SOCKET_BINDING).asPropertyList()) {
-            final String name = socketBinding.getName();
-            final ModelNode binding = socketBinding.getValue();
-            if (!binding.isDefined()) {
-                continue;
+        if (group.hasDefined(SOCKET_BINDING)) {
+            for (final Property socketBinding : group.get(SOCKET_BINDING).asPropertyList()) {
+                final String name = socketBinding.getName();
+                final ModelNode binding = socketBinding.getValue();
+                if (!binding.isDefined()) {
+                    continue;
+                }
+                if (!binding.get(DEFAULT_INTERFACE).isDefined()) {
+                    binding.get(DEFAULT_INTERFACE).set(defaultInterface);
+                }
+                updates.add(SocketBindingAddHandler.getOperation(PathAddress.pathAddress(PathElement.pathElement(SOCKET_BINDING_GROUP, groupName),
+                        PathElement.pathElement(SOCKET_BINDING, name)), binding));
             }
-            if (!binding.get(DEFAULT_INTERFACE).isDefined()) {
-                binding.get(DEFAULT_INTERFACE).set(defaultInterface);
-            }
-            updates.add(SocketBindingAddHandler.getOperation(pathAddress(PathElement.pathElement(SOCKET_BINDING_GROUP, groupName),
-                    PathElement.pathElement(SOCKET_BINDING, name)), binding));
         }
         // outbound-socket-binding (for local destination)
         if (group.hasDefined(LOCAL_DESTINATION_OUTBOUND_SOCKET_BINDING)) {
@@ -471,7 +499,7 @@ public final class ManagedServerOperationsFactory {
                     continue;
                 }
                 // add the local destination outbound socket binding add operation
-                updates.add(LocalDestinationOutboundSocketBindingAddHandler.getOperation(pathAddress(PathElement.pathElement(SOCKET_BINDING_GROUP, groupName),
+                updates.add(getLocalSocketBindingAddOperation(PathAddress.pathAddress(PathElement.pathElement(SOCKET_BINDING_GROUP, groupName),
                         PathElement.pathElement(LOCAL_DESTINATION_OUTBOUND_SOCKET_BINDING, outboundSocketBindingName)), binding));
             }
         }
@@ -484,11 +512,32 @@ public final class ManagedServerOperationsFactory {
                     continue;
                 }
                 // add the local destination outbound socket binding add operation
-                updates.add(RemoteDestinationOutboundSocketBindingAddHandler.getOperation(pathAddress(PathElement.pathElement(SOCKET_BINDING_GROUP, groupName),
+                updates.add(getRemoteSocketBindingAddOperation(PathAddress.pathAddress(PathElement.pathElement(SOCKET_BINDING_GROUP, groupName),
                         PathElement.pathElement(REMOTE_DESTINATION_OUTBOUND_SOCKET_BINDING, outboundSocketBindingName)), binding));
             }
         }
     }
+
+    public static ModelNode getLocalSocketBindingAddOperation(final PathAddress address, final ModelNode localDestinationOutboundSocketBinding) {
+            final ModelNode addOperation = Util.createAddOperation(address);
+            // socket binding reference
+            for (SimpleAttributeDefinition ad : LocalDestinationOutboundSocketBindingResourceDefinition.ATTRIBUTES) {
+                if (localDestinationOutboundSocketBinding.get(ad.getName()).isDefined()) {
+                    addOperation.get(ad.getName()).set(localDestinationOutboundSocketBinding.get(ad.getName()));
+                }
+            }
+            return addOperation;
+        }
+
+        public static ModelNode getRemoteSocketBindingAddOperation(final PathAddress address, final ModelNode remoteDestinationOutboundSocketBinding) {
+            final ModelNode addOperation = Util.createAddOperation(address);
+            for (SimpleAttributeDefinition ad : RemoteDestinationOutboundSocketBindingResourceDefinition.ATTRIBUTES) {
+                if (remoteDestinationOutboundSocketBinding.get(ad.getName()).isDefined()) {
+                    addOperation.get(ad.getName()).set(remoteDestinationOutboundSocketBinding.get(ad.getName()));
+                }
+            }
+            return addOperation;
+        }
 
     private void addSubsystems(List<ModelNode> updates) {
         ModelNode node = domainController.getProfileOperations(profileName);
@@ -527,7 +576,11 @@ public final class ManagedServerOperationsFactory {
                 ModelNode addOp = Util.getEmptyOperation(ADD, addr.toModelNode());
                 addOp.get(RUNTIME_NAME).set(details.get(RUNTIME_NAME));
                 addOp.get(CONTENT).set(deploymentContent);
-                addOp.get(ENABLED).set(!details.hasDefined(ENABLED) || details.get(ENABLED).asBoolean());
+                if (!details.hasDefined(ENABLED)) {
+                    addOp.get(ENABLED).set(true);  // TODO this seems wrong
+                } else {
+                    addOp.get(ENABLED).set(details.get(ENABLED));
+                }
 
                 updates.add(addOp);
             }
@@ -576,12 +629,9 @@ public final class ManagedServerOperationsFactory {
                         if(deploymentsNode.has(DEPLOYMENT)) {
                         for (Property content : deploymentsNode.get(DEPLOYMENT).asPropertyList()) {
                             final String deploymentName = content.getName();
-                            final ModelNode deploymentDetails = content.getValue();
-                            boolean regEx = deploymentDetails.hasDefined(REGULAR_EXPRESSION) ? deploymentDetails.require(REGULAR_EXPRESSION).asBoolean() : false;
-
+                            //final ModelNode deploymentDetails = content.getValue();
                             addr = PathAddress.pathAddress(PathElement.pathElement(DEPLOYMENT_OVERLAY, name), PathElement.pathElement(DEPLOYMENT, deploymentName));
                             addOp = Util.getEmptyOperation(ADD, addr.toModelNode());
-                            addOp.get(REGULAR_EXPRESSION).set(regEx);
                             updates.add(addOp);
                         }
                         }
@@ -590,52 +640,6 @@ public final class ManagedServerOperationsFactory {
 
             }
         }
-    }
-
-    private ModelNode pathAddress(PathElement... elements) {
-        return PathAddress.pathAddress(elements).toModelNode();
-    }
-
-    /**
-     * Adds the absolute path to command.
-     *
-     * @param command           the command to add the arguments to.
-     * @param typeName          the type of directory.
-     * @param propertyName      the name of the property.
-     * @param properties        the properties where the path may already be defined.
-     * @param directoryGrouping the directory group type.
-     * @param typeDir           the domain level directory for the given directory type; to be used for by-type grouping
-     * @param serverDir         the root directory for the server, to be used for 'by-server' grouping
-     * @return the absolute path that was added.
-     */
-    private String addPathProperty(final List<String> command, final String typeName, final String propertyName, final Map<String, String> properties, final DirectoryGrouping directoryGrouping,
-                                   final File typeDir, File serverDir) {
-        final String result;
-        final String value = properties.get(propertyName);
-        if (value == null) {
-            switch (directoryGrouping) {
-                case BY_TYPE:
-                    result = getAbsolutePath(typeDir, "servers", serverName);
-                    break;
-                case BY_SERVER:
-                default:
-                    result = getAbsolutePath(serverDir, typeName);
-                    break;
-            }
-            properties.put(propertyName, result);
-        } else {
-            result = new File(value).getAbsolutePath();
-        }
-        command.add(String.format("-D%s=%s", propertyName, result));
-        return result;
-    }
-
-    static String getAbsolutePath(final File root, final String... paths) {
-        File path = root;
-        for (String segment : paths) {
-            path = new File(path, segment);
-        }
-        return path.getAbsolutePath();
     }
 
     private class ModelNodeList extends AbstractList<ModelNode> implements List<ModelNode> {

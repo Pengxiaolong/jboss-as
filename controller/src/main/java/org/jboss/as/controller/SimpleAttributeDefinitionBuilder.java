@@ -154,6 +154,21 @@ public class SimpleAttributeDefinitionBuilder extends AbstractAttributeDefinitio
     public SimpleAttributeDefinitionBuilder setRestartAllServices() {
         return super.setRestartAllServices();
     }
+
+    @Override
+    public SimpleAttributeDefinitionBuilder setCorrector(final ParameterCorrector corrector) {
+        return super.setCorrector(corrector);
+    }
+
+    @Override
+    public SimpleAttributeDefinitionBuilder addFlag(final AttributeAccess.Flag flag) {
+        return super.addFlag(flag);
+    }
+
+    @Override
+    public SimpleAttributeDefinitionBuilder addAlternatives(String...alternatives) {
+        return super.addAlternatives(alternatives);
+    }
     /*
     ---------------------------------------------------------------------------------
     end methods that are here only for binary compatibilty

@@ -43,6 +43,7 @@ import org.jboss.msc.service.ServiceController;
 import org.jboss.msc.service.ServiceName;
 import org.jboss.msc.service.ServiceRegistry;
 
+import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.VALUE;
 import static org.jboss.as.ejb3.EjbMessages.MESSAGES;
 import static org.jboss.as.ejb3.subsystem.deployment.AbstractEJBComponentResourceDefinition.COMPONENT_CLASS_NAME;
 import static org.jboss.as.ejb3.subsystem.deployment.AbstractEJBComponentResourceDefinition.DECLARED_ROLES;
@@ -54,6 +55,7 @@ import static org.jboss.as.ejb3.subsystem.deployment.AbstractEJBComponentResourc
 import static org.jboss.as.ejb3.subsystem.deployment.AbstractEJBComponentResourceDefinition.POOL_REMOVE_COUNT;
 import static org.jboss.as.ejb3.subsystem.deployment.AbstractEJBComponentResourceDefinition.RUN_AS_ROLE;
 import static org.jboss.as.ejb3.subsystem.deployment.AbstractEJBComponentResourceDefinition.SECURITY_DOMAIN;
+
 /**
  * Base class for operation handlers that provide runtime management for {@link EJBComponent}s.
  *
@@ -82,7 +84,7 @@ public abstract class AbstractEJBComponentRuntimeHandler<T extends EJBComponent>
         if (ModelDescriptionConstants.READ_ATTRIBUTE_OPERATION.equals(opName)) {
             final String attributeName = operation.require(ModelDescriptionConstants.NAME).asString();
             executeReadAttribute(attributeName, context, component,  address);
-            context.completeStep();
+            context.stepCompleted();
         } else if (ModelDescriptionConstants.WRITE_ATTRIBUTE_OPERATION.equals(opName)) {
             final String attributeName = operation.require(ModelDescriptionConstants.NAME).asString();
             executeWriteAttribute(attributeName, context, operation, component, address);
@@ -174,13 +176,16 @@ public abstract class AbstractEJBComponentRuntimeHandler<T extends EJBComponent>
     protected void executeWriteAttribute(String attributeName, OperationContext context, ModelNode operation, T component,
                                          PathAddress address) throws OperationFailedException {
         if (componentType.hasPool() && POOL_MAX_SIZE.getName().equals(attributeName)) {
-            int newSize = POOL_MAX_SIZE.resolveModelAttribute(context, operation).asInt();
-            Pool<?> pool = componentType.getPool(component);
-            int oldSize = pool.getMaxSize();
+            int newSize = POOL_MAX_SIZE.resolveValue(context, operation.get(VALUE)).asInt();
+            final Pool<?> pool = componentType.getPool(component);
+            final int oldSize = pool.getMaxSize();
             componentType.getPool(component).setMaxSize(newSize);
-            if (context.completeStep() != OperationContext.ResultAction.KEEP) {
-                pool.setMaxSize(oldSize);
-            }
+            context.completeStep(new OperationContext.RollbackHandler() {
+                @Override
+                public void handleRollback(OperationContext context, ModelNode operation) {
+                    pool.setMaxSize(oldSize);
+                }
+            });
         } else {
             // Bug; we were registered for an attribute but there is no code for handling it
             throw MESSAGES.unknownAttribute(attributeName);
@@ -211,24 +216,31 @@ public abstract class AbstractEJBComponentRuntimeHandler<T extends EJBComponent>
 
     private ServiceName getComponentConfiguration(final PathAddress operationAddress) throws OperationFailedException {
 
-        final List<PathElement> relativeAddress = new ArrayList<PathElement>();
-        for (int i = operationAddress.size() - 1; i >= 0; i--) {
-            PathElement pe = operationAddress.getElement(i);
-            relativeAddress.add(0, pe);
-            if (ModelDescriptionConstants.DEPLOYMENT.equals(pe.getKey())) {
-                break;
-            }
-        }
+      final List<PathElement> relativeAddress = new ArrayList<PathElement>();
+      final String typeKey = this.componentType.getResourceType();
+      boolean skip=true;
+      for (int i = operationAddress.size() - 1; i >= 0; i--) {
+          PathElement pe = operationAddress.getElement(i);
+          if(skip && !pe.getKey().equals(typeKey)){
+              continue;
+          } else {
+              skip = false;
+          }
+          relativeAddress.add(0, pe);
+          if (ModelDescriptionConstants.DEPLOYMENT.equals(pe.getKey())) {
+              break;
+          }
+      }
 
-        final PathAddress pa = PathAddress.pathAddress(relativeAddress);
-        final ServiceName config = componentConfigs.get(pa);
-        if (config == null) {
-            String exceptionMessage = MESSAGES.noComponentRegisteredForAddress(operationAddress);
-            throw new OperationFailedException(new ModelNode().set(exceptionMessage));
-        }
+      final PathAddress pa = PathAddress.pathAddress(relativeAddress);
+      final ServiceName config = componentConfigs.get(pa);
+      if (config == null) {
+          String exceptionMessage = MESSAGES.noComponentRegisteredForAddress(operationAddress);
+          throw new OperationFailedException(new ModelNode().set(exceptionMessage));
+      }
 
-        return config;
-    }
+      return config;
+  }
 
     private T getComponent(final ServiceName serviceName, final PathAddress operationAddress,
                            final OperationContext context, final boolean forWrite) throws OperationFailedException {
@@ -245,5 +257,12 @@ public abstract class AbstractEJBComponentRuntimeHandler<T extends EJBComponent>
             throw new OperationFailedException(new ModelNode().set(exceptionMessage));
         }
         return componentClass.cast(controller.getValue());
+    }
+
+    T getComponent(OperationContext context, ModelNode operation) throws OperationFailedException{
+        PathAddress address = PathAddress.pathAddress(operation.require(ModelDescriptionConstants.OP_ADDR));
+        final ServiceName serviceName = getComponentConfiguration(address);
+        T component = getComponent(serviceName, address, context, false);
+        return component;
     }
 }

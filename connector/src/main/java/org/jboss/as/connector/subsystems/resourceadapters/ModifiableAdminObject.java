@@ -23,12 +23,11 @@
 package org.jboss.as.connector.subsystems.resourceadapters;
 
 import java.util.Collections;
-import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 import org.jboss.jca.common.CommonBundle;
-import org.jboss.jca.common.api.metadata.ValidatableMetadata;
 import org.jboss.jca.common.api.metadata.common.CommonAdminObject;
 import org.jboss.jca.common.api.validator.ValidateException;
 import org.jboss.logging.Messages;
@@ -40,7 +39,7 @@ public class ModifiableAdminObject implements CommonAdminObject {
      */
     private static final long serialVersionUID = 8137442556861441967L;
 
-    private final HashMap<String, String> configProperties;
+    private final ConcurrentHashMap<String, String> configProperties;
 
     private final String className;
 
@@ -69,10 +68,10 @@ public class ModifiableAdminObject implements CommonAdminObject {
                                  String poolName, Boolean enabled, Boolean useJavaContext) throws ValidateException {
         super();
         if (configProperties != null) {
-            this.configProperties = new HashMap<String, String>(configProperties.size());
+            this.configProperties = new ConcurrentHashMap<String, String>(configProperties.size());
             this.configProperties.putAll(configProperties);
         } else {
-            this.configProperties = new HashMap<String, String>(0);
+            this.configProperties = new ConcurrentHashMap<String, String>(0);
         }
         this.className = className;
         this.jndiName = jndiName;

@@ -22,50 +22,86 @@
 
 package org.jboss.as.cmp.subsystem;
 
-import org.jboss.as.controller.Extension;
+import java.util.Collections;
+import java.util.Set;
+
 import org.jboss.as.controller.ExtensionContext;
+import org.jboss.as.controller.ModelVersion;
 import org.jboss.as.controller.SubsystemRegistration;
 import org.jboss.as.controller.descriptions.ResourceDescriptionResolver;
 import org.jboss.as.controller.descriptions.StandardResourceDescriptionResolver;
-import org.jboss.as.controller.operations.common.GenericSubsystemDescribeHandler;
+import org.jboss.as.controller.extension.AbstractLegacyExtension;
 import org.jboss.as.controller.parsing.ExtensionParsingContext;
 import org.jboss.as.controller.registry.ManagementResourceRegistration;
-import org.jboss.as.controller.registry.OperationEntry;
-
-import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.DESCRIBE;
+import org.jboss.as.controller.transform.description.DiscardAttributeChecker;
+import org.jboss.as.controller.transform.description.RejectAttributeChecker;
+import org.jboss.as.controller.transform.description.ResourceTransformationDescriptionBuilder;
+import org.jboss.as.controller.transform.description.TransformationDescription;
+import org.jboss.as.controller.transform.description.TransformationDescriptionBuilder;
 
 /**
  * @author John Bailey
  */
-public class CmpExtension implements Extension {
+public class CmpExtension extends AbstractLegacyExtension {
+
     public static final String SUBSYSTEM_NAME = "cmp";
 
     private static final String RESOURCE_NAME = CmpExtension.class.getPackage().getName() + ".LocalDescriptions";
 
     private static final int MANAGEMENT_API_MAJOR_VERSION = 1;
-    private static final int MANAGEMENT_API_MINOR_VERSION = 0;
+    private static final int MANAGEMENT_API_MINOR_VERSION = 1;
     private static final int MANAGEMENT_API_MICRO_VERSION = 0;
 
-    public void initialize(final ExtensionContext context) {
-        final SubsystemRegistration subsystem = context.registerSubsystem(SUBSYSTEM_NAME, MANAGEMENT_API_MAJOR_VERSION,
+    private static final String extensionName = "org.jboss.as.cmp";
+
+    public CmpExtension() {
+        super(extensionName, SUBSYSTEM_NAME);
+    }
+
+    @Override
+    protected Set<ManagementResourceRegistration> initializeLegacyModel(final ExtensionContext context) {
+
+        final SubsystemRegistration subsystemRegistration = context.registerSubsystem(SUBSYSTEM_NAME, MANAGEMENT_API_MAJOR_VERSION,
                 MANAGEMENT_API_MINOR_VERSION, MANAGEMENT_API_MICRO_VERSION);
 
-        final ManagementResourceRegistration subsystemRegistration = subsystem.registerSubsystemModel(CMPSubsystemRootResourceDescription.INSTANCE);
-        subsystemRegistration.registerOperationHandler(GenericSubsystemDescribeHandler.DEFINITION, GenericSubsystemDescribeHandler.INSTANCE);
+        subsystemRegistration.registerXMLElementWriter(CmpSubsystem11Parser.INSTANCE);
 
-        subsystem.registerXMLElementWriter(CmpSubsystem10Parser.INSTANCE);
+        final ManagementResourceRegistration subsystem =
+                subsystemRegistration.registerSubsystemModel(CMPSubsystemRootResourceDefinition.INSTANCE);
 
-        subsystemRegistration.registerSubModel(UUIDKeyGeneratorResourceDescription.INSTANCE);
+        if (context.isRegisterTransformers()){
+            registerTransformers(subsystemRegistration);
+        }
 
-        subsystemRegistration.registerSubModel(HiLoKeyGeneratorResourceDescription.INSTANCE);
+        return Collections.singleton(subsystem);
     }
 
-    public void initializeParsers(final ExtensionParsingContext context) {
+    private void registerTransformers(SubsystemRegistration subsystem) {
+        ResourceTransformationDescriptionBuilder builder = TransformationDescriptionBuilder.Factory.createSubsystemInstance();
+
+        builder.addChildResource(CmpSubsystemModel.UUID_KEY_GENERATOR_PATH).getAttributeBuilder()
+                .addRejectCheck(RejectAttributeChecker.DEFINED, CMPSubsystemRootResourceDefinition.JNDI_NAME)
+                .setDiscard(DiscardAttributeChecker.UNDEFINED, CMPSubsystemRootResourceDefinition.JNDI_NAME)
+                .end();
+        builder.addChildResource(CmpSubsystemModel.HILO_KEY_GENERATOR_PATH).getAttributeBuilder()
+                .addRejectCheck(RejectAttributeChecker.DEFINED, CMPSubsystemRootResourceDefinition.JNDI_NAME)
+                .setDiscard(DiscardAttributeChecker.UNDEFINED, CMPSubsystemRootResourceDefinition.JNDI_NAME)
+                .end();
+
+        TransformationDescription.Tools.register(builder.build(), subsystem, ModelVersion.create(1, 0, 0));
+
+    }
+
+    @Override
+    protected void initializeLegacyParsers(final ExtensionParsingContext context) {
+
         context.setSubsystemXmlMapping(SUBSYSTEM_NAME, Namespace.CMP_1_0.getUriString(), CmpSubsystem10Parser.INSTANCE);
+        context.setSubsystemXmlMapping(SUBSYSTEM_NAME, Namespace.CMP_1_1.getUriString(), CmpSubsystem11Parser.INSTANCE);
     }
 
 
-    public static ResourceDescriptionResolver getResourceDescriptionResolver(final String keyPrefix) {
+    static ResourceDescriptionResolver getResolver(final String keyPrefix) {
         return new StandardResourceDescriptionResolver(keyPrefix, RESOURCE_NAME, CmpExtension.class.getClassLoader(), true, true);
     }
+
 }

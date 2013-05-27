@@ -24,10 +24,10 @@ package org.jboss.as.remoting;
 
 
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.ADD;
-import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.DESCRIBE;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.OP;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.OP_ADDR;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.SUBSYSTEM;
+import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.WRITE_ATTRIBUTE_OPERATION;
 import static org.jboss.as.controller.parsing.ParseUtils.duplicateAttribute;
 import static org.jboss.as.controller.parsing.ParseUtils.duplicateNamedElement;
 import static org.jboss.as.controller.parsing.ParseUtils.missingRequired;
@@ -71,6 +71,7 @@ import javax.xml.stream.XMLStreamException;
 
 import org.jboss.as.controller.Extension;
 import org.jboss.as.controller.ExtensionContext;
+import org.jboss.as.controller.ModelVersion;
 import org.jboss.as.controller.SubsystemRegistration;
 import org.jboss.as.controller.descriptions.ResourceDescriptionResolver;
 import org.jboss.as.controller.descriptions.StandardResourceDescriptionResolver;
@@ -80,7 +81,8 @@ import org.jboss.as.controller.parsing.ExtensionParsingContext;
 import org.jboss.as.controller.parsing.ParseUtils;
 import org.jboss.as.controller.persistence.SubsystemMarshallingContext;
 import org.jboss.as.controller.registry.ManagementResourceRegistration;
-import org.jboss.as.controller.registry.OperationEntry;
+import org.jboss.as.controller.transform.RejectExpressionValuesTransformer;
+import org.jboss.as.controller.transform.TransformersSubRegistration;
 import org.jboss.dmr.ModelNode;
 import org.jboss.dmr.Property;
 import org.jboss.staxmapper.XMLElementReader;
@@ -109,8 +111,10 @@ public class RemotingExtension implements Extension {
     }
 
     private static final int MANAGEMENT_API_MAJOR_VERSION = 1;
-    private static final int MANAGEMENT_API_MINOR_VERSION = 1;
+    private static final int MANAGEMENT_API_MINOR_VERSION = 2;
     private static final int MANAGEMENT_API_MICRO_VERSION = 0;
+
+    private static final ModelVersion VERSION_1_1 = ModelVersion.create(1, 1);
 
     @Override
     public void initialize(ExtensionContext context) {
@@ -135,6 +139,35 @@ public class RemotingExtension implements Extension {
         subsystem.registerSubModel(LocalOutboundConnectionResourceDefinition.INSTANCE);
         // (generic) outbound connection
         subsystem.registerSubModel(GenericOutboundConnectionResourceDefinition.INSTANCE);
+
+        if (context.isRegisterTransformers()) {
+            registerTransformers_1_1(registration);
+        }
+    }
+
+    private void registerTransformers_1_1(SubsystemRegistration registration) {
+
+        RejectExpressionValuesTransformer rejectExpression = new RejectExpressionValuesTransformer(RemotingSubsystemRootResource.ATTRIBUTES);
+        final TransformersSubRegistration subsystem = registration.registerModelTransformers(VERSION_1_1, rejectExpression);
+        subsystem.registerOperationTransformer(ADD, rejectExpression);
+        subsystem.registerOperationTransformer(WRITE_ATTRIBUTE_OPERATION, rejectExpression.getWriteAttributeTransformer());
+
+        TransformersSubRegistration connector = subsystem.registerSubResource(ConnectorResource.PATH);
+        PropertyResourceTransformers.registerTransformers(connector);
+        SaslResourceTransformers.registerTransformers(connector);
+
+        TransformersSubRegistration remoteOutboundConnection = subsystem.registerSubResource(RemoteOutboundConnectionResourceDefinition.ADDRESS);
+        RejectExpressionValuesTransformer rejectUserNameExpression = new RejectExpressionValuesTransformer(RemoteOutboundConnectionResourceDefinition.USERNAME);
+        remoteOutboundConnection.registerOperationTransformer(ADD, rejectUserNameExpression);
+        remoteOutboundConnection.registerOperationTransformer(WRITE_ATTRIBUTE_OPERATION, rejectUserNameExpression.getWriteAttributeTransformer());
+
+        PropertyResourceTransformers.registerTransformers(remoteOutboundConnection);
+
+        TransformersSubRegistration localOutboundConnection = subsystem.registerSubResource(LocalOutboundConnectionResourceDefinition.ADDRESS);
+        PropertyResourceTransformers.registerTransformers(localOutboundConnection);
+
+        TransformersSubRegistration outboundConnection = subsystem.registerSubResource(GenericOutboundConnectionResourceDefinition.ADDRESS);
+        PropertyResourceTransformers.registerTransformers(outboundConnection);
     }
 
     /**

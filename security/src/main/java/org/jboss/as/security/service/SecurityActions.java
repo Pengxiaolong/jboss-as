@@ -22,97 +22,50 @@
 
 package org.jboss.as.security.service;
 
-import java.security.AccessController;
 import java.security.PrivilegedAction;
 import java.security.PrivilegedActionException;
 import java.security.PrivilegedExceptionAction;
-import java.security.Security;
 
 import org.jboss.as.security.SecurityMessages;
+import org.jboss.as.security.remoting.RemotingContext;
+import org.wildfly.security.manager.GetModuleClassLoaderAction;
+import org.wildfly.security.manager.WildFlySecurityManager;
 import org.jboss.modules.Module;
 import org.jboss.modules.ModuleClassLoader;
 import org.jboss.modules.ModuleIdentifier;
 import org.jboss.modules.ModuleLoadException;
 import org.jboss.modules.ModuleLoader;
+import org.jboss.remoting3.Connection;
+
+import static java.security.AccessController.doPrivileged;
 
 /**
  * Privileged blocks for this package
  *
  * @author <a href="mailto:mmoyses@redhat.com">Marcus Moyses</a>
  * @author Anil Saldhana
+ * @author <a href="mailto:darran.lofthouse@jboss.com">Darran Lofthouse</a>
  */
 class SecurityActions {
 
     static ModuleClassLoader getModuleClassLoader(final String moduleSpec) throws ModuleLoadException {
-        if (System.getSecurityManager() != null) {
-            try {
-                return AccessController.doPrivileged(new PrivilegedExceptionAction<ModuleClassLoader>() {
-                    public ModuleClassLoader run() throws ModuleLoadException {
-                        ModuleLoader loader = Module.getCallerModuleLoader();
-                        ModuleIdentifier identifier = ModuleIdentifier.fromString(moduleSpec);
-                        return loader.loadModule(identifier).getClassLoader();
-                    }
-                });
-            } catch (PrivilegedActionException pae) {
-                throw SecurityMessages.MESSAGES.moduleLoadException(pae);
-            }
-        } else {
-            ModuleLoader loader = Module.getCallerModuleLoader();
-            ModuleIdentifier identifier = ModuleIdentifier.fromString(moduleSpec);
-            return loader.loadModule(identifier).getClassLoader();
-        }
-    }
-
-    static void setSecurityProperty(final String key, final String value) {
-        if (System.getSecurityManager() != null) {
-            AccessController.doPrivileged(new PrivilegedAction<Void>() {
-                public Void run() {
-                    Security.setProperty(key, value);
-                    return null;
-                }
-            });
-        } else {
-            Security.setProperty(key, value);
-        }
-    }
-
-    static String getSystemProperty(final String name, final String defaultValue) {
-        if (System.getSecurityManager() != null) {
-            return AccessController.doPrivileged(new PrivilegedAction<String>() {
-                public String run() {
-                    return System.getProperty(name, defaultValue);
-                }
-            });
-        } else {
-            return System.getProperty(name, defaultValue);
-        }
-    }
-
-    static ClassLoader getContextClassLoader() {
-        if (System.getSecurityManager() != null) {
-            return AccessController.doPrivileged(new PrivilegedAction<ClassLoader>() {
-                public ClassLoader run() {
-                    return Thread.currentThread().getContextClassLoader();
-                }
-            });
-        } else {
-            return Thread.currentThread().getContextClassLoader();
-        }
+        ModuleLoader loader = Module.getCallerModuleLoader();
+        final Module module = loader.loadModule(ModuleIdentifier.fromString(moduleSpec));
+        return WildFlySecurityManager.isChecking() ? doPrivileged(new GetModuleClassLoaderAction(module)) : module.getClassLoader();
     }
 
     static Class<?> loadClass(final String name) throws ClassNotFoundException {
-        if (System.getSecurityManager() != null) {
+        if (WildFlySecurityManager.isChecking()) {
             try {
-                return AccessController.doPrivileged(new PrivilegedExceptionAction<Class<?>>() {
+                return doPrivileged(new PrivilegedExceptionAction<Class<?>>() {
                     public Class<?> run() throws ClassNotFoundException {
                         ClassLoader[] cls = new ClassLoader[] { SecurityActions.class.getClassLoader(), // PB classes (not always on TCCL [modular env])
-                                getContextClassLoader(), // User defined classes
+                                WildFlySecurityManager.getCurrentContextClassLoaderPrivileged(), // User defined classes
                                 ClassLoader.getSystemClassLoader() // System loader, usually has app class path
                         };
                         ClassNotFoundException e = null;
                         for (ClassLoader cl : cls) {
-                            if (cl == null)
-                                continue;
+                            if (cl == null) continue;
 
                             try {
                                 return cl.loadClass(name);
@@ -128,7 +81,7 @@ class SecurityActions {
             }
         } else {
             ClassLoader[] cls = new ClassLoader[] { SecurityActions.class.getClassLoader(), // PB classes (not always on TCCL [modular env])
-                    getContextClassLoader(), // User defined classes
+                    WildFlySecurityManager.getCurrentContextClassLoaderPrivileged(), // User defined classes
                     ClassLoader.getSystemClassLoader() // System loader, usually has app class path
             };
             ClassNotFoundException e = null;
@@ -144,5 +97,86 @@ class SecurityActions {
             }
             throw e != null ? e : SecurityMessages.MESSAGES.cnfe(name);
         }
+    }
+
+    static void remotingContextClear() {
+        remotingContextAccociationActions().clear();
+    }
+
+    static Connection remotingContextGetConnection() {
+        return remotingContextAccociationActions().getConnection();
+    }
+
+    static boolean remotingContextIsSet() {
+        return remotingContextAccociationActions().isSet();
+    }
+
+    private static RemotingContextAssociationActions remotingContextAccociationActions() {
+        return ! WildFlySecurityManager.isChecking() ? RemotingContextAssociationActions.NON_PRIVILEGED
+                : RemotingContextAssociationActions.PRIVILEGED;
+    }
+
+    private interface RemotingContextAssociationActions {
+
+        Connection getConnection();
+
+        boolean isSet();
+
+        void clear();
+
+        RemotingContextAssociationActions NON_PRIVILEGED = new RemotingContextAssociationActions() {
+
+            public boolean isSet() {
+                return RemotingContext.isSet();
+            }
+
+            @Override
+            public Connection getConnection() {
+                return RemotingContext.getConnection();
+            }
+
+            @Override
+            public void clear() {
+                RemotingContext.clear();
+            }
+        };
+
+        RemotingContextAssociationActions PRIVILEGED = new RemotingContextAssociationActions() {
+
+            private final PrivilegedAction<Boolean> IS_SET_ACTION = new PrivilegedAction<Boolean>() {
+
+                public Boolean run() {
+                    return NON_PRIVILEGED.isSet();
+                }
+            };
+
+            private final PrivilegedAction<Connection> GET_CONNECTION_ACTION = new PrivilegedAction<Connection>() {
+
+                public Connection run() {
+                    return NON_PRIVILEGED.getConnection();
+                }
+            };
+
+            private final PrivilegedAction<Void> CLEAR_ACTION = new PrivilegedAction<Void>() {
+
+                public Void run() {
+                    NON_PRIVILEGED.clear();
+                    return null;
+                }
+            };
+
+            public boolean isSet() {
+                return doPrivileged(IS_SET_ACTION);
+            }
+
+            public Connection getConnection() {
+                return doPrivileged(GET_CONNECTION_ACTION);
+            }
+
+            public void clear() {
+                doPrivileged(CLEAR_ACTION);
+            }
+        };
+
     }
 }

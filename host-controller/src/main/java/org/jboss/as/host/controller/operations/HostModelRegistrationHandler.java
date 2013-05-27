@@ -22,6 +22,7 @@
 package org.jboss.as.host.controller.operations;
 
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.CORE_SERVICE;
+import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.DISCOVERY_OPTIONS;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.DOMAIN_CONTROLLER;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.EXTENSION;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.HOST;
@@ -45,13 +46,12 @@ import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.SER
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.SYSTEM_PROPERTY;
 import static org.jboss.as.host.controller.HostControllerMessages.MESSAGES;
 
-import java.util.Locale;
-
 import org.jboss.as.controller.OperationContext;
+import org.jboss.as.controller.OperationDefinition;
 import org.jboss.as.controller.OperationStepHandler;
 import org.jboss.as.controller.PathAddress;
 import org.jboss.as.controller.PathElement;
-import org.jboss.as.controller.descriptions.DescriptionProvider;
+import org.jboss.as.controller.SimpleOperationDefinitionBuilder;
 import org.jboss.as.controller.registry.ManagementResourceRegistration;
 import org.jboss.as.controller.registry.Resource;
 import org.jboss.as.host.controller.HostControllerEnvironment;
@@ -68,9 +68,14 @@ import org.jboss.modules.ModuleClassLoader;
  *
  * @author <a href="mailto:darran.lofthouse@jboss.com">Darran Lofthouse</a>
  */
-public class HostModelRegistrationHandler implements OperationStepHandler, DescriptionProvider {
+public class HostModelRegistrationHandler implements OperationStepHandler {
 
     public static final String OPERATION_NAME = "register-host-model";
+
+    //Private method does not need resources for description
+    public static final OperationDefinition DEFINITION = new SimpleOperationDefinitionBuilder(OPERATION_NAME, null)
+        .setPrivateEntry()
+        .build();
 
     private final HostControllerEnvironment hostControllerEnvironment;
     private final IgnoredDomainResourceRegistry ignoredDomainResourceRegistry;
@@ -82,12 +87,6 @@ public class HostModelRegistrationHandler implements OperationStepHandler, Descr
         this.hostControllerEnvironment = hostControllerEnvironment;
         this.ignoredDomainResourceRegistry = ignoredDomainResourceRegistry;
         this.hostModelRegistrar = hostModelRegistrar;
-    }
-
-    @Override
-    public ModelNode getModelDescription(Locale locale) {
-        // This is a private operation, so this op will not be called
-        return new ModelNode();
     }
 
     /**
@@ -124,7 +123,10 @@ public class HostModelRegistrationHandler implements OperationStepHandler, Descr
         Resource.ResourceEntry ignoredRoot = ignoredDomainResourceRegistry.getRootResource();
         rootResource.registerChild(ignoredRoot.getPathElement(), ignoredRoot);
 
-        context.completeStep(OperationContext.RollbackHandler.NOOP_ROLLBACK_HANDLER);
+        // Create the empty discovery options resource
+        context.createResource(hostAddress.append(PathElement.pathElement(CORE_SERVICE, DISCOVERY_OPTIONS)));
+
+        context.stepCompleted();
     }
 
     private static void initCoreModel(final ModelNode root, HostControllerEnvironment environment) {

@@ -34,7 +34,7 @@ import org.jboss.as.ee.component.ComponentInstanceInterceptorFactory;
 import org.jboss.as.ejb3.component.stateful.SerializedCdiInterceptorsKey;
 import org.jboss.as.naming.ManagedReference;
 import org.jboss.as.naming.ValueManagedReference;
-import org.jboss.as.weld.WeldContainer;
+import org.jboss.as.weld.WeldBootstrapService;
 import org.jboss.as.weld.services.bootstrap.WeldEjbServices;
 import org.jboss.invocation.InterceptorContext;
 import org.jboss.invocation.InterceptorFactoryContext;
@@ -48,6 +48,7 @@ import org.jboss.weld.ejb.spi.helpers.ForwardingEjbServices;
 import org.jboss.weld.manager.BeanManagerImpl;
 import org.jboss.weld.serialization.spi.ContextualStore;
 import org.jboss.weld.serialization.spi.helpers.SerializableContextualInstance;
+import org.wildfly.security.manager.WildFlySecurityManager;
 
 /**
  * Interceptor for applying the JSR-299 specific interceptor bindings.
@@ -68,11 +69,11 @@ public class Jsr299BindingsInterceptor implements org.jboss.invocation.Intercept
 
 
     protected Jsr299BindingsInterceptor(final BeanManagerImpl beanManager, final String ejbName, final InterceptorFactoryContext context, final InterceptionType interceptionType, final ClassLoader classLoader) {
-        final ClassLoader tccl = SecurityActions.getContextClassLoader();
+        final ClassLoader tccl = WildFlySecurityManager.getCurrentContextClassLoaderPrivileged();
         try {
             //this is not always called with the deployments TCCL set
             //which causes weld to blow up
-            SecurityActions.setContextClassLoader(classLoader);
+            WildFlySecurityManager.setCurrentContextClassLoaderPrivileged(classLoader);
             this.beanManager = beanManager;
             this.ejbName = ejbName;
             this.interceptionType = interceptionType;
@@ -98,7 +99,7 @@ public class Jsr299BindingsInterceptor implements org.jboss.invocation.Intercept
                 interceptorInstances = instances.getInterceptorInstances();
             }
         } finally {
-            SecurityActions.setContextClassLoader(tccl);
+            WildFlySecurityManager.setCurrentContextClassLoaderPrivileged(tccl);
         }
 
     }
@@ -176,7 +177,6 @@ public class Jsr299BindingsInterceptor implements org.jboss.invocation.Intercept
         return interceptorBindings;
     }
 
-    @SuppressWarnings("unchecked")
     private void addInterceptorInstance(Interceptor<Object> interceptor, BeanManagerImpl beanManager, Map<String, SerializableContextualInstance<Interceptor<Object>, Object>> instances) {
         Object instance = beanManager.getContext(interceptor.getScope()).get(interceptor, creationalContext);
         SerializableContextualInstance<Interceptor<Object>, Object> serializableContextualInstance
@@ -187,7 +187,7 @@ public class Jsr299BindingsInterceptor implements org.jboss.invocation.Intercept
 
     public static class Factory extends ComponentInstanceInterceptorFactory {
 
-        private final InjectedValue<WeldContainer> weldContainer = new InjectedValue<WeldContainer>();
+        private final InjectedValue<WeldBootstrapService> weldContainer = new InjectedValue<WeldBootstrapService>();
         private final String beanArchiveId;
         private final String ejbName;
         private final InterceptionType interceptionType;
@@ -205,11 +205,11 @@ public class Jsr299BindingsInterceptor implements org.jboss.invocation.Intercept
 
             //we use the interception type as the context key
             //as there are potentially up to six instances of this interceptor for every component
-            final Jsr299BindingsInterceptor interceptor = new Jsr299BindingsInterceptor((BeanManagerImpl) weldContainer.getValue().getBeanManager(beanArchiveId), ejbName, context, interceptionType, classLoader);
+            final Jsr299BindingsInterceptor interceptor = new Jsr299BindingsInterceptor(weldContainer.getValue().getBeanManager(beanArchiveId), ejbName, context, interceptionType, classLoader);
             return interceptor;
         }
 
-        public InjectedValue<WeldContainer> getWeldContainer() {
+        public InjectedValue<WeldBootstrapService> getWeldContainer() {
             return weldContainer;
         }
     }

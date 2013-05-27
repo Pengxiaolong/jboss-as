@@ -28,10 +28,10 @@ import org.jboss.as.server.deployment.DeploymentUnit;
 import org.jboss.as.server.deployment.DeploymentUnitProcessingException;
 import org.jboss.dmr.ModelNode;
 import org.jboss.jca.deployers.common.DeployException;
+import org.jboss.logging.Messages;
 import org.jboss.logging.annotations.Cause;
 import org.jboss.logging.annotations.Message;
 import org.jboss.logging.annotations.MessageBundle;
-import org.jboss.logging.Messages;
 import org.jboss.msc.service.ServiceName;
 import org.jboss.msc.service.StartException;
 import org.jboss.vfs.VirtualFile;
@@ -475,4 +475,68 @@ public interface ConnectorMessages {
      */
     @Message(id = 10472, value = "Deployment %s failed")
     DeployException deploymentFailed(@Cause Throwable cause, String className);
+
+    /**
+     * A message indicating a failure to load the module for a RA deployed as module.
+     *
+     * @param moduleName the module name.
+     * @return the message.
+     */
+    @Message(id = 10473, value = "Failed to load module for RA [%s]")
+    String failedToLoadModuleRA(String moduleName);
+    /**
+     * Creates an exception indicating a method is undefined.
+     *
+     * @param name the name of the method.
+     * @return an {@link NoSuchMethodException} for the error.
+     */
+    @Message(id = 10474, value = "Method %s not found")
+    NoSuchMethodException noSuchMethod(String name);
+
+    /**
+     * Creates an exception indicating a field is undefined.
+     *
+     * @param name the name of the field.
+     * @return an {@link NoSuchMethodException} for the error.
+     */
+    @Message(id = 10475, value = "Field %s not found")
+    NoSuchMethodException noSuchField(String name);
+
+    /**
+     * Creates an exception indicating a prperty can't be resolved
+     *
+     * @param name the name of the property.
+     * @return an {@link NoSuchMethodException} for the error.
+     */
+    @Message(id = 10476, value = "Unknown property resolution for property %s")
+    IllegalArgumentException noPropertyResolution(String name);
+
+    /**
+     * A message indicating that at least one of archive or module attributes
+     * gave to be defined
+     *
+     * @return the message.
+     */
+    @Message(id = 10477, value = "At least one of ARCHIVE or MODULE is required")
+    OperationFailedException archiveOrModuleRequired();
+
+    /**
+     * A message indicating a failure to load the module for a RA deployed as module.
+     * The cause of this failure ius the use of unsupported compressed form for the rar
+     *
+     * @param moduleName the module name.
+     * @return the message.
+     */
+    @Message(id = 10478, value = "Rar are supported only in uncompressed form. Failed to load module for RA [%s]")
+    String compressedRarNotSupportedInModuleRA(String moduleName);
+
+    /**
+     * Creates an exception indicating a failure to deploy the datasource because driver is not specified
+     *
+     * @param dsName the datasouerce to be deployed.
+     * @return a {@link DeploymentUnitProcessingException} for the error.
+     */
+    @Message(id = 10479, value = "Failed to deploy datssource %s because driver is not specified")
+    DeploymentUnitProcessingException FailedDeployDriverNotSpecified(String dsName);
+
 }

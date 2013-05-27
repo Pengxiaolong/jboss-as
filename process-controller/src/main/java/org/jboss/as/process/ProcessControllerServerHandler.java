@@ -92,6 +92,8 @@ public final class ProcessControllerServerHandler implements ConnectionHandler {
             connection.setMessageHandler(new ConnectedMessageHandler(processController, process.isPrivileged()));
             processController.addManagedConnection(connection);
             dataStream.close();
+            // Reset the respawn count for the connecting process
+            process.resetRespawnCount();
         }
 
         public void handleShutdown(final Connection connection) throws IOException {
@@ -160,7 +162,7 @@ public final class ProcessControllerServerHandler implements ConnectionHandler {
                                 }
                                 final String workingDirectory = readUTFZBytes(dataStream);
                                 SERVER_LOGGER.tracef("Received add_process for process %s", processName);
-                                processController.addProcess(processName, Arrays.asList(command), env, workingDirectory, false, false);
+                                processController.addProcess(processName, authKey, Arrays.asList(command), env, workingDirectory, false, false);
                             } else {
                                 SERVER_LOGGER.tracef("Ignoring add_process message from untrusted source");
                             }
@@ -239,6 +241,28 @@ public final class ProcessControllerServerHandler implements ConnectionHandler {
                             } else {
                                 SERVER_LOGGER.tracef("Ignoring shutdown message from untrusted source");
                             }
+                            break;
+                        }
+                        case Protocol.DESTROY_PROECESS: {
+                            if (isPrivileged) {
+                                operationType = ProcessMessageHandler.OperationType.STOP;
+                                processName = readUTFZBytes(dataStream);
+                                processController.destroyProcess(processName);
+                            } else {
+                                SERVER_LOGGER.tracef("Ignoring destroy_process message from untrusted source");
+                            }
+                            dataStream.close();
+                            break;
+                        }
+                        case Protocol.KILL_PROCESS: {
+                            if (isPrivileged) {
+                                operationType = ProcessMessageHandler.OperationType.STOP;
+                                processName = readUTFZBytes(dataStream);
+                                processController.killProcess(processName);
+                            } else {
+                                SERVER_LOGGER.tracef("Ignoring destroy_process message from untrusted source");
+                            }
+                            dataStream.close();
                             break;
                         }
                         default: {

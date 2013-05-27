@@ -40,6 +40,7 @@ public enum Attribute {
 
     // domain attributes in alpha order
     ALIAS("alias"),
+    ALLOW_EMPTY_PASSWORDS("allow-empty-passwords"),
     ALLOWED_USERS("allowed-users"),
     ATTRIBUTE("attribute"),
     AUTO_START("auto-start"),
@@ -68,7 +69,9 @@ public enum Attribute {
     GROUP("group"),
     HOST("host"),
     HTTP("http"),
+    HTTP_UPGRADE_ENABLED("http-upgrade-enabled"),
     HTTPS("https"),
+    IGNORE_UNUSED_CONFIG("ignore-unused-configuration"),
     INITIAL_CONTEXT_FACTORY("initial-context-factory"),
     INTERFACE("interface"),
     JAVA_HOME("java-home"),
@@ -94,7 +97,6 @@ public enum Attribute {
     PROTOCOL("protocol"),
     RECURSIVE("recursive"),
     REF("ref"),
-    REGULAR_EXPRESSION("regular-expression"),
     RELATIVE_TO("relative-to"),
     RUNTIME_NAME("runtime-name"),
     SEARCH_CREDENTIAL("search-credential"),

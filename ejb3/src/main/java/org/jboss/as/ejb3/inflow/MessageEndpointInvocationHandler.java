@@ -21,12 +21,9 @@
  */
 package org.jboss.as.ejb3.inflow;
 
-import org.jboss.as.ejb3.EjbLogger;
-
 import javax.resource.ResourceException;
 import javax.resource.spi.ApplicationServerInternalException;
 import javax.resource.spi.LocalTransactionException;
-import javax.resource.spi.UnavailableException;
 import javax.resource.spi.endpoint.MessageEndpoint;
 import javax.transaction.HeuristicMixedException;
 import javax.transaction.HeuristicRollbackException;
@@ -40,9 +37,9 @@ import javax.transaction.xa.XAResource;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.util.concurrent.atomic.AtomicBoolean;
+import org.wildfly.security.manager.WildFlySecurityManager;
 
-import static java.security.AccessController.doPrivileged;
-import static org.jboss.as.ejb3.inflow.ContextClassLoaderActions.contextClassLoader;
+import static org.jboss.as.ejb3.EjbMessages.MESSAGES;
 
 /**
  * @author <a href="mailto:cdewolf@redhat.com">Carlo de Wolf</a>
@@ -89,7 +86,7 @@ public class MessageEndpointInvocationHandler extends AbstractInvocationHandler 
         } catch (RollbackException e) {
             throw new LocalTransactionException(e);
         } finally {
-            doPrivileged(contextClassLoader(previousClassLoader));
+            WildFlySecurityManager.setCurrentContextClassLoaderPrivileged(previousClassLoader);
             previousClassLoader = null;
         }
     }
@@ -99,7 +96,7 @@ public class MessageEndpointInvocationHandler extends AbstractInvocationHandler 
         // JCA 1.6 FR 13.5.6
         // The application server must set the thread context class loader to the endpoint
         // application class loader during the beforeDelivery call.
-        previousClassLoader = doPrivileged(contextClassLoader(getApplicationClassLoader()));
+        previousClassLoader = WildFlySecurityManager.setCurrentContextClassLoaderPrivileged(getApplicationClassLoader());
         try {
             final TransactionManager tm = getTransactionManager();
             // TODO: in violation of JCA 1.6 FR 13.5.9?
@@ -111,10 +108,10 @@ public class MessageEndpointInvocationHandler extends AbstractInvocationHandler 
                 if (xaRes != null)
                     currentTx.enlistResource(xaRes);
             }
-        }
-        catch(Throwable t) {
-            doPrivileged(contextClassLoader(previousClassLoader));
+        } catch (Throwable t) {
             throw new ApplicationServerInternalException(t);
+        } finally {
+            WildFlySecurityManager.setCurrentContextClassLoaderPrivileged(previousClassLoader);
         }
     }
 
@@ -130,7 +127,7 @@ public class MessageEndpointInvocationHandler extends AbstractInvocationHandler 
     protected Object doInvoke(Object proxy, Method method, Object[] args) throws Throwable {
         // Are we still usable?
         if (released.get())
-            throw EjbLogger.EJB3_LOGGER.messageEndpointAlreadyReleased(this);
+            throw MESSAGES.messageEndpointAlreadyReleased(this);
 
         // TODO: check for concurrent invocation
 

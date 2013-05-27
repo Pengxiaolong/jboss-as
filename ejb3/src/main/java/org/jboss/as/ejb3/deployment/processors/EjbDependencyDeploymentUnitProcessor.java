@@ -45,12 +45,6 @@ import static org.jboss.as.server.deployment.EjbDeploymentMarker.isEjbDeployment
  */
 public class EjbDependencyDeploymentUnitProcessor implements DeploymentUnitProcessor {
 
-    // TODO: This should be centralized some place
-    /**
-     * Module id for Java EE module
-     */
-    private static final ModuleIdentifier JAVAEE_MODULE_IDENTIFIER = ModuleIdentifier.create("javaee.api");
-
     /**
      * Needed for timer handle persistence
      * TODO: restrict visibility
@@ -79,11 +73,11 @@ public class EjbDependencyDeploymentUnitProcessor implements DeploymentUnitProce
         final ModuleSpecification moduleSpecification = deploymentUnit.getAttachment(Attachments.MODULE_SPECIFICATION);
 
         //we always give them the EJB client
-        moduleSpecification.addSystemDependency(new ModuleDependency(moduleLoader, EJB_CLIENT, false, false, false, false));
+        moduleSpecification.addSystemDependency(new ModuleDependency(moduleLoader, EJB_CLIENT, false, false, true, false));
         moduleSpecification.addSystemDependency(new ModuleDependency(moduleLoader, EJB_IIOP_CLIENT, false, false, false, false));
 
         //we always have to add this, as even non-ejb deployments may still lookup IIOP ejb's
-        moduleSpecification.addSystemDependency(new ModuleDependency(moduleLoader, EJB_SUBSYSTEM, false, false, false, false));
+        moduleSpecification.addSystemDependency(new ModuleDependency(moduleLoader, EJB_SUBSYSTEM, false, false, true, false));
 
         if (JacORBDeploymentMarker.isJacORBDeployment(deploymentUnit)) {
             //needed for dynamic IIOP stubs
@@ -102,8 +96,6 @@ public class EjbDependencyDeploymentUnitProcessor implements DeploymentUnitProce
         //this must be the first dep listed in the module
         if (Boolean.getBoolean("org.jboss.as.ejb3.EMBEDDED"))
             moduleSpecification.addSystemDependency(new ModuleDependency(moduleLoader, ModuleIdentifier.CLASSPATH, false, false, false, false));
-
-        moduleSpecification.addSystemDependency(new ModuleDependency(moduleLoader, JAVAEE_MODULE_IDENTIFIER, false, false, false, false));
 
     }
 

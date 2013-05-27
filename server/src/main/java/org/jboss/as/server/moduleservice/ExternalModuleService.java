@@ -23,7 +23,6 @@ package org.jboss.as.server.moduleservice;
 
 import org.jboss.as.server.ServerMessages;
 import org.jboss.as.server.Services;
-import org.jboss.modules.Module;
 import org.jboss.modules.ModuleIdentifier;
 import org.jboss.msc.service.Service;
 import org.jboss.msc.service.ServiceBuilder;
@@ -42,18 +41,30 @@ import java.io.File;
  * Service that manages external modules.
  * <p>
  * Once external modules are installed there is currently no way to safely remove the module spec service, however as they are
- * on-demand services if all dependent services are stopped then the actual {@link Module} will be unloaded.
+ * on-demand services if all dependent services are stopped then the actual {@link org.jboss.modules.Module} will be unloaded.
  * <p>
  * TODO: support removing modules when msc can tell us that nothing depends on the service.
  *
  * @author Stuart Douglas
+ * @author Ales Justin
  *
  */
 public class ExternalModuleService implements Service<ExternalModuleService> {
 
-    public static String EXTERNAL_MODULE_PREFIX = ServiceModuleLoader.MODULE_PREFIX + "external.";
+    public static final String EXTERNAL_MODULE_PREFIX = ServiceModuleLoader.MODULE_PREFIX + "external.";
 
     private volatile ServiceContainer serviceContainer;
+
+    /**
+     * Is external module item valid.
+     * Keep the File impl detail in this class.
+     *
+     * @param externalModule the external module class path item
+     * @return true if valid, false otherwise
+     */
+    public boolean isValid(String externalModule) {
+        return new File(externalModule).exists();
+    }
 
     public ModuleIdentifier addExternalModule(String externalModule) {
         ModuleIdentifier identifier = ModuleIdentifier.create(EXTERNAL_MODULE_PREFIX + externalModule);

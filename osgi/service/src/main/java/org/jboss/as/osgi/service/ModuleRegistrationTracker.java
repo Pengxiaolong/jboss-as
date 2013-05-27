@@ -39,14 +39,15 @@ import org.jboss.msc.service.ServiceTarget;
 import org.jboss.msc.service.StartContext;
 import org.jboss.msc.service.StartException;
 import org.jboss.msc.value.InjectedValue;
-import org.jboss.osgi.framework.AbstractBundleRevisionAdaptor;
-import org.jboss.osgi.framework.IntegrationService;
 import org.jboss.osgi.framework.Services;
+import org.jboss.osgi.framework.spi.AbstractBundleRevisionAdaptor;
+import org.jboss.osgi.framework.spi.BundleManager;
+import org.jboss.osgi.framework.spi.IntegrationServices;
 import org.jboss.osgi.metadata.OSGiMetaData;
 import org.jboss.osgi.resolver.XBundleRevision;
+import org.jboss.osgi.resolver.XBundleRevisionBuilder;
 import org.jboss.osgi.resolver.XBundleRevisionBuilderFactory;
 import org.jboss.osgi.resolver.XEnvironment;
-import org.jboss.osgi.resolver.XResourceBuilder;
 import org.osgi.framework.BundleContext;
 
 /**
@@ -60,6 +61,7 @@ public class ModuleRegistrationTracker extends AbstractService<Void> {
     public static final ServiceName MODULE_REGISTRATION_COMPLETE = SERVICE_BASE_NAME.append("module", "registration");
 
     private final InjectedValue<BundleContext> injectedSystemContext = new InjectedValue<BundleContext>();
+    private final InjectedValue<BundleManager> injectedBundleManager = new InjectedValue<BundleManager>();
     private final InjectedValue<XEnvironment> injectedEnvironment = new InjectedValue<XEnvironment>();
 
     private final Map<Module, Registration> registrations = new LinkedHashMap<Module, Registration>();
@@ -67,8 +69,9 @@ public class ModuleRegistrationTracker extends AbstractService<Void> {
     public ServiceController<Void> install(ServiceTarget serviceTarget, ServiceVerificationHandler verificationHandler) {
         ServiceBuilder<Void> builder = serviceTarget.addService(MODULE_REGISTRATION_COMPLETE, this);
         builder.addDependency(Services.FRAMEWORK_CREATE, BundleContext.class, injectedSystemContext);
+        builder.addDependency(Services.BUNDLE_MANAGER, BundleManager.class, injectedBundleManager);
         builder.addDependency(Services.ENVIRONMENT, XEnvironment.class, injectedEnvironment);
-        builder.addDependencies(IntegrationService.BOOTSTRAP_BUNDLES_COMPLETE);
+        builder.addDependencies(IntegrationServices.BOOTSTRAP_BUNDLES_COMPLETE);
         builder.addListener(verificationHandler);
         builder.setInitialMode(Mode.ON_DEMAND);
         return builder.install();
@@ -118,13 +121,13 @@ public class ModuleRegistrationTracker extends AbstractService<Void> {
         };
 
         try {
-            XResourceBuilder builder = XBundleRevisionBuilderFactory.create(factory);
+            XBundleRevisionBuilder builder = XBundleRevisionBuilderFactory.create(factory);
             if (metadata != null) {
                 builder.loadFrom(metadata);
             } else {
                 builder.loadFrom(module);
             }
-            reg.brev = (XBundleRevision) builder.getResource();
+            reg.brev = builder.getResource();
             env.installResources(reg.brev);
         } catch (Throwable th) {
             throw MESSAGES.illegalStateFailedToRegisterModule(th, module);

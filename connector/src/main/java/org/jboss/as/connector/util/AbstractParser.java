@@ -25,21 +25,16 @@ import static javax.xml.stream.XMLStreamConstants.END_ELEMENT;
 import static javax.xml.stream.XMLStreamConstants.START_ELEMENT;
 import static org.jboss.as.controller.parsing.ParseUtils.requireSingleAttribute;
 
-import java.security.AccessController;
-import java.security.PrivilegedAction;
-import java.util.Map;
-
 import javax.xml.stream.XMLStreamException;
 import javax.xml.stream.XMLStreamReader;
 
+import org.jboss.as.controller.PropertiesAttributeDefinition;
 import org.jboss.as.controller.SimpleAttributeDefinition;
 import org.jboss.as.controller.parsing.ParseUtils;
 import org.jboss.dmr.ModelNode;
 import org.jboss.jca.common.CommonBundle;
-import org.jboss.jca.common.CommonLogger;
 import org.jboss.jca.common.api.metadata.common.Extension;
 import org.jboss.jca.common.api.validator.ValidateException;
-import org.jboss.logging.Logger;
 import org.jboss.logging.Messages;
 import org.jboss.staxmapper.XMLExtendedStreamReader;
 
@@ -50,22 +45,16 @@ import org.jboss.staxmapper.XMLExtendedStreamReader;
  */
 public abstract class AbstractParser {
     /**
-     * The logger
-     */
-    private static CommonLogger log = Logger.getMessageLogger(CommonLogger.class, AbstractParser.class.getName());
-
-    /**
      * The bundle
      */
     private static CommonBundle bundle = Messages.getBundle(CommonBundle.class);
 
 
-
     /**
-     * FIXME Comment this
+     * Reads and trims the element text and returns it or {@code null}
      *
-     * @param reader
-     * @return the string representing the raw element text
+     * @param reader  source for the element text
+     * @return the string representing the trimmed element text or {@code null} if there is none or it is an empty string
      * @throws XMLStreamException
      */
     public String rawElementText(XMLStreamReader reader) throws XMLStreamException {
@@ -75,26 +64,34 @@ public abstract class AbstractParser {
     }
 
     /**
-     * FIXME Comment this
+     * Reads and trims the text for the given attribute and returns it or {@code null}
      *
-     * @param reader
-     * @param attributeName
-     * @return the string representing raw attribute text
+     * @param reader source for the attribute text
+     * @param attributeName  the name of the attribute
+     * @return the string representing trimmed attribute text or {@code null} if there is none
      */
     public String rawAttributeText(XMLStreamReader reader, String attributeName) {
-        String attributeString = reader.getAttributeValue("", attributeName) == null ? null : reader.getAttributeValue(
-                "", attributeName)
-                .trim();
-        return attributeString;
+        return rawAttributeText(reader, attributeName, null);
+    }
+
+    /**
+     * Reads and trims the text for the given attribute and returns it or {@code defaultValue} if there is no
+     * value for the attribute
+     * @param reader source for the attribute text
+     * @param attributeName  the name of the attribute
+     * @param defaultValue value to return if there is no value for the attribute
+     * @return the string representing raw attribute text or {@code defaultValue} if there is none
+     */
+    public String rawAttributeText(XMLStreamReader reader, String attributeName, String defaultValue) {
+        return reader.getAttributeValue("", attributeName) == null
+                ? defaultValue :
+                reader.getAttributeValue("", attributeName).trim();
     }
 
 
     protected void parseExtension(XMLExtendedStreamReader reader, String enclosingTag, final ModelNode operation,
-                                  final SimpleAttributeDefinition extensionClassName, final SimpleAttributeDefinition extensionProperties)
+                                  final SimpleAttributeDefinition extensionClassName, final PropertiesAttributeDefinition extensionProperties)
             throws XMLStreamException, ParserException, ValidateException {
-
-        String className = null;
-        Map<String, String> properties = null;
 
         for (Extension.Attribute attribute : Extension.Attribute.values()) {
             switch (attribute) {
@@ -118,7 +115,7 @@ public abstract class AbstractParser {
                         return;
                     } else {
                         if (Extension.Tag.forName(reader.getLocalName()) == Extension.Tag.UNKNOWN) {
-                            throw new ParserException(bundle.unexpectedEndTag(reader.getLocalName()));
+                            throw ParseUtils.unexpectedEndElement(reader);
                         }
                     }
                     break;
@@ -130,15 +127,7 @@ public abstract class AbstractParser {
                             final String name = reader.getAttributeValue(0);
                             String value = rawElementText(reader);
                             final String trimmed = value == null ? null : value.trim();
-                            ModelNode node = new ModelNode();
-                            if (trimmed != null ) {
-                                if (extensionProperties.isAllowExpression()) {
-                                    node = ParseUtils.parsePossibleExpression(trimmed);
-                                } else {
-                                    node = new ModelNode().set(trimmed);
-                                }
-                            }
-                            operation.get(extensionProperties.getName(), name).set(node);
+                            extensionProperties.parseAndAddParameterElement(name, trimmed, operation, reader);
                             break;
                         }
                         default:
@@ -150,32 +139,5 @@ public abstract class AbstractParser {
         }
         throw new ParserException(bundle.unexpectedEndOfDocument());
     }
-
-    private static class SecurityActions {
-        /**
-         * Constructor
-         */
-        private SecurityActions() {
-        }
-
-        /**
-         * Get a system property
-         *
-         * @param name The property name
-         * @return The property value
-         */
-        static String getSystemProperty(final String name) {
-            if (System.getSecurityManager() == null) {
-                return System.getProperty(name);
-            } else {
-                return (String) AccessController.doPrivileged(new PrivilegedAction<Object>() {
-                    public Object run() {
-                        return System.getProperty(name);
-                    }
-                });
-            }
-        }
-    }
-
 
 }

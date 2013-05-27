@@ -23,6 +23,7 @@
 package org.jboss.as.domain.management;
 
 import java.io.IOException;
+import java.security.GeneralSecurityException;
 import java.util.Set;
 
 import javax.naming.NamingException;
@@ -30,10 +31,10 @@ import javax.security.auth.callback.Callback;
 import javax.security.auth.callback.UnsupportedCallbackException;
 
 import org.jboss.as.controller.OperationFailedException;
+import org.jboss.logging.Messages;
 import org.jboss.logging.annotations.Cause;
 import org.jboss.logging.annotations.Message;
 import org.jboss.logging.annotations.MessageBundle;
-import org.jboss.logging.Messages;
 import org.jboss.logging.annotations.Param;
 import org.jboss.msc.service.StartException;
 
@@ -367,16 +368,6 @@ public interface DomainManagementMessages {
     String unableToLoadUsers(String file, String error);
 
     /**
-     * The error message if the user is already in at least one file.
-     *
-     * @param user - The name of the user.
-     *
-     * @return a {@link String} for the message.
-     */
-    @Message(id = 15243, value = "The user '%s' already exists in at least one properties file.")
-    String duplicateUser(String user);
-
-    /**
      * The error message header.
      *
      * @return a {@link String} for the message.
@@ -563,7 +554,7 @@ public interface DomainManagementMessages {
      * @param mechanismName - the name of the mechanism being registered.
      * @return an {@link StartException} for the failure.
      */
-    @Message(id = 15256, value = "Multiple CallbackHanderServices for the same mechanism (%s)")
+    @Message(id = 15256, value = "Multiple CallbackHandlerServices for the same mechanism (%s)")
     StartException multipleCallbackHandlerForMechanism(final String mechanismName);
 
     /**
@@ -621,7 +612,7 @@ public interface DomainManagementMessages {
      *
      * @return a {@link String} for the message.
      */
-    @Message(id = 15264, value = "Password is not strong enough, it is '%s'. It should be atleast '%s'.")
+    @Message(id = 15264, value = "Password is not strong enough, it is '%s'. It should be at least '%s'.")
     String passwordNotStrongEnough(String currentStrength, String desiredStrength);
 
     /**
@@ -639,7 +630,7 @@ public interface DomainManagementMessages {
      *
      * @return a {@link String} for the message.
      */
-    @Message(id = 15266, value = "Password must not have atleast one digit.")
+    @Message(id = 15266, value = "Password must have at least one digit.")
     String passwordMustHaveDigit();
 
     /**
@@ -647,7 +638,7 @@ public interface DomainManagementMessages {
      *
      * @return a {@link String} for the message.
      */
-    @Message(id = 15267, value = "Password must have atleast one non-alphanumeric symbol.")
+    @Message(id = 15267, value = "Password must have at least one non-alphanumeric symbol.")
     String passwordMustHaveSymbol();
 
     /**
@@ -655,7 +646,7 @@ public interface DomainManagementMessages {
      *
      * @return a {@link String} for the message.
      */
-    @Message(id = 15268, value = "Password must have atleast one alphanumeric character.")
+    @Message(id = 15268, value = "Password must have at least one alphanumeric character.")
     String passwordMustHaveAlpha();
 
     /**
@@ -663,8 +654,17 @@ public interface DomainManagementMessages {
      * @param desiredLength - desired length of password.
      * @return a {@link String} for the message.
      */
-    @Message(id = 15269, value = "Password must have atleast '%s' characters!")
-    String passwordNotLontEnough(int desiredLength);
+    @Message(id = 15269, value = "Password must have at least '%s' characters!")
+    String passwordNotLongEnough(int desiredLength);
+
+    @Message(id = 15270, value = "Unable to load key trust file.")
+    IllegalStateException unableToLoadKeyTrustFile(@Cause Throwable t);
+
+    @Message(id = 15271, value = "Unable to operate on trust store.")
+    IllegalStateException unableToOperateOnTrustStore(@Cause GeneralSecurityException gse);
+
+    @Message(id = 15272, value = "Unable to create delegate trust manager.")
+    IllegalStateException unableToCreateDelegateTrustManager();
 
     /**
      * A prompt to double check the user is really sure they want to set password.
@@ -789,6 +789,22 @@ public interface DomainManagementMessages {
      */
     @Message(id = Message.NONE, value = "n")
     String shortNo();
+
+    /**
+     * Message to check if an alternative realm is really desired.
+     *
+     * @return the message.
+     */
+    @Message(id = Message.NONE, value = "The realm name supplied must match the name used by the server configuration which by default would be '%s'")
+    String alternativeRealm(final String defaultRealm);
+
+    /**
+     * Confirmation of realm choice.
+     *
+     * @return the message.
+     */
+    @Message(id = Message.NONE, value = "Are you sure you want to set the realm to '%s'")
+    String realmConfirmation(final String chosenRealm);
 
     /*
      * Logging IDs 15200 to 15299 are reserved for domain management, the file DomainManagementLogger also contains messages in

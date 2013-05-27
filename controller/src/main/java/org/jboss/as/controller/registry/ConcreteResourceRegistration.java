@@ -41,13 +41,13 @@ import org.jboss.as.controller.PathAddress;
 import org.jboss.as.controller.PathElement;
 import org.jboss.as.controller.ProxyController;
 import org.jboss.as.controller.ResourceDefinition;
-import org.jboss.as.controller.descriptions.DefaultOperationDescriptionProvider;
 import org.jboss.as.controller.descriptions.DescriptionProvider;
 import org.jboss.as.controller.registry.AttributeAccess.AccessType;
 import org.jboss.as.controller.registry.AttributeAccess.Storage;
 import org.jboss.as.controller.registry.OperationEntry.EntryType;
 import org.jboss.dmr.ModelNode;
 
+@SuppressWarnings("deprecation")
 final class ConcreteResourceRegistration extends AbstractResourceRegistration {
 
     @SuppressWarnings("unused")
@@ -80,16 +80,19 @@ final class ConcreteResourceRegistration extends AbstractResourceRegistration {
 
     @Override
     public boolean isRuntimeOnly() {
+        checkPermission();
         return runtimeOnly.get();
     }
 
     @Override
     public void setRuntimeOnly(final boolean runtimeOnly) {
+        checkPermission();
         this.runtimeOnly.set(runtimeOnly);
     }
 
     @Override
     public boolean isRemote() {
+        checkPermission();
         return false;
     }
 
@@ -143,6 +146,7 @@ final class ConcreteResourceRegistration extends AbstractResourceRegistration {
             }
             return subregistry.getOperationEntry(iterator, next.getValue(), operationName, inheritance);
         } else {
+            checkPermission();
             final OperationEntry entry = operationsUpdater.get(this, operationName);
             return entry == null ? inherited : entry;
         }
@@ -150,6 +154,7 @@ final class ConcreteResourceRegistration extends AbstractResourceRegistration {
 
     @Override
     OperationEntry getInheritableOperationEntry(final String operationName) {
+        checkPermission();
         final OperationEntry entry = operationsUpdater.get(this, operationName);
         if (entry != null && entry.isInherited()) {
             return entry;
@@ -161,6 +166,7 @@ final class ConcreteResourceRegistration extends AbstractResourceRegistration {
     void getOperationDescriptions(final ListIterator<PathElement> iterator, final Map<String, OperationEntry> providers, final boolean inherited) {
 
         if (!iterator.hasNext() ) {
+            checkPermission();
             providers.putAll(operationsUpdater.get(this));
             if (inherited) {
                 getInheritedOperations(providers, true);
@@ -182,6 +188,7 @@ final class ConcreteResourceRegistration extends AbstractResourceRegistration {
 
     @Override
     void getInheritedOperationEntries(final Map<String, OperationEntry> providers) {
+        checkPermission();
         for (final Map.Entry<String, OperationEntry> entry : operationsUpdater.get(this).entrySet()) {
             if (entry.getValue().isInherited() && !providers.containsKey(entry.getKey())) {
                 providers.put(entry.getKey(), entry.getValue());
@@ -191,6 +198,7 @@ final class ConcreteResourceRegistration extends AbstractResourceRegistration {
 
     @Override
     public void registerOperationHandler(final String operationName, final OperationStepHandler handler, final DescriptionProvider descriptionProvider, final boolean inherited, EntryType entryType) {
+        checkPermission();
         if (operationsUpdater.putIfAbsent(this, operationName, new OperationEntry(handler, descriptionProvider, inherited, entryType)) != null) {
             throw alreadyRegistered("operation handler", operationName);
         }
@@ -198,6 +206,7 @@ final class ConcreteResourceRegistration extends AbstractResourceRegistration {
 
     @Override
     public void registerOperationHandler(final String operationName, final OperationStepHandler handler, final DescriptionProvider descriptionProvider, final boolean inherited, EntryType entryType, EnumSet<OperationEntry.Flag> flags) {
+        checkPermission();
         if (operationsUpdater.putIfAbsent(this, operationName, new OperationEntry(handler, descriptionProvider, inherited, entryType, flags)) != null) {
             throw alreadyRegistered("operation handler", operationName);
         }
@@ -205,6 +214,7 @@ final class ConcreteResourceRegistration extends AbstractResourceRegistration {
 
     @Override
     public void unregisterOperationHandler(final String operationName) {
+        checkPermission();
         if (operationsUpdater.remove(this, operationName) == null) {
             throw operationNotRegisteredException(operationName, resourceDefinition.getPathElement());
         }
@@ -212,6 +222,7 @@ final class ConcreteResourceRegistration extends AbstractResourceRegistration {
 
     @Override
     public void registerReadWriteAttribute(final String attributeName, final OperationStepHandler readHandler, final OperationStepHandler writeHandler, AttributeAccess.Storage storage) {
+        checkPermission();
         AttributeAccess aa = new AttributeAccess(AccessType.READ_WRITE, storage, readHandler, writeHandler, null, null);
         if (attributesUpdater.putIfAbsent(this, attributeName, aa) != null) {
             throw alreadyRegistered("attribute", attributeName);
@@ -220,6 +231,7 @@ final class ConcreteResourceRegistration extends AbstractResourceRegistration {
 
     @Override
     public void registerReadWriteAttribute(final String attributeName, final OperationStepHandler readHandler, final OperationStepHandler writeHandler, EnumSet<AttributeAccess.Flag> flags) {
+        checkPermission();
         AttributeAccess.Storage storage = (flags != null && flags.contains(AttributeAccess.Flag.STORAGE_RUNTIME)) ? Storage.RUNTIME : Storage.CONFIGURATION;
         AttributeAccess aa = new AttributeAccess(AccessType.READ_WRITE, storage, readHandler, writeHandler, null, flags);
         if (attributesUpdater.putIfAbsent(this, attributeName, aa) != null) {
@@ -229,6 +241,7 @@ final class ConcreteResourceRegistration extends AbstractResourceRegistration {
 
     @Override
     public void registerReadWriteAttribute(final AttributeDefinition definition, final OperationStepHandler readHandler, final OperationStepHandler writeHandler) {
+        checkPermission();
         final EnumSet<AttributeAccess.Flag> flags = definition.getFlags();
         final String attributeName = definition.getName();
         AttributeAccess.Storage storage = (flags != null && flags.contains(AttributeAccess.Flag.STORAGE_RUNTIME)) ? Storage.RUNTIME : Storage.CONFIGURATION;
@@ -240,6 +253,7 @@ final class ConcreteResourceRegistration extends AbstractResourceRegistration {
 
     @Override
     public void registerReadOnlyAttribute(final String attributeName, final OperationStepHandler readHandler, AttributeAccess.Storage storage) {
+        checkPermission();
         AttributeAccess aa = new AttributeAccess(AccessType.READ_ONLY, storage, readHandler, null, null, null);
         if (attributesUpdater.putIfAbsent(this, attributeName, aa) != null) {
             throw alreadyRegistered("attribute", attributeName);
@@ -248,6 +262,7 @@ final class ConcreteResourceRegistration extends AbstractResourceRegistration {
 
     @Override
     public void registerReadOnlyAttribute(final String attributeName, final OperationStepHandler readHandler, EnumSet<AttributeAccess.Flag> flags) {
+        checkPermission();
         AttributeAccess.Storage storage = (flags != null && flags.contains(AttributeAccess.Flag.STORAGE_RUNTIME)) ? Storage.RUNTIME : Storage.CONFIGURATION;
         AttributeAccess aa = new AttributeAccess(AccessType.READ_ONLY, storage, readHandler, null, null, null);
         if (attributesUpdater.putIfAbsent(this, attributeName, aa) != null) {
@@ -257,6 +272,7 @@ final class ConcreteResourceRegistration extends AbstractResourceRegistration {
 
     @Override
     public void registerReadOnlyAttribute(final AttributeDefinition definition, final OperationStepHandler readHandler) {
+        checkPermission();
         final EnumSet<AttributeAccess.Flag> flags = definition.getFlags();
         final String attributeName = definition.getName();
         AttributeAccess.Storage storage = (flags != null && flags.contains(AttributeAccess.Flag.STORAGE_RUNTIME)) ? Storage.RUNTIME : Storage.CONFIGURATION;
@@ -273,6 +289,7 @@ final class ConcreteResourceRegistration extends AbstractResourceRegistration {
 
     @Override
     public void registerMetric(String attributeName, OperationStepHandler metricHandler, EnumSet<AttributeAccess.Flag> flags) {
+        checkPermission();
         AttributeAccess aa = new AttributeAccess(AccessType.METRIC, AttributeAccess.Storage.RUNTIME, metricHandler, null, null, flags);
         if (attributesUpdater.putIfAbsent(this, attributeName, aa) != null) {
             throw alreadyRegistered("attribute", attributeName);
@@ -281,11 +298,13 @@ final class ConcreteResourceRegistration extends AbstractResourceRegistration {
 
     @Override
     public void unregisterAttribute(String attributeName) {
+        checkPermission();
         attributesUpdater.remove(this, attributeName);
     }
 
     @Override
     public void registerMetric(AttributeDefinition definition, OperationStepHandler metricHandler) {
+        checkPermission();
         AttributeAccess aa = new AttributeAccess(AccessType.METRIC, AttributeAccess.Storage.RUNTIME, metricHandler, null, definition, definition.getFlags());
         if (attributesUpdater.putIfAbsent(this, definition.getName(), aa) != null) {
             throw alreadyRegistered("attribute", definition.getName());
@@ -331,6 +350,7 @@ final class ConcreteResourceRegistration extends AbstractResourceRegistration {
             if (subregistry != null) {
                 return subregistry;
             } else {
+                checkPermission();
                 final NodeSubregistry newRegistry = new NodeSubregistry(key, this);
                 final NodeSubregistry appearing = childrenUpdater.putAtomic(this, key, newRegistry, snapshot);
                 if (appearing == null) {
@@ -354,6 +374,7 @@ final class ConcreteResourceRegistration extends AbstractResourceRegistration {
             }
             return subregistry.getModelDescription(iterator, next.getValue());
         } else {
+            checkPermission();
             return resourceDefinition.getDescriptionProvider(this);
         }
     }
@@ -368,6 +389,7 @@ final class ConcreteResourceRegistration extends AbstractResourceRegistration {
             }
             return subregistry.getAttributeNames(iterator, next.getValue());
         } else {
+            checkPermission();
             final Map<String, AttributeAccess> snapshot = attributesUpdater.get(this);
             return snapshot.keySet();
         }
@@ -384,6 +406,7 @@ final class ConcreteResourceRegistration extends AbstractResourceRegistration {
             }
             return subregistry.getAttributeAccess(iterator, next.getValue(), attributeName);
         } else {
+            checkPermission();
             final Map<String, AttributeAccess> snapshot = attributesUpdater.get(this);
             AttributeAccess access = snapshot.get(attributeName);
             if (access == null && hasNoAlternativeWildcardRegistration()) {
@@ -412,6 +435,7 @@ final class ConcreteResourceRegistration extends AbstractResourceRegistration {
             }
             return subregistry.getChildNames(iterator, next.getValue());
         } else {
+            checkPermission();
             final Map<String, NodeSubregistry> children = this.children;
             if (children != null) {
                 return Collections.unmodifiableSet(children.keySet());
@@ -430,6 +454,7 @@ final class ConcreteResourceRegistration extends AbstractResourceRegistration {
             }
             return subregistry.getChildAddresses(iterator, next.getValue());
         } else {
+            checkPermission();
             final Map<String, NodeSubregistry> children = this.children;
             if (children != null) {
                 final Set<PathElement> elements = new HashSet<PathElement>();
@@ -486,6 +511,7 @@ final class ConcreteResourceRegistration extends AbstractResourceRegistration {
     @Override
     AbstractResourceRegistration getResourceRegistration(ListIterator<PathElement> iterator) {
         if (! iterator.hasNext()) {
+            checkPermission();
             return this;
         } else {
             final PathElement address = iterator.next();
@@ -509,6 +535,7 @@ final class ConcreteResourceRegistration extends AbstractResourceRegistration {
 
     @Override
     public AliasEntry getAliasEntry() {
+        checkPermission();
         return null;
     }
 }

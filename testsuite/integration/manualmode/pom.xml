@@ -5,19 +5,19 @@
     <modelVersion>4.0.0</modelVersion>
 
     <parent>
-        <groupId>org.jboss.as</groupId>
-        <artifactId>jboss-as-ts-integ</artifactId>
-        <version>7.2.0.Alpha1-SNAPSHOT</version>
+        <groupId>org.wildfly</groupId>
+        <artifactId>wildfly-ts-integ</artifactId>
+        <version>8.0.0.Alpha2-SNAPSHOT</version>
     </parent>
 
     <!-- ********************************************************************************** -->
     <!-- ************************* Manual-mode Integration Tests ************************** -->
     <!-- ********************************************************************************** -->
-    <groupId>org.jboss.as</groupId>
-    <artifactId>jboss-as-ts-integ-manualmode</artifactId>
-    <version>7.2.0.Alpha1-SNAPSHOT</version>
+    <groupId>org.wildfly</groupId>
+    <artifactId>wildfly-ts-integ-manualmode</artifactId>
+    <version>8.0.0.Alpha2-SNAPSHOT</version>
 
-    <name>JBoss Application Server Test Suite: Integration - Manual Mode Tests</name>
+    <name>WildFly Test Suite: Integration - Manual Mode Tests</name>
 
     <properties>
         <jbossas.ts.integ.dir>${basedir}/..</jbossas.ts.integ.dir>
@@ -85,6 +85,10 @@
                                 <phase>test</phase>
                                 <goals><goal>test</goal></goals>
                                 <configuration>
+
+                                    <!-- Workaround for nasty and hacky tests not cleaning up completely after themselves. -->
+                                    <forkMode>pertest</forkMode>
+
                                     <includes>
                                         <include>org/jboss/as/test/manualmode/**/*TestCase.java</include>
                                     </includes>
@@ -93,6 +97,12 @@
                                     <systemPropertyVariables>
                                         <arquillian.launch>manual-mode</arquillian.launch>
                                         <jboss.server.config.file.name>standalone-ha.xml</jboss.server.config.file.name>
+                                        <!-- needed for SSLEJBRemoteClientTestCase only, however setting them from within the test itself isn't possible -->
+                                        <javax.net.ssl.trustStore>${basedir}/src/test/resources/ejb3/ssl/jbossClient.truststore</javax.net.ssl.trustStore>
+                                        <javax.net.ssl.keyStore>${basedir}/src/test/resources/ejb3/ssl/jbossClient.keystore</javax.net.ssl.keyStore>
+                                        <javax.net.ssl.trustStorePassword>clientPassword</javax.net.ssl.trustStorePassword>
+                                        <javax.net.ssl.keyStorePassword>clientPassword</javax.net.ssl.keyStorePassword>
+                                        <javax.net.debug>ssl</javax.net.debug>
                                     </systemPropertyVariables>
                                 </configuration>
                             </execution>

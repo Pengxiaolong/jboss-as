@@ -25,7 +25,8 @@ package org.jboss.as.osgi.deployment;
 import static org.jboss.as.osgi.OSGiMessages.MESSAGES;
 
 import org.jboss.as.osgi.OSGiConstants;
-import org.jboss.as.osgi.service.BundleInstallIntegration;
+import org.jboss.as.osgi.OSGiConstants.DeploymentType;
+import org.jboss.as.osgi.service.BundleLifecycleIntegration;
 import org.jboss.as.server.deployment.Attachments;
 import org.jboss.as.server.deployment.DeploymentPhaseContext;
 import org.jboss.as.server.deployment.DeploymentUnit;
@@ -48,20 +49,21 @@ public class OSGiBundleInfoParseProcessor implements DeploymentUnitProcessor {
     @Override
     public void deploy(DeploymentPhaseContext phaseContext) throws DeploymentUnitProcessingException {
 
-        final DeploymentUnit depUnit = phaseContext.getDeploymentUnit();
-        final String contextName = depUnit.getName();
+        DeploymentUnit depUnit = phaseContext.getDeploymentUnit();
+        String runtimeName = depUnit.getName();
 
         // Check if we already have a bundle {@link Deployment}
-        if (BundleInstallIntegration.getDeployment(contextName) != null)
+        if (BundleLifecycleIntegration.getDeployment(runtimeName) != null)
             return;
 
-        // Get the manifest from the deployment's virtual file
+        // Construct the {@link BundleInfo} if we have valid {@link OSGiMetaData} for a bundle deployment
         OSGiMetaData metadata = depUnit.getAttachment(OSGiConstants.OSGI_METADATA_KEY);
-        if (metadata != null) {
+        DeploymentType deploymentType = depUnit.getAttachment(OSGiConstants.DEPLOYMENT_TYPE_KEY);
+        if (metadata != null && deploymentType != DeploymentType.Module) {
             try {
                 // Construct and attach the {@link BundleInfo} from {@link OSGiMetaData}
                 VirtualFile virtualFile = depUnit.getAttachment(Attachments.DEPLOYMENT_ROOT).getRoot();
-                BundleInfo info = BundleInfo.createBundleInfo(AbstractVFS.adapt(virtualFile), contextName, metadata);
+                BundleInfo info = BundleInfo.createBundleInfo(AbstractVFS.adapt(virtualFile), runtimeName, metadata);
                 depUnit.putAttachment(OSGiConstants.BUNDLE_INFO_KEY, info);
             } catch (BundleException ex) {
                 throw MESSAGES.cannotCreateBundleDeployment(ex, depUnit);

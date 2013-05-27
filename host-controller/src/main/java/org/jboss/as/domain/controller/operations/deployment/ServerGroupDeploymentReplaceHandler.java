@@ -35,11 +35,11 @@ import org.jboss.as.controller.OperationFailedException;
 import org.jboss.as.controller.OperationStepHandler;
 import org.jboss.as.controller.PathAddress;
 import org.jboss.as.controller.PathElement;
-import org.jboss.as.controller.operations.common.Util;
 import org.jboss.as.controller.registry.Resource;
 import org.jboss.as.repository.HostFileRepository;
 import org.jboss.as.server.controller.resources.DeploymentAttributes;
 import org.jboss.dmr.ModelNode;
+import org.jboss.dmr.ModelType;
 
 /**
  * Handles replacement in the runtime of one deployment by another.
@@ -49,10 +49,6 @@ import org.jboss.dmr.ModelNode;
 public class ServerGroupDeploymentReplaceHandler implements OperationStepHandler {
 
     public static final String OPERATION_NAME = REPLACE_DEPLOYMENT;
-
-    static final ModelNode getOperation(ModelNode address) {
-        return Util.getEmptyOperation(OPERATION_NAME, address);
-    }
 
     private final HostFileRepository fileRepository;
 
@@ -106,18 +102,19 @@ public class ServerGroupDeploymentReplaceHandler implements OperationStepHandler
             final Resource resource = context.createResource(PathAddress.EMPTY_ADDRESS.append(deploymentPath));
             final ModelNode deployNode = resource.getModel();
             deployNode.set(deployment); // Get the information from the domain deployment
-            deployNode.remove("content"); // Prune the content information
+            deployNode.remove(CONTENT); // Prune the content information
             deployNode.get(ENABLED).set(true); // Enable
         } else {
             deploymentResource = context.readResourceForUpdate(PathAddress.EMPTY_ADDRESS.append(deploymentPath));
-            if(deploymentResource.getModel().get(ENABLED).asBoolean()) {
+            ModelNode enabled = deploymentResource.getModel().hasDefined(ENABLED) ? deploymentResource.getModel().get(ENABLED) : new ModelNode(false);
+            if (enabled.getType() == ModelType.BOOLEAN && enabled.asBoolean()) {
                 throw operationFailed(MESSAGES.deploymentAlreadyStarted(toReplace));
             }
             deploymentResource.getModel().get(ENABLED).set(true);
         }
         //
         replaceResource.getModel().get(ENABLED).set(false);
-        context.completeStep();
+        context.stepCompleted();
     }
 
     private static OperationFailedException operationFailed(String msg) {

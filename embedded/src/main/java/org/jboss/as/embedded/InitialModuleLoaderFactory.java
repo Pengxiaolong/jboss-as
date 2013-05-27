@@ -27,6 +27,7 @@ import org.jboss.modules.Module;
 import org.jboss.modules.ModuleLoader;
 
 import java.io.File;
+import org.wildfly.security.manager.WildFlySecurityManager;
 
 /**
  * A factory for the initial ModuleLoader.
@@ -47,14 +48,15 @@ final class InitialModuleLoaderFactory {
      * @return The default module loader
      */
     public static ModuleLoader getModuleLoader(File modulePath, String... systemPackages) {
+        if (modulePath == null)
+            throw MESSAGES.nullVar("modulePath");
+        if (modulePath.isDirectory() == false)
+            throw MESSAGES.invalidModulePath(modulePath.getAbsolutePath());
 
-        if (modulePath == null || modulePath.isDirectory() == false)
-            throw MESSAGES.invalidModulePath(modulePath);
-
-        String oldClassPath = SecurityActions.getSystemProperty("java.class.path");
+        String oldClassPath = WildFlySecurityManager.getPropertyPrivileged("java.class.path", null);
         try {
-            SecurityActions.clearSystemProperty("java.class.path");
-            SecurityActions.setSystemProperty("module.path", modulePath.getAbsolutePath());
+            WildFlySecurityManager.clearPropertyPrivileged("java.class.path");
+            WildFlySecurityManager.setPropertyPrivileged("module.path", modulePath.getAbsolutePath());
 
             StringBuffer packages = new StringBuffer("org.jboss.modules," + InitialModuleLoaderFactory.class.getPackage().getName());
             // for model operations
@@ -63,13 +65,13 @@ final class InitialModuleLoaderFactory {
                 for (String packageName : systemPackages)
                     packages.append("," + packageName);
             }
-            SecurityActions.setSystemProperty("jboss.modules.system.pkgs", packages.toString());
+            WildFlySecurityManager.setPropertyPrivileged("jboss.modules.system.pkgs", packages.toString());
 
             ModuleLoader moduleLoader = Module.getBootModuleLoader();
 
             return moduleLoader;
         } finally {
-            SecurityActions.setSystemProperty("java.class.path", oldClassPath);
+            WildFlySecurityManager.setPropertyPrivileged("java.class.path", oldClassPath);
         }
     }
 }

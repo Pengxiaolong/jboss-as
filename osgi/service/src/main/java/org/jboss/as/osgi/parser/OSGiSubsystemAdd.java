@@ -38,20 +38,21 @@ import org.jboss.as.controller.ServiceVerificationHandler;
 import org.jboss.as.controller.registry.Resource;
 import org.jboss.as.osgi.SubsystemExtension;
 import org.jboss.as.osgi.deployment.BundleActivateProcessor;
+import org.jboss.as.osgi.deployment.BundleDependenciesProcessor;
 import org.jboss.as.osgi.deployment.BundleDeploymentProcessor;
 import org.jboss.as.osgi.deployment.BundleInstallProcessor;
 import org.jboss.as.osgi.deployment.BundleResolveProcessor;
-import org.jboss.as.osgi.deployment.BundleResolveSubProcessor;
 import org.jboss.as.osgi.deployment.BundleSubDeploymentMarkingProcessor;
+import org.jboss.as.osgi.deployment.DeferredPhaseProcessor;
 import org.jboss.as.osgi.deployment.FrameworkActivateProcessor;
 import org.jboss.as.osgi.deployment.ModuleRegisterProcessor;
 import org.jboss.as.osgi.deployment.OSGiBundleInfoParseProcessor;
 import org.jboss.as.osgi.deployment.OSGiComponentParseProcessor;
 import org.jboss.as.osgi.deployment.OSGiManifestStructureProcessor;
+import org.jboss.as.osgi.deployment.OSGiMetaDataStructureProcessor;
 import org.jboss.as.osgi.deployment.OSGiXServiceParseProcessor;
 import org.jboss.as.osgi.management.OSGiRuntimeResource;
 import org.jboss.as.osgi.parser.SubsystemState.Activation;
-import org.jboss.as.osgi.service.FrameworkActivator;
 import org.jboss.as.osgi.service.FrameworkBootstrapService;
 import org.jboss.as.osgi.service.InitialDeploymentTracker;
 import org.jboss.as.osgi.service.ModuleRegistrationTracker;
@@ -87,21 +88,19 @@ class OSGiSubsystemAdd extends AbstractBoottimeAddStepHandler {
     }
 
     @Override
-    protected void populateModel(final ModelNode operation, final ModelNode model) {
-        if (operation.has(ModelConstants.ACTIVATION)) {
-            model.get(ModelConstants.ACTIVATION).set(operation.get(ModelConstants.ACTIVATION));
-        }
+    protected void populateModel(final ModelNode operation, final ModelNode model) throws OperationFailedException {
+        OSGiRootResource.ACTIVATION.validateAndSet(operation, model);
     }
 
     @Override
     protected void performBoottime(final OperationContext context, final ModelNode operation, final ModelNode model,
-            final ServiceVerificationHandler verificationHandler, final List<ServiceController<?>> newControllers) {
+            final ServiceVerificationHandler verificationHandler, final List<ServiceController<?>> newControllers) throws OperationFailedException {
 
         LOGGER.infoActivatingSubsystem();
 
-        final Activation activation = getActivationMode(operation);
+        final Activation activation = Activation.valueOf(OSGiRootResource.ACTIVATION.resolveModelAttribute(context, model).asString().toUpperCase(Locale.ENGLISH));
         final ServiceTarget serviceTarget = context.getServiceTarget();
-        final InitialDeploymentTracker deploymentTracker = new InitialDeploymentTracker(context, verificationHandler);
+        final InitialDeploymentTracker deploymentTracker = new InitialDeploymentTracker(context);
         final ModuleRegistrationTracker registrationTracker = new ModuleRegistrationTracker();
 
         // Collect the subsystem extensions
@@ -111,13 +110,10 @@ class OSGiSubsystemAdd extends AbstractBoottimeAddStepHandler {
             extensions.add(services.next());
         }
 
-        // Create the framework activator
-        FrameworkActivator.create(serviceTarget, activation == Activation.LAZY);
-
         context.addStep(new OperationStepHandler() {
             @Override
             public void execute(OperationContext context, ModelNode operation) throws OperationFailedException {
-                newControllers.add(FrameworkBootstrapService.addService(serviceTarget, resource, extensions, verificationHandler));
+                newControllers.add(FrameworkBootstrapService.addService(serviceTarget, resource, deploymentTracker, extensions, verificationHandler));
                 newControllers.add(registrationTracker.install(serviceTarget, verificationHandler));
                 context.completeStep(OperationContext.RollbackHandler.NOOP_ROLLBACK_HANDLER);
             }
@@ -127,15 +123,17 @@ class OSGiSubsystemAdd extends AbstractBoottimeAddStepHandler {
             @Override
             protected void execute(DeploymentProcessorTarget processorTarget) {
                 processorTarget.addDeploymentProcessor(OSGiExtension.SUBSYSTEM_NAME, Phase.STRUCTURE, Phase.STRUCTURE_OSGI_MANIFEST, new OSGiManifestStructureProcessor());
+                processorTarget.addDeploymentProcessor(OSGiExtension.SUBSYSTEM_NAME, Phase.STRUCTURE, Phase.STRUCTURE_OSGI_PROPERTIES, new OSGiXServiceParseProcessor());
+                processorTarget.addDeploymentProcessor(OSGiExtension.SUBSYSTEM_NAME, Phase.STRUCTURE, Phase.STRUCTURE_OSGI_METADATA, new OSGiMetaDataStructureProcessor());
                 processorTarget.addDeploymentProcessor(OSGiExtension.SUBSYSTEM_NAME, Phase.STRUCTURE, Phase.STRUCTURE_BUNDLE_SUB_DEPLOYMENT, new BundleSubDeploymentMarkingProcessor());
                 processorTarget.addDeploymentProcessor(OSGiExtension.SUBSYSTEM_NAME, Phase.PARSE, Phase.PARSE_OSGI_BUNDLE_INFO, new OSGiBundleInfoParseProcessor());
-                processorTarget.addDeploymentProcessor(OSGiExtension.SUBSYSTEM_NAME, Phase.PARSE, Phase.PARSE_OSGI_PROPERTIES, new OSGiXServiceParseProcessor());
                 processorTarget.addDeploymentProcessor(OSGiExtension.SUBSYSTEM_NAME, Phase.PARSE, Phase.PARSE_OSGI_DEPLOYMENT, new BundleDeploymentProcessor());
                 processorTarget.addDeploymentProcessor(OSGiExtension.SUBSYSTEM_NAME, Phase.PARSE, Phase.PARSE_OSGI_COMPONENTS, new OSGiComponentParseProcessor());
                 processorTarget.addDeploymentProcessor(OSGiExtension.SUBSYSTEM_NAME, Phase.PARSE, Phase.PARSE_OSGI_SUBSYSTEM_ACTIVATOR, new FrameworkActivateProcessor(deploymentTracker));
                 processorTarget.addDeploymentProcessor(OSGiExtension.SUBSYSTEM_NAME, Phase.REGISTER, Phase.REGISTER_BUNDLE_INSTALL, new BundleInstallProcessor(deploymentTracker));
+                processorTarget.addDeploymentProcessor(OSGiExtension.SUBSYSTEM_NAME, Phase.DEPENDENCIES, Phase.DEPENDENCIES_BUNDLE, new BundleDependenciesProcessor());
                 processorTarget.addDeploymentProcessor(OSGiExtension.SUBSYSTEM_NAME, Phase.CONFIGURE_MODULE, Phase.CONFIGURE_RESOLVE_BUNDLE, new BundleResolveProcessor());
-                processorTarget.addDeploymentProcessor(OSGiExtension.SUBSYSTEM_NAME, Phase.CONFIGURE_MODULE, Phase.CONFIGURE_RESOLVE_SUB_BUNDLE, new BundleResolveSubProcessor());
+                processorTarget.addDeploymentProcessor(OSGiExtension.SUBSYSTEM_NAME, Phase.CONFIGURE_MODULE, Phase.CONFIGURE_DEFERRED_PHASE, new DeferredPhaseProcessor());
                 processorTarget.addDeploymentProcessor(OSGiExtension.SUBSYSTEM_NAME, Phase.INSTALL, Phase.INSTALL_RESOLVER_MODULE, new ModuleRegisterProcessor(registrationTracker));
                 processorTarget.addDeploymentProcessor(OSGiExtension.SUBSYSTEM_NAME, Phase.INSTALL, Phase.INSTALL_BUNDLE_ACTIVATE, new BundleActivateProcessor());
             }
@@ -149,13 +147,4 @@ class OSGiSubsystemAdd extends AbstractBoottimeAddStepHandler {
         // Add the subsystem state as a service
         newControllers.add(SubsystemState.addService(serviceTarget, activation));
     }
-
-    private Activation getActivationMode(ModelNode operation) {
-        Activation activation = SubsystemState.DEFAULT_ACTIVATION;
-        if (operation.has(ModelConstants.ACTIVATION)) {
-            activation = Activation.valueOf(operation.get(ModelConstants.ACTIVATION).asString().toUpperCase(Locale.ENGLISH));
-        }
-        return activation;
-    }
-
 }

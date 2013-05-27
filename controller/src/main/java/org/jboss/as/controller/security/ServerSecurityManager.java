@@ -22,6 +22,8 @@
 
 package org.jboss.as.controller.security;
 
+import java.lang.reflect.Method;
+import java.security.CodeSource;
 import java.security.Principal;
 import java.util.Collection;
 import java.util.Map;
@@ -36,8 +38,11 @@ import javax.security.auth.Subject;
  */
 public interface ServerSecurityManager {
 
-    void push(final String securityDomain, final String runAs, final String runAsPrincipal, final Set<String> extraRoles);
+    void push(final String securityDomain);
     void push(final String securityDomain, String userName, char[] password, final Subject subject);
+
+    void authenticate();
+    void authenticate(final String runAs, final String runAsPrincipal, final Set<String> extraRoles);
 
     void pop();
 
@@ -47,5 +52,7 @@ public interface ServerSecurityManager {
 
     boolean isCallerInRole(final Object mappedRoles, final Map<String, Collection<String>> roleLinks,
             final String... roleNames);
+
+    boolean authorize(String ejbName, CodeSource ejbCodeSource, String ejbMethodIntf, Method ejbMethod, Set<Principal> methodRoles, String contextID);
 
 }

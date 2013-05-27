@@ -1,3 +1,25 @@
+/*
+ * JBoss, Home of Professional Open Source.
+ * Copyright 2012, Red Hat, Inc., and individual contributors
+ * as indicated by the @author tags. See the copyright.txt file in the
+ * distribution for a full listing of individual contributors.
+ *
+ * This is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU Lesser General Public License as
+ * published by the Free Software Foundation; either version 2.1 of
+ * the License, or (at your option) any later version.
+ *
+ * This software is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with this software; if not, write to the Free
+ * Software Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA
+ * 02110-1301 USA, or see the FSF site: http://www.fsf.org.
+ */
+
 package org.jboss.as.modcluster;
 
 import org.jboss.as.controller.AbstractAddStepHandler;
@@ -37,6 +59,14 @@ public class LoadMetricAdd extends AbstractAddStepHandler {
         }
     }
 
+    @Override
+    protected boolean requiresRuntime(OperationContext context) {
+        // Our Stage.RUNTIME handling only sets context.reloadRequired();
+        // We only need to do that if ModClusterSubsystemAdd isn't running in the
+        // same overall operation. So check if they are
+        return !ModClusterSubsystemAdd.isActiveInContext(context) && super.requiresRuntime(context);
+    }
+
     /**
      * Make any runtime changes necessary to effect the changes indicated by the given {@code operation}. Executes
      * after {@link #populateModel(org.jboss.dmr.ModelNode, org.jboss.dmr.ModelNode)}, so the given {@code model}
@@ -61,19 +91,12 @@ public class LoadMetricAdd extends AbstractAddStepHandler {
      */
     @Override
     protected void performRuntime(OperationContext context, ModelNode operation, ModelNode model, ServiceVerificationHandler verificationHandler, List<ServiceController<?>> newControllers) throws OperationFailedException {
-        if (context.isNormalServer() && !context.isBooting()) {
-            context.reloadRequired();
-        }
+        context.reloadRequired();
+    }
 
-        context.completeStep(new OperationContext.RollbackHandler() {
-            @Override
-            public void handleRollback(OperationContext context, ModelNode operation) {
-                if (context.isNormalServer() && !context.isBooting()) {
-                    context.revertReloadRequired();
-                }
-            }
-        });
-
-
+    @Override
+    protected void rollbackRuntime(OperationContext context, ModelNode operation, ModelNode model, List<ServiceController<?>> controllers) {
+        // just revert the reload-required
+        context.revertReloadRequired();
     }
 }

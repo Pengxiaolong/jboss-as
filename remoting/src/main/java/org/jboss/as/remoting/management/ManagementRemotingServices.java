@@ -29,6 +29,7 @@ import static org.jboss.msc.service.ServiceController.Mode.ACTIVE;
 import static org.jboss.msc.service.ServiceController.Mode.ON_DEMAND;
 
 import java.util.List;
+import java.util.concurrent.ExecutorService;
 
 import org.jboss.as.controller.ModelController;
 import org.jboss.as.controller.OperationContext;
@@ -43,7 +44,6 @@ import org.jboss.msc.service.ServiceTarget;
 import org.jboss.remoting3.Endpoint;
 import org.jboss.remoting3.RemotingOptions;
 import org.xnio.OptionMap;
-import org.xnio.Options;
 
 /**
  * Utility class to add remoting services
@@ -57,6 +57,7 @@ public final class ManagementRemotingServices extends RemotingServices {
 
     /** The name of the endpoint service used for management */
     public static final ServiceName MANAGEMENT_ENDPOINT = RemotingServices.REMOTING_BASE.append("endpoint", "management");
+    public static final ServiceName SHUTDOWN_EXECUTOR_NAME = MANAGEMENT_ENDPOINT.append("shutdown", "executor");
 
     /** The name of the external management channel */
     public static final String MANAGEMENT_CHANNEL = "management";
@@ -68,6 +69,7 @@ public final class ManagementRemotingServices extends RemotingServices {
     public static final String SERVER_CHANNEL = "server";
 
     public static final String MANAGEMENT_CONNECTOR = "management";
+    public static final String HTTP_CONNECTOR = "http-management";
 
     /**
      * Installs a remoting stream server for a domain instance
@@ -122,6 +124,7 @@ public final class ManagementRemotingServices extends RemotingServices {
                 .addDependency(endpointName, Endpoint.class, channelOpenListenerService.getEndpointInjector())
                 .addDependency(operationHandlerName, ManagementChannelInitialization.class, channelOpenListenerService.getOperationHandlerInjector())
                 .addDependency(ManagementChannelRegistryService.SERVICE_NAME, ManagementChannelRegistryService.class, channelOpenListenerService.getRegistry())
+                .addDependency(SHUTDOWN_EXECUTOR_NAME, ExecutorService.class, channelOpenListenerService.getExecutorServiceInjectedValue())
                 .setInitialMode(onDemand ? ON_DEMAND : ACTIVE);
 
         addController(newControllers, verificationHandler, builder);

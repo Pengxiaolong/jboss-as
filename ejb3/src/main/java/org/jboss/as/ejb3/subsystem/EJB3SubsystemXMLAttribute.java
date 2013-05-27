@@ -42,6 +42,9 @@ public enum EJB3SubsystemXMLAttribute {
     CORE_THREADS("core-threads"),
 
     DEFAULT_ACCESS_TIMEOUT("default-access-timeout"),
+    DEFAULT_DATA_STORE("default-data-store"),
+    DATABASE("database"),
+    DATASOURCE_JNDI_NAME("datasource-jndi-name"),
 
     ENABLED("enabled"),
     ENABLE_BY_DEFAULT("enable-by-default"),
@@ -61,8 +64,10 @@ public enum EJB3SubsystemXMLAttribute {
 
     NAME("name"),
 
+    PARTITION("partition"),
     PASS_BY_VALUE("pass-by-value"),
     PASSIVATE_EVENTS_ON_REPLICATE("passivate-events-on-replicate"),
+    PASSIVATION_DISABLED_CACHE_REF("passivation-disabled-cache-ref"),
     PASSIVATION_STORE_REF("passivation-store-ref"),
     PATH("path"),
     POOL_NAME("pool-name"),

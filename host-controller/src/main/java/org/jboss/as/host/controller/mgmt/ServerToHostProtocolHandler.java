@@ -145,6 +145,19 @@ public class ServerToHostProtocolHandler implements ManagementRequestHandlerFact
          */
         ModelNode execute(ModelNode operation, OperationMessageHandler handler, ModelController.OperationTransactionControl control, OperationAttachments attachments, OperationStepHandler step);
 
+        /**
+         * Join an existing operation
+         *
+         * @param operation the operation to execute
+         * @param handler the message handler
+         * @param control the transaction control
+         * @param attachments the operation attachments
+         * @param step the step to be executed
+         * @param permit the permit
+         * @return the result
+         */
+        ModelNode joinActiveOperation(ModelNode operation, OperationMessageHandler handler, ModelController.OperationTransactionControl control, OperationAttachments attachments, OperationStepHandler step, int permit);
+
     }
 
     /**
@@ -155,6 +168,7 @@ public class ServerToHostProtocolHandler implements ManagementRequestHandlerFact
         @Override
         public void handleRequest(final DataInput input, final ActiveOperation.ResultHandler<Void> resultHandler, final ManagementRequestContext<Void> context) throws IOException {
             final String serverName = input.readUTF();
+            final int operationId = input.readInt();
             serverProcessName = serverName;
             CONTROLLER_MANAGEMENT_LOGGER.serverRegistered(serverName, context.getChannel());
             // Execute the registration request
@@ -163,7 +177,7 @@ public class ServerToHostProtocolHandler implements ManagementRequestHandlerFact
                 public void execute(final ManagementRequestContext<Void> context) throws Exception {
                     try {
                         final OperationStepHandler stepHandler = new ServerRegistrationStepHandler(serverName, context);
-                        final ModelNode result = operationExecutor.execute(EMPTY_OP, OperationMessageHandler.DISCARD, ModelController.OperationTransactionControl.COMMIT, OperationAttachments.EMPTY, stepHandler);
+                        final ModelNode result = operationExecutor.joinActiveOperation(EMPTY_OP, OperationMessageHandler.DISCARD, ModelController.OperationTransactionControl.COMMIT, OperationAttachments.EMPTY, stepHandler, operationId);
                         if(! SUCCESS.equals(result.get(OUTCOME).asString())) {
                             safeWriteResponse(context.getChannel(), context.getRequestHeader(), DomainServerProtocol.PARAM_ERROR);
                         }
@@ -217,13 +231,19 @@ public class ServerToHostProtocolHandler implements ManagementRequestHandlerFact
                 }
             } catch (IOException e) {
                 context.getFailureDescription().set(e.getMessage());
-                context.completeStep();
+                context.stepCompleted();
                 return;
             }
-            if(context.completeStep() == OperationContext.ResultAction.KEEP) {
-                // Register the server proxy
-                domainController.registerRunningServer(controller);
-            }
+
+            context.completeStep(new OperationContext.ResultHandler() {
+                @Override
+                public void handleResult(OperationContext.ResultAction resultAction, OperationContext context, ModelNode operation) {
+                    if(resultAction == OperationContext.ResultAction.KEEP) {
+                        // Register the server proxy
+                        domainController.registerRunningServer(controller);
+                    }
+                }
+            });
         }
     }
 
@@ -255,7 +275,7 @@ public class ServerToHostProtocolHandler implements ManagementRequestHandlerFact
                             }
                             // Notify the server whether configuration is still in sync or it requires a reload
                             safeWriteResponse(channel, requestContext.getRequestHeader(), param);
-                            context.completeStep();
+                            context.completeStep(OperationContext.RollbackHandler.NOOP_ROLLBACK_HANDLER);
                         }
                     };
                     try {
@@ -265,6 +285,8 @@ public class ServerToHostProtocolHandler implements ManagementRequestHandlerFact
                         }
                     } catch (Exception e) {
                         safeWriteResponse(context, e);
+                    } finally {
+                        resultHandler.done(null);
                     }
                 }
             });

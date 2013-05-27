@@ -24,11 +24,6 @@ package org.jboss.as.test.clustering.extended.ejb2.stateful.remote.failover.dd;
 
 import static org.jboss.as.test.clustering.ClusteringTestConstants.*;
 
-import java.util.Properties;
-
-import javax.naming.Context;
-import javax.naming.InitialContext;
-
 import org.jboss.arquillian.container.test.api.ContainerController;
 import org.jboss.arquillian.container.test.api.Deployer;
 import org.jboss.arquillian.container.test.api.Deployment;
@@ -48,7 +43,6 @@ import org.jboss.shrinkwrap.api.Archive;
 import org.jboss.shrinkwrap.api.ShrinkWrap;
 import org.jboss.shrinkwrap.api.asset.StringAsset;
 import org.jboss.shrinkwrap.api.spec.JavaArchive;
-import org.junit.BeforeClass;
 import org.junit.Ignore;
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -60,7 +54,7 @@ import org.junit.runner.RunWith;
 @RunAsClient
 public class RemoteEJB2ClientStatefulBeanFailoverDDTestCase extends RemoteEJBClientStatefulFaliloverTestBase {
     private static final Logger log = Logger.getLogger(RemoteEJB2ClientStatefulBeanFailoverDDTestCase.class);
-    
+
     @ArquillianResource
     private ContainerController container;
     @ArquillianResource
@@ -77,7 +71,7 @@ public class RemoteEJB2ClientStatefulBeanFailoverDDTestCase extends RemoteEJBCli
     public static Archive<?> createDeploymentForContainer2Singleton() {
         return createDeploymentSingleton();
     }
-    
+
     @Deployment(name = DEPLOYMENT_1, managed = false, testable = false)
     @TargetsContainer(CONTAINER_1)
     public static Archive<?> createDeploymentForContainer1() {
@@ -99,15 +93,8 @@ public class RemoteEJB2ClientStatefulBeanFailoverDDTestCase extends RemoteEJBCli
         jar.addAsManifestResource(new StringAsset("Dependencies: deployment." + ARCHIVE_NAME_SINGLE + ".jar\n"), "MANIFEST.MF");
         log.info(jar.toString(true));
         return jar;
-    }   
-
-    @BeforeClass
-    public static void beforeClass() throws Exception {
-        Properties env = new Properties();
-        env.setProperty(Context.URL_PKG_PREFIXES, "org.jboss.ejb.client.naming");
-        context = new InitialContext(env);
     }
-    
+
     @Ignore("JBPAPP-8726")
     @Override
     @InSequence(1)

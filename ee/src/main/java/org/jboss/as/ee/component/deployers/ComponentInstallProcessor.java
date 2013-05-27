@@ -22,11 +22,6 @@
 
 package org.jboss.as.ee.component.deployers;
 
-import static org.jboss.as.ee.EeLogger.ROOT_LOGGER;
-import static org.jboss.as.ee.EeMessages.MESSAGES;
-import static org.jboss.as.ee.component.Attachments.EE_MODULE_CONFIGURATION;
-import static org.jboss.as.server.deployment.Attachments.MODULE;
-
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -39,10 +34,12 @@ import org.jboss.as.ee.component.ClassDescriptionTraversal;
 import org.jboss.as.ee.component.Component;
 import org.jboss.as.ee.component.ComponentConfiguration;
 import org.jboss.as.ee.component.ComponentNamingMode;
+import org.jboss.as.ee.component.ComponentRegistry;
 import org.jboss.as.ee.component.ComponentStartService;
 import org.jboss.as.ee.component.ComponentView;
 import org.jboss.as.ee.component.DependencyConfigurator;
 import org.jboss.as.ee.component.EEApplicationClasses;
+import org.jboss.as.ee.component.EEApplicationDescription;
 import org.jboss.as.ee.component.EEModuleClassDescription;
 import org.jboss.as.ee.component.EEModuleConfiguration;
 import org.jboss.as.ee.component.InjectionSource;
@@ -70,8 +67,15 @@ import org.jboss.msc.service.ServiceController;
 import org.jboss.msc.service.ServiceName;
 import org.jboss.msc.service.ServiceTarget;
 
+import static org.jboss.as.ee.EeLogger.ROOT_LOGGER;
+import static org.jboss.as.ee.EeMessages.MESSAGES;
+import static org.jboss.as.ee.component.Attachments.COMPONENT_REGISTRY;
+import static org.jboss.as.ee.component.Attachments.EE_MODULE_CONFIGURATION;
+import static org.jboss.as.server.deployment.Attachments.MODULE;
+
 /**
  * @author <a href="mailto:david.lloyd@redhat.com">David M. Lloyd</a>
+ * @author Eduardo Martins
  */
 public final class ComponentInstallProcessor implements DeploymentUnitProcessor {
 
@@ -82,16 +86,19 @@ public final class ComponentInstallProcessor implements DeploymentUnitProcessor 
         if (module == null || moduleConfiguration == null) {
             return;
         }
+        final EEApplicationDescription applicationDescription = deploymentUnit.getAttachment(Attachments.EE_APPLICATION_DESCRIPTION);
+        ComponentRegistry componentRegistry = deploymentUnit.getAttachment(COMPONENT_REGISTRY);
 
         final List<ServiceName> dependencies = deploymentUnit.getAttachmentList(org.jboss.as.server.deployment.Attachments.JNDI_DEPENDENCIES);
 
-        final ServiceName bindingDependencyService = JndiNamingDependencyProcessor.serviceName(deploymentUnit);
+        final ServiceName bindingDependencyService = JndiNamingDependencyProcessor.serviceName(deploymentUnit.getServiceName());
 
         // Iterate through each component, installing it into the container
         for (final ComponentConfiguration configuration : moduleConfiguration.getComponentConfigurations()) {
             try {
                 ROOT_LOGGER.tracef("Installing component %s", configuration.getComponentClass().getName());
                 deployComponent(phaseContext, configuration, dependencies, bindingDependencyService);
+                componentRegistry.addComponent(configuration);
 
                 //we need to make sure that the web deployment has a dependency on all components it the app, so web components are started
                 //when the web subsystem is starting
@@ -103,6 +110,7 @@ public final class ComponentInstallProcessor implements DeploymentUnitProcessor 
         }
     }
 
+    @SuppressWarnings({ "unchecked", "rawtypes" })
     protected void deployComponent(final DeploymentPhaseContext phaseContext, final ComponentConfiguration configuration, final List<ServiceName> dependencies, final ServiceName bindingDependencyService) throws DeploymentUnitProcessingException {
 
         final DeploymentUnit deploymentUnit = phaseContext.getDeploymentUnit();
@@ -231,6 +239,7 @@ public final class ComponentInstallProcessor implements DeploymentUnitProcessor 
         startBuilder.install();
     }
 
+    @SuppressWarnings("unchecked")
     private void processBindings(DeploymentPhaseContext phaseContext, ComponentConfiguration configuration, ServiceTarget serviceTarget, ServiceName contextServiceName, InjectionSource.ResolutionContext resolutionContext, List<BindingConfiguration> bindings, final List<ServiceName> dependencies, final Set<ServiceName> bound) throws DeploymentUnitProcessingException {
 
         //we only handle java:comp bindings for components that have their own namespace here, the rest are processed by ModuleJndiBindingProcessor

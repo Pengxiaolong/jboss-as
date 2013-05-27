@@ -70,7 +70,7 @@ public class CacheFactoryResourceDefinition extends SimpleResourceDefinition {
                     .setFlags(AttributeAccess.Flag.RESTART_NONE)
                     .build();
 
-    private static final AttributeDefinition[] ATTRIBUTES = new AttributeDefinition[] { ALIASES, PASSIVATION_STORE };
+    private static final AttributeDefinition[] ATTRIBUTES = {ALIASES, PASSIVATION_STORE };
     private static final CacheFactoryAdd ADD_HANDLER = new CacheFactoryAdd(ATTRIBUTES);
     private static final CacheFactoryRemove REMOVE_HANDLER = new CacheFactoryRemove(ADD_HANDLER);
 

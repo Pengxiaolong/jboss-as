@@ -22,6 +22,7 @@
 package org.jboss.as.model.test;
 
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.ATTRIBUTES;
+import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.FAILED;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.FAILURE_DESCRIPTION;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.OUTCOME;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.RESULT;
@@ -38,16 +39,21 @@ import java.util.Locale;
 import java.util.Set;
 import java.util.Stack;
 import java.util.TreeSet;
+import java.util.regex.Pattern;
 
-import junit.framework.Assert;
-import junit.framework.AssertionFailedError;
-
+import org.jboss.as.controller.AttributeDefinition;
+import org.jboss.as.controller.ModelVersion;
+import org.jboss.as.controller.OperationFailedException;
 import org.jboss.as.controller.PathAddress;
 import org.jboss.as.controller.PathElement;
+import org.jboss.as.controller.registry.AttributeAccess;
 import org.jboss.as.controller.registry.ImmutableManagementResourceRegistration;
+import org.jboss.as.controller.registry.ManagementResourceRegistration;
+import org.jboss.as.controller.transform.OperationTransformer.TransformedOperation;
 import org.jboss.dmr.ModelNode;
 import org.jboss.dmr.ModelType;
 import org.jboss.dmr.Property;
+import org.junit.Assert;
 import org.w3c.dom.Document;
 import org.w3c.dom.bootstrap.DOMImplementationRegistry;
 import org.w3c.dom.ls.DOMImplementationLS;
@@ -60,6 +66,9 @@ import org.w3c.dom.ls.LSSerializer;
  * @author <a href="kabir.khan@jboss.com">Kabir Khan</a>
  */
 public class ModelTestUtils {
+
+    private static final Pattern EXPRESSION_PATTERN = Pattern.compile(".*\\$\\{.*\\}.*");
+
     /**
      * Read the classpath resource with the given name and return its contents as a string. Hook to
      * for reading in classpath resources for subsequent parsing. The resource is loaded using similar
@@ -95,7 +104,9 @@ public class ModelTestUtils {
      */
     public static ModelNode checkResultAndGetContents(ModelNode result) {
         checkOutcome(result);
-        Assert.assertTrue(result.hasDefined(RESULT));
+        Assert.assertTrue("could not check for result as its missing!  look for yourself here [" + result.toString() +
+                "] and result.hasDefined(RESULT) returns " + result.hasDefined(RESULT)
+                , result.hasDefined(RESULT));
         return result.get(RESULT);
     }
 
@@ -109,6 +120,17 @@ public class ModelTestUtils {
         boolean success = SUCCESS.equals(result.get(OUTCOME).asString());
         Assert.assertTrue(result.get(FAILURE_DESCRIPTION).asString(), success);
         return result;
+    }
+
+    /**
+     * Checks that the operation failes
+     *
+     * @param result the result to check
+     * @return the failure desciption contents
+     */
+    public static ModelNode checkFailed(ModelNode result) {
+        Assert.assertEquals(FAILED, result.get(OUTCOME).asString());
+        return result.get(FAILURE_DESCRIPTION);
     }
 
     public static void validateModelDescriptions(PathAddress address, ImmutableManagementResourceRegistration reg) {
@@ -157,10 +179,20 @@ public class ModelTestUtils {
      *
      * @param node1 the first model
      * @param node2 the second model
-     * @throws AssertionFailedError if the models were not the same
      */
     public static void compare(ModelNode node1, ModelNode node2) {
         compare(node1, node2, false);
+    }
+
+    /**
+     * Resolve two models and compare them to make sure that they have same
+       content after expression resolution
+     *
+     * @param node1 the first model
+     * @param node2 the second model
+     */
+    public static void resolveAndCompareModels(ModelNode node1, ModelNode node2) {
+        compare(node1.resolve(), node2.resolve(), false, true, new Stack<String>());
     }
 
     /**
@@ -169,10 +201,9 @@ public class ModelTestUtils {
      * @param node1           the first model
      * @param node2           the second model
      * @param ignoreUndefined {@code true} if keys containing undefined nodes should be ignored
-     * @throws AssertionFailedError if the models were not the same
      */
     public static void compare(ModelNode node1, ModelNode node2, boolean ignoreUndefined) {
-        compare(node1, node2, ignoreUndefined, new Stack<String>());
+        compare(node1, node2, ignoreUndefined, false, new Stack<String>());
     }
 
     /**
@@ -206,7 +237,6 @@ public class ModelTestUtils {
     /**
      * Validate the marshalled xml without adjusting the namespaces for the original and marshalled xml.
      *
-     * @param configId   the id of the xml configuration
      * @param original   the original subsystem xml
      * @param marshalled the marshalled subsystem xml
      * @throws Exception
@@ -218,7 +248,6 @@ public class ModelTestUtils {
     /**
      * Validate the marshalled xml without adjusting the namespaces for the original and marshalled xml.
      *
-     * @param configId        TODO
      * @param original        the original subsystem xml
      * @param marshalled      the marshalled subsystem xml
      * @param ignoreNamespace if {@code true} the subsystem's namespace is ignored, otherwise it is taken into account when comparing the normalized xml.
@@ -250,6 +279,34 @@ public class ModelTestUtils {
         return model;
     }
 
+    /**
+     * Scans for entries of type STRING containing expression formatted strings. This is to trap where parsers
+     * call ModelNode.set("${A}") when ModelNode.setExpression("${A}) should have been used
+     *
+     * @param model the model to check
+     */
+    public static void scanForExpressionFormattedStrings(ModelNode model) {
+        if (model.getType().equals(ModelType.STRING)) {
+            if (EXPRESSION_PATTERN.matcher(model.asString()).matches()) {
+                Assert.fail("ModelNode with type==STRING contains an expression formatted string: " + model.asString());
+            }
+        } else if (model.getType() == ModelType.OBJECT) {
+            for (String key : model.keys()) {
+                final ModelNode child = model.get(key);
+                scanForExpressionFormattedStrings(child);
+            }
+        } else if (model.getType() == ModelType.LIST) {
+            List<ModelNode> list = model.asList();
+            for (ModelNode entry : list) {
+                scanForExpressionFormattedStrings(entry);
+            }
+
+        } else if (model.getType() == ModelType.PROPERTY) {
+            Property prop = model.asProperty();
+            scanForExpressionFormattedStrings(prop.getValue());
+        }
+    }
+
     private static String removeNamespace(String xml) {
         int start = xml.indexOf(" xmlns=\"");
         int end = xml.indexOf('"', start + "xmlns=\"".length() + 1);
@@ -262,8 +319,10 @@ public class ModelTestUtils {
     }
 
 
-    private static void compare(ModelNode node1, ModelNode node2, boolean ignoreUndefined, Stack<String> stack) {
-        Assert.assertEquals(getCompareStackAsString(stack) + " types", node1.getType(), node2.getType());
+    private static void compare(ModelNode node1, ModelNode node2, boolean ignoreUndefined, boolean ignoreType, Stack<String> stack) {
+        if (! ignoreType) {
+            Assert.assertEquals(getCompareStackAsString(stack) + " types", node1.getType(), node2.getType());
+        }
         if (node1.getType() == ModelType.OBJECT) {
             ModelNode model1 = ignoreUndefined ? trimUndefinedChildren(node1) : node1;
             ModelNode model2 = ignoreUndefined ? trimUndefinedChildren(node2) : node2;
@@ -271,7 +330,11 @@ public class ModelTestUtils {
             final Set<String> keys2 = new TreeSet<String>(model2.keys());
 
             // compare string representations of the keys to help see the difference
-            Assert.assertEquals(node1 + "\n" + node2, keys1.toString(), keys2.toString());
+            if (!keys1.toString().equals(keys2.toString())){
+                //Just to make debugging easier
+                System.out.print("");
+            }
+            Assert.assertEquals(getCompareStackAsString(stack) + ": " + node1 + "\n" + node2, keys1.toString(), keys2.toString());
             Assert.assertTrue(keys1.containsAll(keys2));
 
             for (String key : keys1) {
@@ -281,13 +344,13 @@ public class ModelTestUtils {
 
                 if (child1.isDefined()) {
                     if (!ignoreUndefined) {
-                        Assert.assertTrue("key=" + key + "\n with child1 \n" + child1.toString() + "\n has child2 not defined\n node2 is:\n" + node2.toString(), child2.isDefined());
+                        Assert.assertTrue(getCompareStackAsString(stack) + " key=" + key + "\n with child1 \n" + child1.toString() + "\n has child2 not defined\n node2 is:\n" + node2.toString(), child2.isDefined());
                     }
                     stack.push(key + "/");
-                    compare(child1, child2, ignoreUndefined);
+                    compare(child1, child2, ignoreUndefined, ignoreType, stack);
                     stack.pop();
                 } else if (!ignoreUndefined) {
-                    Assert.assertFalse(child2.asString(), child2.isDefined());
+                    Assert.assertFalse(getCompareStackAsString(stack) + " key=" + key + "\n with child1 undefined has child2 \n" + child2.asString(), child2.isDefined());
                 }
             }
         } else if (node1.getType() == ModelType.LIST) {
@@ -297,7 +360,7 @@ public class ModelTestUtils {
 
             for (int i = 0; i < list1.size(); i++) {
                 stack.push(i + "/");
-                compare(list1.get(i), list2.get(i), ignoreUndefined);
+                compare(list1.get(i), list2.get(i), ignoreUndefined, ignoreType, stack);
                 stack.pop();
             }
 
@@ -306,16 +369,12 @@ public class ModelTestUtils {
             Property prop2 = node2.asProperty();
             Assert.assertEquals(prop1 + "\n" + prop2, prop1.getName(), prop2.getName());
             stack.push(prop1.getName() + "/");
-            compare(prop1.getValue(), prop2.getValue(), ignoreUndefined);
+            compare(prop1.getValue(), prop2.getValue(), ignoreUndefined, ignoreType, stack);
             stack.pop();
 
         } else {
-            try {
-                Assert.assertEquals(getCompareStackAsString(stack) +
-                        "\n\"" + node1.asString() + "\"\n\"" + node2.asString() + "\"\n-----", node2.asString().trim(), node1.asString().trim());
-            } catch (AssertionFailedError error) {
-                throw error;
-            }
+            Assert.assertEquals(getCompareStackAsString(stack) +
+                        "\n\"" + node1.asString() + "\"\n\"" + node2.asString() + "\"\n-----", node1.asString().trim(), node2.asString().trim());
         }
     }
 
@@ -361,4 +420,125 @@ public class ModelTestUtils {
         return result;
     }
 
+    public static void checkModelAgainstDefinition(final ModelNode model, ManagementResourceRegistration rr) {
+        checkModelAgainstDefinition(model, rr, new Stack<PathElement>());
+    }
+
+    private static void checkModelAgainstDefinition(final ModelNode model, ManagementResourceRegistration rr, Stack<PathElement> stack) {
+        final Set<String> children = rr.getChildNames(PathAddress.EMPTY_ADDRESS);
+        final Set<String> attributeNames = rr.getAttributeNames(PathAddress.EMPTY_ADDRESS);
+        for (ModelNode el : model.asList()) {
+            String name = el.asProperty().getName();
+            ModelNode value = el.asProperty().getValue();
+            if (attributeNames.contains(name)) {
+                AttributeAccess aa = rr.getAttributeAccess(PathAddress.EMPTY_ADDRESS, name);
+                Assert.assertNotNull(getComparePathAsString(stack) + " Attribute " + name + " is not known", aa);
+                AttributeDefinition ad = aa.getAttributeDefinition();
+                if (!value.isDefined()) {
+                    Assert.assertTrue(getComparePathAsString(stack) + " Attribute " + name + " does not allow null", ad.isAllowNull());
+                } else {
+                   // Assert.assertEquals("Attribute '" + name + "' type mismatch", value.getType(), ad.getType()); //todo re-enable this check
+                }
+                try {
+                    if (!ad.isAllowNull()&&value.isDefined()){
+                        ad.getValidator().validateParameter(name, value);
+                    }
+                } catch (OperationFailedException e) {
+                    Assert.fail(getComparePathAsString(stack) + " validation for attribute '" + name + "' failed, " + e.getFailureDescription().asString());
+                }
+
+            } else if (!children.contains(name)) {
+                Assert.fail(getComparePathAsString(stack) + " Element '" + name + "' is not known in target definition");
+            }
+        }
+
+        for (PathElement pe : rr.getChildAddresses(PathAddress.EMPTY_ADDRESS)) {
+            if (pe.isWildcard()) {
+                if (children.contains(pe.getKey()) && model.hasDefined(pe.getKey())) {
+                    for (ModelNode v : model.get(pe.getKey()).asList()) {
+                        String name = v.asProperty().getName();
+                        ModelNode value = v.asProperty().getValue();
+                        ManagementResourceRegistration sub = rr.getSubModel(PathAddress.pathAddress(pe));
+                        Assert.assertNotNull(getComparePathAsString(stack) + " Child with name '" + name + "' not found", sub);
+                        if (value.isDefined()) {
+                            stack.push(pe);
+                            checkModelAgainstDefinition(value, sub, stack);
+                            stack.pop();
+                        }
+                    }
+                }
+            } else {
+                if (children.contains(pe.getKeyValuePair())) {
+                    String name = pe.getValue();
+                    ModelNode value = model.get(pe.getKeyValuePair());
+                    ManagementResourceRegistration sub = rr.getSubModel(PathAddress.pathAddress(pe));
+                    Assert.assertNotNull(getComparePathAsString(stack) + " Child with name '" + name + "' not found", sub);
+                    if (value.isDefined()) {
+                        stack.push(pe);
+                        checkModelAgainstDefinition(value, sub, stack);
+                        stack.pop();
+                    }
+                }
+            }
+        }
+    }
+
+    private static String getComparePathAsString(Stack<PathElement> stack) {
+        PathAddress pa = PathAddress.EMPTY_ADDRESS;
+        for (PathElement element : stack) {
+            pa = pa.append(element);
+        }
+        return pa.toModelNode().asString();
+    }
+
+    /**
+     * A standard test for transformers where things should be rejected.
+     * Takes the operations and installs them in the main controller.
+     * It then attempts to execute the same operations in the legacy controller, validating that expected failures take place.
+     * It then attempts to fix the operations so they can be executed in the legacy controller, since if an 'add' fails, there could be adds for children later in the list.
+     *
+     * @param mainServices The main controller services
+     * @param modelVersion The version of the legacy controller
+     * @param operations the operations
+     * @param config the config
+     */
+    public static void checkFailedTransformedBootOperations(ModelTestKernelServices<?> mainServices, ModelVersion modelVersion, List<ModelNode> operations, FailedOperationTransformationConfig config) throws OperationFailedException {
+        for (ModelNode op : operations) {
+            List<ModelNode> writeOps = config.createWriteAttributeOperations(op);
+
+            ModelTestUtils.checkOutcome(mainServices.executeOperation(op));
+            checkFailedTransformedAddOperation(mainServices, modelVersion, op, config);
+
+            for (ModelNode writeOp : writeOps) {
+                checkFailedTransformedWriteAttributeOperation(mainServices, modelVersion, writeOp, config);
+            }
+        }
+    }
+
+    private static void checkFailedTransformedAddOperation(ModelTestKernelServices<?> mainServices, ModelVersion modelVersion, ModelNode operation, FailedOperationTransformationConfig config) throws OperationFailedException {
+        TransformedOperation transformedOperation = mainServices.transformOperation(modelVersion, operation.clone());
+        if (config.expectFailed(operation)) {
+            Assert.assertNotNull("Expected transformation to get rejected " + operation, transformedOperation.getFailureDescription());
+            if (config.canCorrectMore(operation)) {
+                checkFailedTransformedAddOperation(mainServices, modelVersion, config.correctOperation(operation), config);
+            }
+        } else if (config.expectDiscarded(operation)) {
+            Assert.assertNull("Expected null transformed operation for discarded " + operation, transformedOperation.getTransformedOperation());
+        } else {
+            ModelNode result = mainServices.executeOperation(modelVersion, transformedOperation);
+            Assert.assertEquals("Failed: " + operation + "\n: " + result, SUCCESS, result.get(OUTCOME).asString());
+        }
+    }
+
+    private static void checkFailedTransformedWriteAttributeOperation(ModelTestKernelServices<?> mainServices, ModelVersion modelVersion, ModelNode operation, FailedOperationTransformationConfig config) throws OperationFailedException {
+        TransformedOperation transformedOperation = mainServices.transformOperation(modelVersion, operation.clone());
+        if (config.expectFailedWriteAttributeOperation(operation)) {
+            Assert.assertNotNull("Expected transformation to get rejected " + operation, transformedOperation.getFailureDescription());
+            //For write-attribute we currently only correct once, all in one go
+            checkFailedTransformedWriteAttributeOperation(mainServices, modelVersion, config.correctWriteAttributeOperation(operation), config);
+        } else {
+            ModelNode result = mainServices.executeOperation(modelVersion, transformedOperation);
+            Assert.assertEquals("Failed: " + operation + "\n: " + result, SUCCESS, result.get(OUTCOME).asString());
+        }
+    }
 }

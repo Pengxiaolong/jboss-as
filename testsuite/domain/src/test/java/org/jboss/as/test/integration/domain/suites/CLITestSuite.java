@@ -27,14 +27,16 @@ import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.Map;
 
-import org.jboss.as.test.integration.domain.DomainTestSupport;
 import org.jboss.as.test.integration.domain.management.cli.BasicOpsTestCase;
 import org.jboss.as.test.integration.domain.management.cli.DataSourceTestCase;
 import org.jboss.as.test.integration.domain.management.cli.DeployAllServerGroupsTestCase;
 import org.jboss.as.test.integration.domain.management.cli.DeploySingleServerGroupTestCase;
+import org.jboss.as.test.integration.domain.management.cli.DomainDeploymentOverlayTestCase;
 import org.jboss.as.test.integration.domain.management.cli.JmsTestCase;
 import org.jboss.as.test.integration.domain.management.cli.RolloutPlanTestCase;
 import org.jboss.as.test.integration.domain.management.cli.UndeployWildcardDomainTestCase;
+import org.jboss.as.test.integration.domain.management.util.DomainTestSupport;
+import org.jboss.as.test.integration.domain.management.util.JBossAsManagedConfigurationParameters;
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
 import org.junit.runner.RunWith;
@@ -48,6 +50,7 @@ import org.junit.runners.Suite;
 @Suite.SuiteClasses({
     BasicOpsTestCase.class,
     DeployAllServerGroupsTestCase.class,
+    DomainDeploymentOverlayTestCase.class,
     DeploySingleServerGroupTestCase.class,
     UndeployWildcardDomainTestCase.class,
     JmsTestCase.class,
@@ -66,8 +69,8 @@ public class CLITestSuite {
 
     @BeforeClass
     public static void initSuite() throws Exception {
-        domainSupport = new DomainTestSupport(CLITestSuite.class.getSimpleName(),
-                "domain-configs"+ File.separatorChar+"domain-standard.xml", "host-configs"+File.separatorChar+"host-master.xml", "host-configs"+File.separatorChar+"host-slave.xml");
+        domainSupport = DomainTestSupport.create(CLITestSuite.class.getSimpleName(),
+                "domain-configs"+ File.separatorChar+"domain-standard.xml", "host-configs"+File.separatorChar+"host-master.xml", "host-configs"+File.separatorChar+"host-slave.xml", JBossAsManagedConfigurationParameters.STANDARD, JBossAsManagedConfigurationParameters.STANDARD);
         domainSupport.start();
 
         hostServers.put("master", new String[]{"main-one", "main-two", "other-one"});

@@ -39,7 +39,6 @@ import org.jboss.invocation.InterceptorFactory;
 import org.jboss.invocation.InterceptorFactoryContext;
 import org.jboss.invocation.SimpleInterceptorFactoryContext;
 import org.jboss.msc.service.ServiceName;
-import org.jboss.msc.service.StopContext;
 import org.jboss.msc.value.ImmediateValue;
 
 import static org.jboss.as.ee.EeMessages.MESSAGES;
@@ -129,7 +128,7 @@ public class BasicComponent implements Component {
         context.getContextData().put(Component.class, this);
 
         // Create the post-construct interceptors for the ComponentInstance
-        final Interceptor componentInstancePostConstructInterceptor = this.getPostConstruct().create(context);
+        final Interceptor componentInstancePostConstructInterceptor = this.postConstruct.create(context);
         // create the pre-destroy interceptors
         final Interceptor componentInstancePreDestroyInterceptor = this.getPreDestroy().create(context);
 
@@ -243,10 +242,6 @@ public class BasicComponent implements Component {
 
     Map<Method, InterceptorFactory> getInterceptorFactoryMap() {
         return interceptorFactoryMap;
-    }
-
-    InterceptorFactory getPostConstruct() {
-        return postConstruct;
     }
 
     InterceptorFactory getPreDestroy() {

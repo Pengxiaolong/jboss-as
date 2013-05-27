@@ -1,5 +1,29 @@
+/*
+ * JBoss, Home of Professional Open Source.
+ * Copyright 2012, Red Hat, Inc., and individual contributors
+ * as indicated by the @author tags. See the copyright.txt file in the
+ * distribution for a full listing of individual contributors.
+ *
+ * This is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU Lesser General Public License as
+ * published by the Free Software Foundation; either version 2.1 of
+ * the License, or (at your option) any later version.
+ *
+ * This software is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with this software; if not, write to the Free
+ * Software Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA
+ * 02110-1301 USA, or see the FSF site: http://www.fsf.org.
+ */
+
 package org.jboss.as.controller.transform;
 
+import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.OP;
+import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.OP_ADDR;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.SUBSYSTEM;
 
 import java.util.Collections;
@@ -28,6 +52,13 @@ import org.jboss.dmr.Property;
  */
 public final class TransformerRegistry {
 
+    public static final ModelNode DISCARD_OPERATION = new ModelNode();
+    static {
+        DISCARD_OPERATION.get(OP).set("discard");
+        DISCARD_OPERATION.get(OP_ADDR).setEmptyList();
+        DISCARD_OPERATION.protect();
+    }
+
     private final ExtensionRegistry extensionRegistry;
 
     private static final PathElement HOST = PathElement.pathElement(ModelDescriptionConstants.HOST);
@@ -52,14 +83,28 @@ public final class TransformerRegistry {
     /**
      * Register a subsystem transformer.
      *
+     * @param name the subsystem name
      * @param range the version range
      * @param subsystemTransformer the resource transformer
      * @return the sub registry
      */
     public TransformersSubRegistration registerSubsystemTransformers(final String name, final ModelVersionRange range, final ResourceTransformer subsystemTransformer) {
+        return  registerSubsystemTransformers(name, range, subsystemTransformer, OperationTransformer.DEFAULT);
+    }
+
+    /**
+     * Register a subsystem transformer.
+     *
+     * @param name the subsystem name
+     * @param range the version range
+     * @param subsystemTransformer the resource transformer
+     * @param operationTransformer the operation transformer
+     * @return the sub registry
+     */
+    public TransformersSubRegistration registerSubsystemTransformers(final String name, final ModelVersionRange range, final ResourceTransformer subsystemTransformer, final OperationTransformer operationTransformer) {
         final PathAddress subsystemAddress = PathAddress.EMPTY_ADDRESS.append(PathElement.pathElement(SUBSYSTEM, name));
         for(final ModelVersion version : range.getVersions()) {
-            subsystem.createChildRegistry(subsystemAddress, version, subsystemTransformer, false);
+            subsystem.createChildRegistry(subsystemAddress, version, subsystemTransformer, operationTransformer);
         }
         return new TransformersSubRegistrationImpl(range, subsystem, subsystemAddress);
     }
@@ -120,6 +165,7 @@ public final class TransformerRegistry {
         // The domain / host / servers
         final OperationTransformerRegistry root = domain.create(mgmtVersion, Collections.<PathAddress, ModelVersion>emptyMap());
         subsystem.mergeSubtree(root, PathAddress.pathAddress(PROFILE), subsystems);
+        subsystem.mergeSubtree(root, PathAddress.pathAddress(HOST, SERVER), subsystems);
         return root;
     }
 
@@ -156,11 +202,24 @@ public final class TransformerRegistry {
      */
     void addSubsystem(final OperationTransformerRegistry registry, final String name, final ModelVersion version) {
         final OperationTransformerRegistry profile = registry.getChild(PathAddress.pathAddress(PROFILE));
+        final OperationTransformerRegistry server = registry.getChild(PathAddress.pathAddress(HOST, SERVER));
         final PathAddress address = PathAddress.pathAddress(PathElement.pathElement(ModelDescriptionConstants.SUBSYSTEM, name));
         subsystem.mergeSubtree(profile, Collections.singletonMap(address, version));
+        if(server != null) {
+            subsystem.mergeSubtree(server, Collections.singletonMap(address, version));
+        }
     }
 
-    static Map<PathAddress, ModelVersion> resolveVersions(final ModelNode subsystems) {
+    public static Map<PathAddress, ModelVersion> resolveVersions(ExtensionRegistry extensionRegistry) {
+
+        final ModelNode subsystems = new ModelNode();
+        for (final String extension : extensionRegistry.getExtensionModuleNames()) {
+            extensionRegistry.recordSubsystemVersions(extension, subsystems);
+        }
+        return resolveVersions(subsystems);
+    }
+
+    public static Map<PathAddress, ModelVersion> resolveVersions(final ModelNode subsystems) {
         final PathAddress base = PathAddress.EMPTY_ADDRESS;
         final Map<PathAddress, ModelVersion> versions = new HashMap<PathAddress, ModelVersion>();
         for(final Property property : subsystems.asPropertyList()) {
@@ -183,12 +242,12 @@ public final class TransformerRegistry {
         return ModelVersion.create(major, minor, micro);
     }
 
-    public static ResourceDefinition loadSubsystemDefinition(final String subsystemName, final ModelVersion version) {
-        return TransformationUtils.loadSubsystemDefinition(subsystemName, version);
+    public static ResourceDefinition loadSubsystemDefinitionFromFile(final Class<?> classForDmrPackage, final String subsystemName, final ModelVersion version) {
+        return TransformationUtils.loadSubsystemDefinitionFromFile(classForDmrPackage, subsystemName, version);
     }
 
     public static Resource modelToResource(final ImmutableManagementResourceRegistration reg, final ModelNode model, boolean includeUndefined) {
-        return TransformationUtils.modelToResource(reg, model, includeUndefined);
+        return TransformationUtils.modelToResource(PathAddress.EMPTY_ADDRESS, reg, model, includeUndefined);
     }
 
     public static class Factory {
@@ -245,10 +304,25 @@ public final class TransformerRegistry {
         }
 
         @Override
+        public TransformersSubRegistration registerSubResource(PathElement element, CombinedTransformer transformer) {
+            return registerSubResource(element, transformer, transformer);
+        }
+
+        @Override
         public TransformersSubRegistration registerSubResource(PathElement element, ResourceTransformer resourceTransformer, OperationTransformer operationTransformer) {
+            return registerSubResource(element, PathAddressTransformer.DEFAULT, resourceTransformer, operationTransformer);
+        }
+
+        @Override
+        public TransformersSubRegistration registerSubResource(PathElement element, PathAddressTransformer pathAddressTransformer, ResourceTransformer resourceTransformer, OperationTransformer operationTransformer) {
+            return registerSubResource(element, pathAddressTransformer, resourceTransformer, operationTransformer, false);
+        }
+
+        @Override
+        public TransformersSubRegistration registerSubResource(PathElement element, PathAddressTransformer pathAddressTransformer, ResourceTransformer resourceTransformer, OperationTransformer operationTransformer, boolean inherited) {
             final PathAddress address = current.append(element);
             for(final ModelVersion version : range.getVersions()) {
-                registry.createChildRegistry(address, version, resourceTransformer, operationTransformer);
+                registry.createChildRegistry(address, version, pathAddressTransformer, resourceTransformer, operationTransformer, inherited);
             }
             return new TransformersSubRegistrationImpl(range, registry, address);
         }

@@ -37,13 +37,18 @@ public class MockCliConfig implements CliConfig {
     }
 
     @Override
+    public String getDefaultControllerProtocol() {
+        return "http-remoting";
+    }
+
+    @Override
     public String getDefaultControllerHost() {
         return "localhost";
     }
 
     @Override
     public int getDefaultControllerPort() {
-        return 9999;
+        return 9990;
     }
 
     @Override
@@ -67,12 +72,22 @@ public class MockCliConfig implements CliConfig {
     }
 
     @Override
+    public int getConnectionTimeout() {
+        return 5000;
+    }
+
+    @Override
     public boolean isValidateOperationRequests() {
         return true;
     }
 
     @Override
     public boolean isResolveParameterValues() {
+        return false;
+    }
+
+    @Override
+    public boolean isSilent() {
         return false;
     }
 }

@@ -22,22 +22,16 @@
 
 package org.jboss.as.domain.management.security;
 
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
-
 import org.jboss.as.controller.AttributeDefinition;
 import org.jboss.as.controller.PathElement;
 import org.jboss.as.controller.SimpleAttributeDefinition;
 import org.jboss.as.controller.SimpleAttributeDefinitionBuilder;
-import org.jboss.as.controller.descriptions.common.CommonDescriptions;
-import org.jboss.as.controller.operations.validation.AllowedValuesValidator;
+import org.jboss.as.controller.descriptions.common.ControllerResolver;
 import org.jboss.as.controller.operations.validation.EnumValidator;
-import org.jboss.as.controller.operations.validation.StringLengthValidator;
 import org.jboss.as.controller.registry.AttributeAccess;
 import org.jboss.as.controller.registry.ManagementResourceRegistration;
 import org.jboss.as.controller.registry.OperationEntry;
-import org.jboss.as.domain.management.AuthenticationMechanism;
+import org.jboss.as.domain.management.AuthMechanism;
 import org.jboss.as.domain.management.ModelDescriptionConstants;
 import org.jboss.dmr.ModelNode;
 import org.jboss.dmr.ModelType;
@@ -51,16 +45,17 @@ public class PlugInAuthenticationResourceDefinition extends AbstractPlugInAuthRe
 
     public static final SimpleAttributeDefinition MECHANISM = new SimpleAttributeDefinitionBuilder(
             ModelDescriptionConstants.MECHANISM, ModelType.STRING, true)
-            .setValidator(new EnumValidator<AuthenticationMechanism>(AuthenticationMechanism.class, true, false,
-                    AuthenticationMechanism.DIGEST, AuthenticationMechanism.PLAIN)) //currently only these are supported
-            .setDefaultValue(new ModelNode(AuthenticationMechanism.DIGEST.toString()))
+            .setValidator(new EnumValidator<AuthMechanism>(AuthMechanism.class, true, true,
+                    AuthMechanism.DIGEST, AuthMechanism.PLAIN)) //currently only these are supported
+            .setDefaultValue(new ModelNode(AuthMechanism.DIGEST.toString()))
+            .setAllowExpression(true)
             .setFlags(AttributeAccess.Flag.RESTART_RESOURCE_SERVICES).build();
 
     public static final AttributeDefinition[] ATTRIBUTE_DEFINITIONS = { NAME, MECHANISM };
 
     public PlugInAuthenticationResourceDefinition() {
         super(PathElement.pathElement(ModelDescriptionConstants.AUTHENTICATION, ModelDescriptionConstants.PLUG_IN),
-                CommonDescriptions.getResourceDescriptionResolver("core.management.security-realm.authentication.plug-in"),
+                ControllerResolver.getResolver("core.management.security-realm.authentication.plug-in"),
                 new SecurityRealmChildAddHandler(true, ATTRIBUTE_DEFINITIONS), new SecurityRealmChildRemoveHandler(true),
                 OperationEntry.Flag.RESTART_RESOURCE_SERVICES, OperationEntry.Flag.RESTART_RESOURCE_SERVICES);
     }

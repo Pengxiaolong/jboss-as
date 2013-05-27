@@ -22,11 +22,24 @@
 
 package org.jboss.as.ejb3.remote.protocol.versionone;
 
+import java.io.DataInputStream;
+import java.io.DataOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.ObjectStreamException;
+import java.lang.reflect.Method;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Future;
+
 import org.jboss.as.ee.component.Component;
 import org.jboss.as.ee.component.ComponentView;
 import org.jboss.as.ee.component.interceptors.InvocationType;
 import org.jboss.as.ejb3.EjbLogger;
 import org.jboss.as.ejb3.EjbMessages;
+import org.jboss.as.ejb3.component.EJBComponentUnavailableException;
 import org.jboss.as.ejb3.component.entity.EntityBeanComponent;
 import org.jboss.as.ejb3.component.interceptors.CancellationFlag;
 import org.jboss.as.ejb3.component.session.SessionBeanComponent;
@@ -35,7 +48,6 @@ import org.jboss.as.ejb3.component.stateless.StatelessSessionComponent;
 import org.jboss.as.ejb3.deployment.DeploymentRepository;
 import org.jboss.as.ejb3.deployment.EjbDeploymentInformation;
 import org.jboss.as.ejb3.remote.RemoteAsyncInvocationCancelStatusService;
-import org.jboss.as.security.remoting.RemotingContext;
 import org.jboss.ejb.client.Affinity;
 import org.jboss.ejb.client.EJBClientInvocationContext;
 import org.jboss.ejb.client.EJBLocator;
@@ -47,20 +59,9 @@ import org.jboss.marshalling.AbstractClassResolver;
 import org.jboss.marshalling.Marshaller;
 import org.jboss.marshalling.MarshallerFactory;
 import org.jboss.marshalling.Unmarshaller;
-import org.jboss.remoting3.MessageInputStream;
 import org.jboss.remoting3.MessageOutputStream;
+import org.wildfly.security.manager.WildFlySecurityManager;
 import org.xnio.IoUtils;
-
-import java.io.DataInputStream;
-import java.io.DataOutputStream;
-import java.io.IOException;
-import java.io.ObjectStreamException;
-import java.lang.reflect.Method;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Set;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Future;
 
 
 /**
@@ -86,9 +87,9 @@ class MethodInvocationMessageHandler extends EJBIdentifierBasedMessageHandler {
     }
 
     @Override
-    public void processMessage(final ChannelAssociation channelAssociation, final MessageInputStream messageInputStream) throws IOException {
+    public void processMessage(final ChannelAssociation channelAssociation, final InputStream inputStream) throws IOException {
 
-        final DataInputStream input = new DataInputStream(messageInputStream);
+        final DataInputStream input = new DataInputStream(inputStream);
         // read the invocation id
         final short invocationId = input.readShort();
 
@@ -118,19 +119,19 @@ class MethodInvocationMessageHandler extends EJBIdentifierBasedMessageHandler {
             moduleName = (String) unmarshaller.readObject();
             distinctName = (String) unmarshaller.readObject();
             beanName = (String) unmarshaller.readObject();
-        } catch (ClassNotFoundException e) {
-            throw EjbMessages.MESSAGES.classNotFoundException(e);
+        } catch (Throwable e) {
+            throw EjbMessages.MESSAGES.failedToReadEjbInfo(e);
         }
         final EjbDeploymentInformation ejbDeploymentInformation = this.findEJB(appName, moduleName, distinctName, beanName);
         if (ejbDeploymentInformation == null) {
             this.writeNoSuchEJBFailureMessage(channelAssociation, invocationId, appName, moduleName, distinctName, beanName, null);
             return;
         }
-        final ClassLoader tccl = SecurityActions.getContextClassLoader();
+        final ClassLoader tccl = WildFlySecurityManager.getCurrentContextClassLoaderPrivileged();
         Runnable runnable = null;
         try {
             //set the correct TCCL for unmarshalling
-            SecurityActions.setContextClassLoader(ejbDeploymentInformation.getDeploymentClassLoader());
+            WildFlySecurityManager.setCurrentContextClassLoaderPrivileged(ejbDeploymentInformation.getDeploymentClassLoader());
             // now switch the CL to the EJB deployment's CL so that the unmarshaller can use the
             // correct CL for the rest of the unmarshalling of the stream
             classResolver.switchClassLoader(ejbDeploymentInformation.getDeploymentClassLoader());
@@ -138,8 +139,8 @@ class MethodInvocationMessageHandler extends EJBIdentifierBasedMessageHandler {
             final EJBLocator<?> locator;
             try {
                 locator = (EJBLocator<?>) unmarshaller.readObject();
-            } catch (ClassNotFoundException e) {
-                throw EjbMessages.MESSAGES.classNotFoundException(e);
+            } catch (Throwable e) {
+                throw EjbMessages.MESSAGES.failedToReadEJBLocator(e);
             }
             final String viewClassName = locator.getViewType().getName();
             // Make sure it's a remote view
@@ -160,9 +161,9 @@ class MethodInvocationMessageHandler extends EJBIdentifierBasedMessageHandler {
                 for (int i = 0; i < methodParamTypes.length; i++) {
                     try {
                         methodParams[i] = unmarshaller.readObject();
-                    } catch (ClassNotFoundException cnfe) {
+                    } catch (Throwable e) {
                         // write out the failure
-                        MethodInvocationMessageHandler.this.writeException(channelAssociation, MethodInvocationMessageHandler.this.marshallerFactory, invocationId, cnfe, null);
+                        MethodInvocationMessageHandler.this.writeException(channelAssociation, MethodInvocationMessageHandler.this.marshallerFactory, invocationId, e, null);
                         return;
                     }
                 }
@@ -171,9 +172,9 @@ class MethodInvocationMessageHandler extends EJBIdentifierBasedMessageHandler {
             final Map<String, Object> attachments;
             try {
                 attachments = this.readAttachments(unmarshaller);
-            } catch (ClassNotFoundException cnfe) {
+            } catch (Throwable e) {
                 // write out the failure
-                MethodInvocationMessageHandler.this.writeException(channelAssociation, MethodInvocationMessageHandler.this.marshallerFactory, invocationId, cnfe, null);
+                MethodInvocationMessageHandler.this.writeException(channelAssociation, MethodInvocationMessageHandler.this.marshallerFactory, invocationId, e, null);
                 return;
             }
             // done with unmarshalling
@@ -197,14 +198,21 @@ class MethodInvocationMessageHandler extends EJBIdentifierBasedMessageHandler {
 
                     // invoke the method
                     Object result = null;
-                    RemotingContext.setConnection(channelAssociation.getChannel().getConnection());
+                    SecurityActions.remotingContextSetConnection(channelAssociation.getChannel().getConnection());
                     try {
                         result = invokeMethod(invocationId, componentView, invokedMethod, methodParams, locator, attachments);
                     } catch (Throwable throwable) {
                         try {
-                            // write out the failure
-                            MethodInvocationMessageHandler.this.writeException(channelAssociation, MethodInvocationMessageHandler.this.marshallerFactory, invocationId, throwable, attachments);
-                        } catch (IOException ioe) {
+                            // if the EJB is shutting down when the invocation was done, then it's as good as the EJB not being available. The client has to know about this as
+                            // a "no such EJB" failure so that it can retry the invocation on a different node if possible.
+                            if (throwable instanceof EJBComponentUnavailableException) {
+                                EjbLogger.EJB3_INVOCATION_LOGGER.debug("Cannot handle method invocation: " + invokedMethod + " on bean: " + beanName + " due to EJB component unavailability exception. Returning a no such EJB available message back to client");
+                                MethodInvocationMessageHandler.this.writeNoSuchEJBFailureMessage(channelAssociation, invocationId, appName, moduleName, distinctName, beanName, viewClassName);
+                            } else {
+                                // write out the failure
+                                MethodInvocationMessageHandler.this.writeException(channelAssociation, MethodInvocationMessageHandler.this.marshallerFactory, invocationId, throwable, attachments);
+                            }
+                        } catch (Throwable ioe) {
                             // we couldn't write out a method invocation failure message. So let's at least log the
                             // actual method invocation exception, for debugging/reference
                             EjbLogger.ROOT_LOGGER.errorInvokingMethod(throwable, invokedMethod, beanName, appName, moduleName, distinctName);
@@ -216,10 +224,10 @@ class MethodInvocationMessageHandler extends EJBIdentifierBasedMessageHandler {
                             if (!(ioe instanceof ObjectStreamException)) {
                                 IoUtils.safeClose(channelAssociation.getChannel());
                             }
-                            return;
                         }
+                        return;
                     } finally {
-                        RemotingContext.clear();
+                        SecurityActions.remotingContextClear();
                     }
                     // write out the (successful) method invocation result to the channel output stream
                     try {
@@ -236,7 +244,7 @@ class MethodInvocationMessageHandler extends EJBIdentifierBasedMessageHandler {
                             attachments.put(Affinity.WEAK_AFFINITY_CONTEXT_KEY, weakAffinity);
                         }
                         writeMethodInvocationResponse(channelAssociation, invocationId, result, attachments);
-                    } catch (IOException ioe) {
+                    } catch (Throwable ioe) {
                         EjbLogger.ROOT_LOGGER.couldNotWriteMethodInvocation(ioe, invokedMethod, beanName, appName, moduleName, distinctName);
                         // close the channel unless this is a NotSerializableException
                         //as this does not represent a problem with the channel there is no
@@ -249,7 +257,7 @@ class MethodInvocationMessageHandler extends EJBIdentifierBasedMessageHandler {
                 }
             };
         } finally {
-            SecurityActions.setContextClassLoader(tccl);
+            WildFlySecurityManager.setCurrentContextClassLoaderPrivileged(tccl);
         }
         // invoke the method and write out the response on a separate thread
         executorService.submit(runnable);
@@ -311,7 +319,7 @@ class MethodInvocationMessageHandler extends EJBIdentifierBasedMessageHandler {
             // keep track of the cancellation flag for this invocation
             this.remoteAsyncInvocationCancelStatus.registerAsyncInvocation(invocationId, asyncInvocationCancellationFlag);
             try {
-                return ((Future)componentView.invoke(interceptorContext)).get();
+                return ((Future) componentView.invoke(interceptorContext)).get();
             } finally {
                 // now that the async invocation is done, we no longer need to keep track of the
                 // cancellation flag for this invocation
@@ -350,7 +358,7 @@ class MethodInvocationMessageHandler extends EJBIdentifierBasedMessageHandler {
         final MessageOutputStream messageOutputStream;
         try {
             messageOutputStream = channelAssociation.acquireChannelMessageOutputStream();
-        } catch (Exception e) {
+        } catch (Throwable e) {
             throw EjbMessages.MESSAGES.failedToOpenMessageOutputStream(e);
         }
         outputStream = new DataOutputStream(messageOutputStream);
@@ -378,7 +386,7 @@ class MethodInvocationMessageHandler extends EJBIdentifierBasedMessageHandler {
         final MessageOutputStream messageOutputStream;
         try {
             messageOutputStream = channelAssociation.acquireChannelMessageOutputStream();
-        } catch (Exception e) {
+        } catch (Throwable e) {
             throw EjbMessages.MESSAGES.failedToOpenMessageOutputStream(e);
         }
         outputStream = new DataOutputStream(messageOutputStream);

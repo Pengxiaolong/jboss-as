@@ -24,15 +24,14 @@ package org.jboss.as.web;
 
 import java.util.concurrent.TimeoutException;
 
-import org.jboss.as.controller.OperationFailedException;
 import org.jboss.as.server.deployment.DeploymentUnit;
 import org.jboss.as.server.deployment.DeploymentUnitProcessingException;
 import org.jboss.jandex.AnnotationTarget;
 import org.jboss.jandex.DotName;
+import org.jboss.logging.Messages;
 import org.jboss.logging.annotations.Cause;
 import org.jboss.logging.annotations.Message;
 import org.jboss.logging.annotations.MessageBundle;
-import org.jboss.logging.Messages;
 import org.jboss.modules.ModuleIdentifier;
 import org.jboss.msc.service.ServiceName;
 import org.jboss.vfs.VirtualFile;
@@ -237,8 +236,8 @@ public interface WebMessages {
     @Message(id = 18061, value = "Interrupted acquiring ownership of %s")
     RuntimeException interruptedAcquiringOwnership(String id, @Cause Throwable t);
 
-    @Message(id = 18062, value = "Specified attribute cannot be replicated")
-    IllegalArgumentException failToReplicateAttribute();
+    @Message(id = 18062, value = "'%s' attribute with type '%s' cannot be replicated")
+    IllegalArgumentException failToReplicateAttribute(String attributeName, String className);
 
     @Message(id = 18063, value = "Error calling value bound session listener")
     String errorValueBoundEvent(@Cause Throwable t);
@@ -365,4 +364,13 @@ public interface WebMessages {
 
     @Message(id = 18104, value = "Deployment error processing SCI for jar: %s")
     DeploymentUnitProcessingException errorProcessingSCI(String jar, @Cause Exception e);
+
+    @Message(id = 18105, value = "Not applicable")
+    RuntimeException notApplicable();
+
+    @Message(id = 18106, value = "Param-name and param-value are required to add parameter")
+    String paramNameAndParamValueRequiredForAddParam();
+
+    @Message(id = 18107, value = "Param-name is required to remove parameter")
+    String paramNameRequiredForRemoveParam();
 }

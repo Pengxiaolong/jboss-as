@@ -21,15 +21,27 @@
  */
 package org.jboss.as.connector.subsystems.resourceadapters;
 
-import org.jboss.as.connector.services.resourceadapters.deployment.AbstractResourceAdapterDeploymentService;
-import org.jboss.as.connector.util.ConnectorServices;
+import org.jboss.as.connector.deployers.ra.processors.IronJacamarDeploymentParsingProcessor;
+import org.jboss.as.connector.deployers.ra.processors.ParsedRaDeploymentProcessor;
+import org.jboss.as.connector.deployers.ra.processors.RaDeploymentParsingProcessor;
+import org.jboss.as.connector.deployers.ra.processors.RaNativeProcessor;
+import org.jboss.as.connector.logging.ConnectorLogger;
+import org.jboss.as.connector.metadata.xmldescriptors.ConnectorXmlDescriptor;
+import org.jboss.as.connector.metadata.xmldescriptors.IronJacamarXmlDescriptor;
 import org.jboss.as.connector.services.resourceadapters.deployment.InactiveResourceAdapterDeploymentService;
+import org.jboss.as.connector.services.resourceadapters.deployment.ResourceAdapterXmlDeploymentService;
+import org.jboss.as.connector.util.ConnectorServices;
+import org.jboss.as.connector.util.ModelNodeUtil;
 import org.jboss.as.connector.util.RaServicesFactory;
 import org.jboss.as.controller.OperationContext;
 import org.jboss.as.controller.OperationFailedException;
-import org.jboss.as.controller.SimpleAttributeDefinition;
+import org.jboss.as.controller.ServiceVerificationHandler;
+import org.jboss.as.server.deployment.Attachments;
+import org.jboss.as.server.deployment.annotation.ResourceRootIndexer;
+import org.jboss.as.server.deployment.module.MountHandle;
+import org.jboss.as.server.deployment.module.ResourceRoot;
 import org.jboss.dmr.ModelNode;
-import org.jboss.jca.common.api.metadata.Defaults;
+import org.jboss.jandex.Index;
 import org.jboss.jca.common.api.metadata.common.CommonAdminObject;
 import org.jboss.jca.common.api.metadata.common.CommonPool;
 import org.jboss.jca.common.api.metadata.common.CommonSecurity;
@@ -41,7 +53,7 @@ import org.jboss.jca.common.api.metadata.common.FlushStrategy;
 import org.jboss.jca.common.api.metadata.common.Recovery;
 import org.jboss.jca.common.api.metadata.common.TransactionSupportEnum;
 import org.jboss.jca.common.api.metadata.common.v10.CommonConnDef;
-import org.jboss.jca.common.api.metadata.resourceadapter.v10.ResourceAdapter;
+import org.jboss.jca.common.api.metadata.resourceadapter.ResourceAdapter;
 import org.jboss.jca.common.api.validator.ValidateException;
 import org.jboss.jca.common.metadata.common.CommonPoolImpl;
 import org.jboss.jca.common.metadata.common.CommonSecurityImpl;
@@ -49,16 +61,29 @@ import org.jboss.jca.common.metadata.common.CommonTimeOutImpl;
 import org.jboss.jca.common.metadata.common.CommonValidationImpl;
 import org.jboss.jca.common.metadata.common.CommonXaPoolImpl;
 import org.jboss.jca.common.metadata.common.CredentialImpl;
-import org.jboss.msc.service.ServiceContainer;
+import org.jboss.modules.Module;
+import org.jboss.modules.ModuleIdentifier;
+import org.jboss.modules.ModuleLoadException;
+import org.jboss.msc.service.AbstractServiceListener;
+import org.jboss.msc.service.ServiceBuilder;
 import org.jboss.msc.service.ServiceController;
+import org.jboss.msc.service.ServiceListener;
 import org.jboss.msc.service.ServiceName;
 import org.jboss.msc.service.ServiceRegistry;
+import org.jboss.msc.service.ServiceTarget;
+import org.jboss.vfs.VFS;
+import org.jboss.vfs.VirtualFile;
 
+import java.io.Closeable;
+import java.io.File;
+import java.io.IOException;
+import java.net.URL;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import static org.jboss.as.connector.logging.ConnectorMessages.MESSAGES;
 import static org.jboss.as.connector.subsystems.common.pool.Constants.BACKGROUNDVALIDATION;
 import static org.jboss.as.connector.subsystems.common.pool.Constants.BACKGROUNDVALIDATIONMILLIS;
 import static org.jboss.as.connector.subsystems.common.pool.Constants.BLOCKING_TIMEOUT_WAIT_MILLIS;
@@ -69,12 +94,12 @@ import static org.jboss.as.connector.subsystems.common.pool.Constants.POOL_FLUSH
 import static org.jboss.as.connector.subsystems.common.pool.Constants.POOL_PREFILL;
 import static org.jboss.as.connector.subsystems.common.pool.Constants.POOL_USE_STRICT_MIN;
 import static org.jboss.as.connector.subsystems.common.pool.Constants.USE_FAST_FAIL;
+import static org.jboss.as.connector.subsystems.jca.Constants.DEFAULT_NAME;
 import static org.jboss.as.connector.subsystems.resourceadapters.Constants.ALLOCATION_RETRY;
 import static org.jboss.as.connector.subsystems.resourceadapters.Constants.ALLOCATION_RETRY_WAIT_MILLIS;
 import static org.jboss.as.connector.subsystems.resourceadapters.Constants.APPLICATION;
-import static org.jboss.as.connector.subsystems.resourceadapters.Constants.ARCHIVE;
-import static org.jboss.as.connector.subsystems.resourceadapters.Constants.BEANVALIDATIONGROUPS;
-import static org.jboss.as.connector.subsystems.resourceadapters.Constants.BOOTSTRAPCONTEXT;
+import static org.jboss.as.connector.subsystems.resourceadapters.Constants.BEANVALIDATION_GROUPS;
+import static org.jboss.as.connector.subsystems.resourceadapters.Constants.BOOTSTRAP_CONTEXT;
 import static org.jboss.as.connector.subsystems.resourceadapters.Constants.CLASS_NAME;
 import static org.jboss.as.connector.subsystems.resourceadapters.Constants.ENABLED;
 import static org.jboss.as.connector.subsystems.resourceadapters.Constants.INTERLEAVING;
@@ -90,120 +115,102 @@ import static org.jboss.as.connector.subsystems.resourceadapters.Constants.RECOV
 import static org.jboss.as.connector.subsystems.resourceadapters.Constants.SAME_RM_OVERRIDE;
 import static org.jboss.as.connector.subsystems.resourceadapters.Constants.SECURITY_DOMAIN;
 import static org.jboss.as.connector.subsystems.resourceadapters.Constants.SECURITY_DOMAIN_AND_APPLICATION;
-import static org.jboss.as.connector.subsystems.resourceadapters.Constants.TRANSACTIONSUPPORT;
+import static org.jboss.as.connector.subsystems.resourceadapters.Constants.TRANSACTION_SUPPORT;
 import static org.jboss.as.connector.subsystems.resourceadapters.Constants.USE_CCM;
 import static org.jboss.as.connector.subsystems.resourceadapters.Constants.USE_JAVA_CONTEXT;
 import static org.jboss.as.connector.subsystems.resourceadapters.Constants.WRAP_XA_RESOURCE;
 import static org.jboss.as.connector.subsystems.resourceadapters.Constants.XA_RESOURCE_TIMEOUT;
 
-public class RaOperationUtil {
 
-    public static ModifiableResourceAdapter buildResourceAdaptersObject(final OperationContext context,ModelNode operation) throws OperationFailedException {
+public class RaOperationUtil {
+    private static final String RAR_EXTENSION = ".rar";
+    private static final ServiceName RAR_MODULE = ServiceName.of("rarinsidemodule");
+
+
+    public static ModifiableResourceAdapter buildResourceAdaptersObject(final OperationContext context, ModelNode operation, String archiveOrModule) throws OperationFailedException {
         Map<String, String> configProperties = new HashMap<String, String>(0);
         List<CommonConnDef> connectionDefinitions = new ArrayList<CommonConnDef>(0);
         List<CommonAdminObject> adminObjects = new ArrayList<CommonAdminObject>(0);
-//        if (operation.hasDefined(CONFIG_PROPERTIES.getName())) {
-//            configProperties = new HashMap<String, String>(operation.get(CONFIG_PROPERTIES.getName()).asList().size());
-//            for (ModelNode property : operation.get(CONFIG_PROPERTIES.getName()).asList()) {
-//                configProperties.put(property.asProperty().getName(), property.asProperty().getValue().asString());
-//            }
-//        }
-        String archive = getResolvedStringIfSetOrGetDefault(context, operation, ARCHIVE.getName(), null);
-        TransactionSupportEnum transactionSupport = operation.hasDefined(TRANSACTIONSUPPORT.getName()) ? TransactionSupportEnum
-                .valueOf(operation.get(TRANSACTIONSUPPORT.getName()).asString()) : null;
-        String bootstrapContext = getResolvedStringIfSetOrGetDefault(context, operation, BOOTSTRAPCONTEXT.getName(), null);
+        TransactionSupportEnum transactionSupport = operation.hasDefined(TRANSACTION_SUPPORT.getName()) ? TransactionSupportEnum
+                .valueOf(operation.get(TRANSACTION_SUPPORT.getName()).asString()) : null;
+        String bootstrapContext = ModelNodeUtil.getResolvedStringIfSetOrGetDefault(context, operation, BOOTSTRAP_CONTEXT);
         List<String> beanValidationGroups = null;
-        if (operation.hasDefined(BEANVALIDATIONGROUPS.getName())) {
-            beanValidationGroups = new ArrayList<String>(operation.get(BEANVALIDATIONGROUPS.getName()).asList().size());
-            for (ModelNode beanValidation : operation.get(BEANVALIDATIONGROUPS.getName()).asList()) {
+        if (operation.hasDefined(BEANVALIDATION_GROUPS.getName())) {
+            beanValidationGroups = new ArrayList<String>(operation.get(BEANVALIDATION_GROUPS.getName()).asList().size());
+            for (ModelNode beanValidation : operation.get(BEANVALIDATION_GROUPS.getName()).asList()) {
                 beanValidationGroups.add(beanValidation.asString());
             }
 
         }
         ModifiableResourceAdapter ra;
-        ra = new ModifiableResourceAdapter(archive, transactionSupport, connectionDefinitions,
+        ra = new ModifiableResourceAdapter(archiveOrModule, transactionSupport, connectionDefinitions,
                 adminObjects, configProperties, beanValidationGroups, bootstrapContext);
 
         return ra;
 
     }
 
-    public static ModifiableConnDef buildConnectionDefinitionObject(final OperationContext context,
-                                                                    final ModelNode operation, final String poolName,
+    public static ModifiableConnDef buildConnectionDefinitionObject(final OperationContext context, final ModelNode recoveryEnvModel, final String poolName,
                                                                     final boolean isXa) throws OperationFailedException, ValidateException {
         Map<String, String> configProperties = new HashMap<String, String>(0);
-//        if (operation.hasDefined(CONFIG_PROPERTIES.getName())) {
-//            configProperties = new HashMap<String, String>(operation.get(CONFIG_PROPERTIES.getName()).asList().size());
-//            for (ModelNode property : operation.get(CONFIG_PROPERTIES.getName()).asList()) {
-//                configProperties.put(property.asProperty().getName(), property.asProperty().getValue().asString());
-//            }
-//        }
-        String className = getResolvedStringIfSetOrGetDefault(context, operation, CLASS_NAME.getName(), null);
-        String jndiName = getResolvedStringIfSetOrGetDefault(context, operation, JNDINAME.getName(), null);
-        boolean enabled = getBooleanIfSetOrGetDefault(context, operation, ENABLED, Defaults.ENABLED);
-        boolean useJavaContext = getBooleanIfSetOrGetDefault(context, operation, USE_JAVA_CONTEXT, Defaults.USE_JAVA_CONTEXT);
-        boolean useCcm = getBooleanIfSetOrGetDefault(context, operation, USE_CCM, Defaults.USE_CCM);
+        String className = ModelNodeUtil.getResolvedStringIfSetOrGetDefault(context, recoveryEnvModel, CLASS_NAME);
+        String jndiName = ModelNodeUtil.getResolvedStringIfSetOrGetDefault(context, recoveryEnvModel, JNDINAME);
+        boolean enabled = ModelNodeUtil.getBooleanIfSetOrGetDefault(context, recoveryEnvModel, ENABLED);
+        boolean useJavaContext = ModelNodeUtil.getBooleanIfSetOrGetDefault(context, recoveryEnvModel, USE_JAVA_CONTEXT);
+        boolean useCcm = ModelNodeUtil.getBooleanIfSetOrGetDefault(context, recoveryEnvModel, USE_CCM);
 
-        Integer maxPoolSize = getIntIfSetOrGetDefault(context, operation, MAX_POOL_SIZE, Defaults.MAX_POOL_SIZE);
-        Integer minPoolSize = getIntIfSetOrGetDefault(context, operation, MIN_POOL_SIZE, Defaults.MIN_POOL_SIZE);
-        boolean prefill = getBooleanIfSetOrGetDefault(context, operation, POOL_PREFILL, Defaults.PREFILL);
-        boolean useStrictMin = getBooleanIfSetOrGetDefault(context, operation, POOL_USE_STRICT_MIN, Defaults.USE_STRICT_MIN);
-        final FlushStrategy flushStrategy = operation.hasDefined(POOL_FLUSH_STRATEGY.getName()) ? FlushStrategy.forName(operation
-                .get(POOL_FLUSH_STRATEGY.getName()).asString()) : Defaults.FLUSH_STRATEGY;
-        Boolean isSameRM = getBooleanIfSetOrGetDefault(context, operation, SAME_RM_OVERRIDE, Defaults.IS_SAME_RM_OVERRIDE);
-        Boolean interlivng = getBooleanIfSetOrGetDefault(context, operation, INTERLEAVING, Defaults.INTERLEAVING);
-        Boolean padXid = getBooleanIfSetOrGetDefault(context, operation, PAD_XID, Defaults.PAD_XID);
-        Boolean wrapXaResource = getBooleanIfSetOrGetDefault(context, operation, WRAP_XA_RESOURCE, Defaults.WRAP_XA_RESOURCE);
-        Boolean noTxSeparatePool = getBooleanIfSetOrGetDefault(context, operation, NOTXSEPARATEPOOL, Defaults.NO_TX_SEPARATE_POOL);
+        int maxPoolSize = ModelNodeUtil.getIntIfSetOrGetDefault(context, recoveryEnvModel, MAX_POOL_SIZE);
+        int minPoolSize = ModelNodeUtil.getIntIfSetOrGetDefault(context, recoveryEnvModel, MIN_POOL_SIZE);
+        boolean prefill = ModelNodeUtil.getBooleanIfSetOrGetDefault(context, recoveryEnvModel, POOL_PREFILL);
+        boolean useStrictMin = ModelNodeUtil.getBooleanIfSetOrGetDefault(context, recoveryEnvModel, POOL_USE_STRICT_MIN);
+        String flushStrategyString = POOL_FLUSH_STRATEGY.resolveModelAttribute(context, recoveryEnvModel).asString();
+        final FlushStrategy flushStrategy = FlushStrategy.forName(flushStrategyString);
+        Boolean isSameRM  = ModelNodeUtil.getBooleanIfSetOrGetDefault(context, recoveryEnvModel, SAME_RM_OVERRIDE);
+        boolean interlivng = ModelNodeUtil.getBooleanIfSetOrGetDefault(context, recoveryEnvModel, INTERLEAVING);
+        boolean padXid = ModelNodeUtil.getBooleanIfSetOrGetDefault(context, recoveryEnvModel, PAD_XID);
+        boolean wrapXaResource = ModelNodeUtil.getBooleanIfSetOrGetDefault(context, recoveryEnvModel, WRAP_XA_RESOURCE);
+        boolean noTxSeparatePool = ModelNodeUtil.getBooleanIfSetOrGetDefault(context, recoveryEnvModel, NOTXSEPARATEPOOL);
 
-        Integer allocationRetry = getIntIfSetOrGetDefault(context, operation, ALLOCATION_RETRY, null);
-        Long allocationRetryWaitMillis = getLongIfSetOrGetDefault(context, operation, ALLOCATION_RETRY_WAIT_MILLIS, null);
-        Long blockingTimeoutMillis = getLongIfSetOrGetDefault(context, operation, BLOCKING_TIMEOUT_WAIT_MILLIS, null);
-        Long idleTimeoutMinutes = getLongIfSetOrGetDefault(context, operation, IDLETIMEOUTMINUTES, null);
-        Integer xaResourceTimeout = getIntIfSetOrGetDefault(context, operation, XA_RESOURCE_TIMEOUT, null);
+
+
+        Integer allocationRetry = ModelNodeUtil.getIntIfSetOrGetDefault(context, recoveryEnvModel, ALLOCATION_RETRY);
+        Long allocationRetryWaitMillis = ModelNodeUtil.getLongIfSetOrGetDefault(context, recoveryEnvModel, ALLOCATION_RETRY_WAIT_MILLIS);
+        Long blockingTimeoutMillis = ModelNodeUtil.getLongIfSetOrGetDefault(context, recoveryEnvModel, BLOCKING_TIMEOUT_WAIT_MILLIS);
+        Long idleTimeoutMinutes = ModelNodeUtil.getLongIfSetOrGetDefault(context, recoveryEnvModel, IDLETIMEOUTMINUTES);
+        Integer xaResourceTimeout = ModelNodeUtil.getIntIfSetOrGetDefault(context, recoveryEnvModel, XA_RESOURCE_TIMEOUT);
 
         CommonTimeOut timeOut = new CommonTimeOutImpl(blockingTimeoutMillis, idleTimeoutMinutes, allocationRetry,
                 allocationRetryWaitMillis, xaResourceTimeout);
-        CommonPool pool = null;
+        CommonPool pool;
         if (isXa) {
-              pool = new CommonXaPoolImpl(minPoolSize, maxPoolSize, prefill, useStrictMin, flushStrategy, isSameRM,interlivng, padXid, wrapXaResource, noTxSeparatePool);
-        }   else {
-              pool =  new CommonPoolImpl(minPoolSize, maxPoolSize, prefill, useStrictMin, flushStrategy);
+            pool = new CommonXaPoolImpl(minPoolSize, maxPoolSize, prefill, useStrictMin, flushStrategy, isSameRM, interlivng, padXid, wrapXaResource, noTxSeparatePool);
+        } else {
+            pool = new CommonPoolImpl(minPoolSize, maxPoolSize, prefill, useStrictMin, flushStrategy);
         }
-        String securityDomain = getResolvedStringIfSetOrGetDefault(context, operation, SECURITY_DOMAIN.getName(), null);
-        String securityDomainAndApplication = getResolvedStringIfSetOrGetDefault(context, operation, SECURITY_DOMAIN_AND_APPLICATION.getName(),
-                null);
-        Boolean application = getBooleanIfSetOrGetDefault(context, operation, APPLICATION, null);
-        CommonSecurity security = null;
-        if (securityDomain != null || securityDomainAndApplication != null || application != null) {
-            if (application == null)
-                application = Defaults.APPLICATION_MANAGED_SECURITY;
+        String securityDomain = ModelNodeUtil.getResolvedStringIfSetOrGetDefault(context, recoveryEnvModel, SECURITY_DOMAIN);
+        String securityDomainAndApplication = ModelNodeUtil.getResolvedStringIfSetOrGetDefault(context, recoveryEnvModel, SECURITY_DOMAIN_AND_APPLICATION);
 
+        boolean application = ModelNodeUtil.getBooleanIfSetOrGetDefault(context, recoveryEnvModel, APPLICATION);
+        CommonSecurity security = null;
+        if (securityDomain != null || securityDomainAndApplication != null || application) {
             security = new CommonSecurityImpl(securityDomain, securityDomainAndApplication, application);
         }
-        Long backgroundValidationMillis = getLongIfSetOrGetDefault(context, operation, BACKGROUNDVALIDATIONMILLIS, null);
-        boolean backgroundValidation = getBooleanIfSetOrGetDefault(context, operation, BACKGROUNDVALIDATION, Defaults.BACKGROUND_VALIDATION);
-        boolean useFastFail = getBooleanIfSetOrGetDefault(context, operation, USE_FAST_FAIL, Defaults.USE_FAST_FAIL);
-        CommonValidation validation = new CommonValidationImpl(backgroundValidation, backgroundValidationMillis,
-                useFastFail);
-        final String recoveryUsername = getResolvedStringIfSetOrGetDefault(context, operation, RECOVERY_USERNAME.getName(), null);
-        //TODO This will be cleaned up once it uses attribute definitions
-        String recoveryPassword = getResolvedStringIfSetOrGetDefault(context, operation, RECOVERY_PASSWORD.getName(), null);
-        final String recoverySecurityDomain = getResolvedStringIfSetOrGetDefault(context, operation, RECOVERY_SECURITY_DOMAIN.getName(), null);
-        Boolean noRecovery = getBooleanIfSetOrGetDefault(context, operation, NO_RECOVERY, null);
+        Long backgroundValidationMillis = ModelNodeUtil.getLongIfSetOrGetDefault(context, recoveryEnvModel, BACKGROUNDVALIDATIONMILLIS);
+        boolean backgroundValidation = ModelNodeUtil.getBooleanIfSetOrGetDefault(context, recoveryEnvModel, BACKGROUNDVALIDATION);
+        boolean useFastFail = ModelNodeUtil.getBooleanIfSetOrGetDefault(context, recoveryEnvModel, USE_FAST_FAIL);
+        CommonValidation validation = new CommonValidationImpl(backgroundValidation, backgroundValidationMillis, useFastFail);
+
+        final String recoveryUsername = ModelNodeUtil.getResolvedStringIfSetOrGetDefault(context, recoveryEnvModel, RECOVERY_USERNAME);
+
+        final String recoveryPassword =  ModelNodeUtil.getResolvedStringIfSetOrGetDefault(context, recoveryEnvModel, RECOVERY_PASSWORD);
+        final String recoverySecurityDomain = ModelNodeUtil.getResolvedStringIfSetOrGetDefault(context, recoveryEnvModel, RECOVERY_SECURITY_DOMAIN);
+        boolean noRecovery = ModelNodeUtil.getBooleanIfSetOrGetDefault(context, recoveryEnvModel, NO_RECOVERY);
 
         Recovery recovery = null;
-        if ((recoveryUsername != null && recoveryPassword != null) || recoverySecurityDomain != null || noRecovery != null) {
+        if ((recoveryUsername != null && recoveryPassword != null) || recoverySecurityDomain != null) {
             Credential credential = null;
-
-            if ((recoveryUsername != null && recoveryPassword != null) || recoverySecurityDomain != null)
-                credential = new CredentialImpl(recoveryUsername, recoveryPassword, recoverySecurityDomain);
-
-            Extension recoverPlugin = extractExtension(context, operation, RECOVERLUGIN_CLASSNAME.getName(), RECOVERLUGIN_PROPERTIES.getName());
-
-            if (noRecovery == null)
-                noRecovery = Boolean.FALSE;
-
+            credential = new CredentialImpl(recoveryUsername, recoveryPassword, recoverySecurityDomain);
+            Extension recoverPlugin = ModelNodeUtil.extractExtension(context, recoveryEnvModel, RECOVERLUGIN_CLASSNAME, RECOVERLUGIN_PROPERTIES);
             recovery = new Recovery(credential, recoverPlugin, noRecovery);
         }
         ModifiableConnDef connectionDefinition = new ModifiableConnDef(configProperties, className, jndiName, poolName,
@@ -213,112 +220,85 @@ public class RaOperationUtil {
 
     }
 
-    public static ModifiableAdminObject buildAdminObjects(final OperationContext operationContext, ModelNode operation, final String poolName) throws OperationFailedException, ValidateException {
-                Map<String, String> configProperties = new HashMap<String, String>(0);
-                String className = getResolvedStringIfSetOrGetDefault(operationContext, operation, CLASS_NAME.getName(), null);
-                String jndiName = getResolvedStringIfSetOrGetDefault(operationContext, operation, JNDINAME.getName(), null);
-                boolean enabled = getBooleanIfSetOrGetDefault(operationContext, operation, ENABLED, Defaults.ENABLED);
-                boolean useJavaContext = getBooleanIfSetOrGetDefault(operationContext, operation, USE_JAVA_CONTEXT, Defaults.USE_JAVA_CONTEXT);
+    public static ModifiableAdminObject buildAdminObjects(final OperationContext context, ModelNode operation, final String poolName) throws OperationFailedException, ValidateException {
+        Map<String, String> configProperties = new HashMap<String, String>(0);
+        String className = ModelNodeUtil.getResolvedStringIfSetOrGetDefault(context, operation, CLASS_NAME);
+        String jndiName = ModelNodeUtil.getResolvedStringIfSetOrGetDefault(context, operation, JNDINAME);
+        boolean enabled = ModelNodeUtil.getBooleanIfSetOrGetDefault(context, operation, ENABLED);
+        boolean useJavaContext = ModelNodeUtil.getBooleanIfSetOrGetDefault(context, operation, USE_JAVA_CONTEXT);
 
-                ModifiableAdminObject adminObject = new ModifiableAdminObject(configProperties, className, jndiName, poolName,
-                        enabled, useJavaContext);
-
-                return adminObject;
+        ModifiableAdminObject adminObject = new ModifiableAdminObject(configProperties, className, jndiName, poolName,
+                enabled, useJavaContext);
+        return adminObject;
     }
 
-    private static Long getLongIfSetOrGetDefault(final OperationContext context, final ModelNode dataSourceNode, final SimpleAttributeDefinition key, final Long defaultValue) throws OperationFailedException {
-            if (dataSourceNode.hasDefined(key.getName())) {
-                if (key.isAllowExpression()) {
-                    return context.resolveExpressions(dataSourceNode.get(key.getName())).asLong();
-                } else {
-                    return dataSourceNode.get(key.getName()).asLong();
+
+    public static ServiceName restartIfPresent(OperationContext context, final String raName, ServiceVerificationHandler svh) throws OperationFailedException {
+        final ServiceName raDeploymentServiceName = ConnectorServices.getDeploymentServiceName(raName);
+        if (raDeploymentServiceName != null) {
+            final ServiceRegistry registry = context.getServiceRegistry(true);
+            ServiceController raServiceController = registry.getService(raDeploymentServiceName);
+            final org.jboss.msc.service.ServiceController.Mode originalMode = raServiceController.getMode();
+            if (raServiceController != null) {
+                if (svh != null) {
+                    raServiceController.addListener(ServiceListener.Inheritance.ALL, svh);
                 }
-            } else {
-                return defaultValue;
+                raServiceController.addListener(new AbstractServiceListener() {
+                    @Override
+                    public void transition(ServiceController controller, ServiceController.Transition transition) {
+                        switch (transition) {
+                            case STOPPING_to_DOWN:
+                                try {
+                                    final ServiceController<?> RaxmlController = registry.getService(ServiceName.of(ConnectorServices.RA_SERVICE, raName));
+                                    ResourceAdapter raxml = (ResourceAdapter) RaxmlController.getValue();
+                                    ((ResourceAdapterXmlDeploymentService) controller.getService()).setRaxml(raxml);
+                                    controller.compareAndSetMode(ServiceController.Mode.NEVER, originalMode);
+                                } finally {
+                                    controller.removeListener(this);
+                                }
+
+                        }
+                    }
+
+                    @Override
+                    public void listenerAdded(ServiceController controller) {
+                        controller.setMode(ServiceController.Mode.NEVER);
+                    }
+
+                });
+
+
+
             }
         }
 
-        private static Integer getIntIfSetOrGetDefault(final OperationContext context, final ModelNode dataSourceNode, final SimpleAttributeDefinition key, final Integer defaultValue) throws OperationFailedException {
-            if (dataSourceNode.hasDefined(key.getName())) {
-                if (key.isAllowExpression()) {
-                    return context.resolveExpressions(dataSourceNode.get(key.getName())).asInt();
-                } else {
-                    return dataSourceNode.get(key.getName()).asInt();
-                }
-            } else {
-                return defaultValue;
-            }
-        }
+        return raDeploymentServiceName;
 
-        private static Boolean getBooleanIfSetOrGetDefault(final OperationContext context, final ModelNode dataSourceNode, final SimpleAttributeDefinition key,
-                final Boolean defaultValue) throws OperationFailedException {
-            if (dataSourceNode.hasDefined(key.getName())) {
-                if (key.isAllowExpression()) {
-                    return context.resolveExpressions(dataSourceNode.get(key.getName())).asBoolean();
-                } else {
-                    return dataSourceNode.get(key.getName()).asBoolean();
-                }
-            } else {
-                return defaultValue;
-            }
-        }
-
-
-    private static String getResolvedStringIfSetOrGetDefault(final OperationContext context, final ModelNode dataSourceNode, final String key, final String defaultValue) throws OperationFailedException {
-        if (dataSourceNode.hasDefined(key)) {
-            return context.resolveExpressions(dataSourceNode.get(key)).asString();
-        } else {
-            return defaultValue;
-        }
     }
 
-    private static Extension extractExtension(final OperationContext operationContext, final ModelNode node, final String className, final String propertyName)
-            throws ValidateException, OperationFailedException {
-        if (node.hasDefined(className)) {
-            String exceptionSorterClassName = node.get(className).asString();
-
-            getResolvedStringIfSetOrGetDefault(operationContext, node, className, null);
-
-            Map<String, String> exceptionSorterProperty = null;
-            if (node.hasDefined(propertyName)) {
-                exceptionSorterProperty = new HashMap<String, String>(node.get(propertyName).asList().size());
-                for (ModelNode property : node.get(propertyName).asList()) {
-                    exceptionSorterProperty.put(property.asProperty().getName(), property.asProperty().getValue().asString());
-                }
-            }
-
-            return new Extension(exceptionSorterClassName, exceptionSorterProperty);
-        } else {
-            return null;
-        }
-    }
-
-    public static void deactivateIfActive(OperationContext context, String raName) throws OperationFailedException {
+    public static boolean removeIfActive(OperationContext context, String raName) throws OperationFailedException {
+        boolean wasActive = false;
         final ServiceName raDeploymentServiceName = ConnectorServices.getDeploymentServiceName(raName);
         Integer identifier = 0;
-        if (raName.indexOf("->") != -1) {
-            identifier = Integer.valueOf(raName.substring(raName.indexOf("->")+2));
-            raName = raName.substring(0,raName.indexOf("->"));
+        if (raName.contains("->")) {
+            identifier = Integer.valueOf(raName.substring(raName.indexOf("->") + 2));
+            raName = raName.substring(0, raName.indexOf("->"));
         }
-        if (raDeploymentServiceName != null)  {
+        if (raDeploymentServiceName != null) {
             context.removeService(raDeploymentServiceName);
             ConnectorServices.unregisterDeployment(raName, raDeploymentServiceName);
+            wasActive = true;
         }
         ConnectorServices.unregisterResourceIdentifier(raName, identifier);
 
-        ServiceName deploymentServiceName = ConnectorServices.getDeploymentServiceName(raName);
-        AbstractResourceAdapterDeploymentService service = ((AbstractResourceAdapterDeploymentService) context.getServiceRegistry(false).getService(deploymentServiceName));
-
-
+        return wasActive;
 
     }
 
-    public static void activate(OperationContext context, String raName, String rarName)  throws OperationFailedException {
+    public static void activate(OperationContext context, String raName, final ServiceVerificationHandler serviceVerificationHandler) throws OperationFailedException {
         ServiceRegistry registry = context.getServiceRegistry(true);
-        if (rarName.contains(ConnectorServices.RA_SERVICE_NAME_SEPARATOR)) {
-            rarName = rarName.substring(0, rarName.indexOf(ConnectorServices.RA_SERVICE_NAME_SEPARATOR));
-        }
-        final ServiceController<?> inactiveRaController = registry.getService(ConnectorServices.INACTIVE_RESOURCE_ADAPTER_SERVICE.append(rarName));
+
+        final ServiceController<?> inactiveRaController = registry.getService(ConnectorServices.INACTIVE_RESOURCE_ADAPTER_SERVICE.append(raName));
         if (inactiveRaController == null) {
             throw new OperationFailedException("rar not yet deployed");
         }
@@ -326,6 +306,124 @@ public class RaOperationUtil {
         final ServiceController<?> RaxmlController = registry.getService(ServiceName.of(ConnectorServices.RA_SERVICE, raName));
 
         ResourceAdapter raxml = (ResourceAdapter) RaxmlController.getValue();
-        RaServicesFactory.createDeploymentService(inactive.getRegistration(), inactive.getConnectorXmlDescriptor(), inactive.getModule(), inactive.getServiceTarget(), raName, inactive.getDeployment(), raxml, inactive.getResource());
+        RaServicesFactory.createDeploymentService(inactive.getRegistration(), inactive.getConnectorXmlDescriptor(), inactive.getModule(), inactive.getServiceTarget(), raName, inactive.getDeploymentUnitServiceName(), inactive.getDeployment(), raxml, inactive.getResource(), serviceVerificationHandler);
+
+
     }
+
+    public static ServiceName installRaServices(OperationContext context, ServiceVerificationHandler verificationHandler, String name, ModifiableResourceAdapter resourceAdapter, final List<ServiceController<?>> newControllers) {
+        final ServiceTarget serviceTarget = context.getServiceTarget();
+
+        final ServiceController<?> resourceAdaptersService = context.getServiceRegistry(false).getService(
+                ConnectorServices.RESOURCEADAPTERS_SERVICE);
+        if (resourceAdaptersService == null) {
+            newControllers.add(serviceTarget.addService(ConnectorServices.RESOURCEADAPTERS_SERVICE,
+                    new ResourceAdaptersService()).setInitialMode(ServiceController.Mode.ACTIVE).addListener(verificationHandler).install());
+        }
+        ServiceName raServiceName = ServiceName.of(ConnectorServices.RA_SERVICE, name);
+        String bootStrapCtxName = DEFAULT_NAME;
+        if (resourceAdapter.getBootstrapContext() != null && ! resourceAdapter.getBootstrapContext().equals("undefined")) {
+            bootStrapCtxName = resourceAdapter.getBootstrapContext();
+        }
+        final ServiceController<?> service = context.getServiceRegistry(true).getService(raServiceName);
+        if (service == null) {
+            ResourceAdapterService raService = new ResourceAdapterService(resourceAdapter);
+            newControllers.add(serviceTarget.addService(raServiceName, raService).setInitialMode(ServiceController.Mode.ACTIVE)
+                    .addDependency(ConnectorServices.RESOURCEADAPTERS_SERVICE, ResourceAdaptersService.ModifiableResourceAdaptors.class, raService.getResourceAdaptersInjector())
+                    .addDependency(ConnectorServices.BOOTSTRAP_CONTEXT_SERVICE.append(bootStrapCtxName))
+                    .addListener(verificationHandler).install());
+        }
+        return raServiceName;
+    }
+
+    public static void installRaServicesAndDeployFromModule(OperationContext context, ServiceVerificationHandler verificationHandler, String name, ModifiableResourceAdapter resourceAdapter, String fullModuleName, final List<ServiceController<?>> newControllers) throws OperationFailedException{
+        ServiceName raServiceName =  installRaServices(context, verificationHandler, name, resourceAdapter, newControllers);
+        final boolean resolveProperties = true;
+        final ServiceTarget serviceTarget = context.getServiceTarget();
+        final String moduleName;
+
+
+        //load module
+        String slot = "main";
+        if (fullModuleName.contains(":")) {
+            slot = fullModuleName.substring(fullModuleName.indexOf(":") + 1);
+            moduleName = fullModuleName.substring(0, fullModuleName.indexOf(":"));
+        } else {
+            moduleName = fullModuleName;
+        }
+
+        Module module;
+        try {
+            ModuleIdentifier moduleId = ModuleIdentifier.create(moduleName, slot);
+            module = Module.getCallerModuleLoader().loadModule(moduleId);
+        } catch (ModuleLoadException e) {
+            throw new OperationFailedException(MESSAGES.failedToLoadModuleRA(moduleName), e);
+        }
+        URL path = module.getExportedResource("META-INF/ra.xml");
+        Closeable closable = null;
+            try {
+                VirtualFile child;
+                if (path.getPath().contains("!")) {
+                    throw new OperationFailedException(MESSAGES.compressedRarNotSupportedInModuleRA(moduleName));
+                } else {
+                    child = VFS.getChild(path.getPath().split("META-INF")[0]);
+
+                    closable = VFS.mountReal(new File(path.getPath().split("META-INF")[0]), child);
+                }
+                //final Closeable closable = VFS.mountZip((InputStream) new JarInputStream(new FileInputStream(path.getPath().split("!")[0].split(":")[1])), path.getPath().split("!")[0].split(":")[1], child, TempFileProviderService.provider());
+
+                final MountHandle mountHandle = new MountHandle(closable);
+                final ResourceRoot resourceRoot = new ResourceRoot(child, mountHandle);
+
+                final VirtualFile deploymentRoot = resourceRoot.getRoot();
+                if (deploymentRoot == null || !deploymentRoot.exists())
+                    return;
+                ConnectorXmlDescriptor connectorXmlDescriptor = RaDeploymentParsingProcessor.process(resolveProperties, deploymentRoot, null, name);
+                IronJacamarXmlDescriptor ironJacamarXmlDescriptor = IronJacamarDeploymentParsingProcessor.process(deploymentRoot, resolveProperties);
+                RaNativeProcessor.process(deploymentRoot);
+                Map<ResourceRoot, Index> annotationIndexes = new HashMap<ResourceRoot, Index>();
+                ResourceRootIndexer.indexResourceRoot(resourceRoot);
+                Index index = resourceRoot.getAttachment(Attachments.ANNOTATION_INDEX);
+                if (index != null) {
+                    annotationIndexes.put(resourceRoot, index);
+                }
+                if (ironJacamarXmlDescriptor != null) {
+                    ConnectorLogger.SUBSYSTEM_RA_LOGGER.forceIJToNull();
+                    ironJacamarXmlDescriptor = null;
+                }
+                final ServiceName deployerServiceName = ConnectorServices.RESOURCE_ADAPTER_DEPLOYER_SERVICE_PREFIX.append(connectorXmlDescriptor.getDeploymentName());
+                final ServiceController<?> deployerService = context.getServiceRegistry(true).getService(deployerServiceName);
+                if (deployerService == null) {
+                    ServiceBuilder builder = ParsedRaDeploymentProcessor.process(connectorXmlDescriptor, ironJacamarXmlDescriptor, module.getClassLoader(), serviceTarget, annotationIndexes, RAR_MODULE.append(name), verificationHandler);
+                    newControllers.add(builder.addDependency(raServiceName).setInitialMode(ServiceController.Mode.ACTIVE).install());
+                }
+                String rarName = resourceAdapter.getArchive();
+
+                if (fullModuleName.equals(rarName)) {
+
+                    ServiceName serviceName = ConnectorServices.INACTIVE_RESOURCE_ADAPTER_SERVICE.append(name);
+
+                    InactiveResourceAdapterDeploymentService service = new InactiveResourceAdapterDeploymentService(connectorXmlDescriptor, module, name, name, RAR_MODULE.append(name), null, serviceTarget, null);
+                    newControllers.add(serviceTarget
+                            .addService(serviceName, service)
+                            .setInitialMode(ServiceController.Mode.ACTIVE).addListener(verificationHandler).install());
+
+                }
+
+            } catch (Exception e) {
+                throw new OperationFailedException(MESSAGES.failedToLoadModuleRA(moduleName), e);
+            } finally {
+                if (closable != null) {
+                    try {
+                        closable.close();
+                    } catch (IOException e) {
+
+                    }
+                }
+            }
+
+
+    }
+
+
 }

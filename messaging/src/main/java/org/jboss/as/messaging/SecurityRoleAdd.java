@@ -22,6 +22,7 @@
 
 package org.jboss.as.messaging;
 
+import java.util.List;
 import java.util.Set;
 
 import org.hornetq.core.security.Role;
@@ -30,10 +31,9 @@ import org.jboss.as.controller.AbstractAddStepHandler;
 import org.jboss.as.controller.AttributeDefinition;
 import org.jboss.as.controller.OperationContext;
 import org.jboss.as.controller.OperationFailedException;
-import org.jboss.as.controller.OperationStepHandler;
 import org.jboss.as.controller.PathAddress;
+import org.jboss.as.controller.ServiceVerificationHandler;
 import org.jboss.as.controller.descriptions.ModelDescriptionConstants;
-import org.jboss.as.controller.registry.Resource;
 import org.jboss.dmr.ModelNode;
 import org.jboss.msc.service.ServiceController;
 import org.jboss.msc.service.ServiceName;
@@ -48,37 +48,39 @@ class SecurityRoleAdd extends AbstractAddStepHandler {
     static final SecurityRoleAdd INSTANCE = new SecurityRoleAdd();
 
     @Override
-    protected void populateModel(final ModelNode operation, final ModelNode model) throws OperationFailedException {
+    protected void populateModel(ModelNode operation, ModelNode model) throws OperationFailedException {
         for(final AttributeDefinition attribute : SecurityRoleDefinition.ATTRIBUTES) {
             attribute.validateAndSet(operation, model);
         }
     }
 
     @Override
-    public void execute(OperationContext context, ModelNode operation) throws OperationFailedException {
-        final Resource resource = context.createResource(PathAddress.EMPTY_ADDRESS);
-        final ModelNode subModel = resource.getModel();
-        for(final AttributeDefinition attribute : SecurityRoleDefinition.ATTRIBUTES) {
-            attribute.validateAndSet(operation, subModel);
-        }
+    protected void performRuntime(OperationContext context, ModelNode operation, ModelNode model,
+            ServiceVerificationHandler verificationHandler, List<ServiceController<?>> newControllers)
+                    throws OperationFailedException {
         if(context.isNormalServer()) {
-            context.addStep(new OperationStepHandler() {
-                @Override
-                public void execute(final OperationContext context, final ModelNode operation) throws OperationFailedException {
-                    final PathAddress address = PathAddress.pathAddress(operation.require(ModelDescriptionConstants.OP_ADDR));
-                    final HornetQServer server = getServer(context, operation);
-                    if(server != null) {
-                        final String match = address.getElement(address.size() - 2).getValue();
-                        final String role = address.getLastElement().getValue();
-                        final Set<Role> roles = server.getSecurityRepository().getMatch(match);
-                        roles.add(SecurityRoleDefinition.transform(context, role, subModel));
-                        server.getSecurityRepository().addMatch(match, roles);
-                    }
-                    context.completeStep();
-                }
-            }, OperationContext.Stage.RUNTIME);
+            final PathAddress address = PathAddress.pathAddress(operation.require(ModelDescriptionConstants.OP_ADDR));
+            final HornetQServer server = getServer(context, operation);
+            final String match = address.getElement(address.size() - 2).getValue();
+            final String roleName = address.getLastElement().getValue();
+
+            if(server != null) {
+                final Role role = SecurityRoleDefinition.transform(context, roleName, model);
+                final Set<Role> roles = server.getSecurityRepository().getMatch(match);
+                roles.add(role);
+                server.getSecurityRepository().addMatch(match, roles);
+            }
         }
-        context.completeStep();
+    }
+
+    @Override
+    protected void rollbackRuntime(OperationContext context, ModelNode operation, ModelNode model,
+            List<ServiceController<?>> controllers) {
+        final PathAddress address = PathAddress.pathAddress(operation.require(ModelDescriptionConstants.OP_ADDR));
+        final HornetQServer server = getServer(context, operation);
+        final String match = address.getElement(address.size() - 2).getValue();
+        final String roleName = address.getLastElement().getValue();
+        SecurityRoleRemove.removeRole(server, match, roleName);
     }
 
     static HornetQServer getServer(final OperationContext context, ModelNode operation) {
@@ -89,5 +91,4 @@ class SecurityRoleAdd extends AbstractAddStepHandler {
         }
         return null;
     }
-
 }

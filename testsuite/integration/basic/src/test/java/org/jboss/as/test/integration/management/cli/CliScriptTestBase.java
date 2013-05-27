@@ -31,6 +31,7 @@ import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.List;
 
+import org.jboss.as.cli.Util;
 import org.jboss.as.test.shared.TestSuiteEnvironment;
 
 /**
@@ -88,6 +89,7 @@ public class CliScriptTestBase {
         final List<String> command = new ArrayList<String>();
         command.add("java");
         TestSuiteEnvironment.getIpv6Args(command);
+        command.add("-Djboss.cli.config=" + jbossDist + File.separator + "bin" + File.separator + "jboss-cli.xml");
         command.add("-jar");
         command.add(jbossDist + File.separatorChar + "jboss-modules.jar");
         command.add("-mp");
@@ -125,41 +127,57 @@ public class CliScriptTestBase {
             } catch(IllegalThreadStateException e) {
                 // cli still working
             }
-            if(runningTime >= CLI_PROC_TIMEOUT) {
+            if(wait && runningTime >= CLI_PROC_TIMEOUT) {
                 readStream(cliOutBuf, cliStream);
+                cliOutput = cliOutBuf.toString();
                 cliProc.destroy();
                 wait = false;
+                if(logFailure) {
+                    logErrors(cmd, cliProc);
+                }
+                fail("The cli process has timed out in " + runningTime);
             }
         } while(wait);
 
         cliOutput = cliOutBuf.toString();
-
         if (logFailure && exitCode != 0) {
-            System.out.println("Failed to execute '" + cmd + "'");
-            System.out.println("Command's output: '" + cliOutput + "'");
-            try {
-                int bytesTotal = cliProc.getErrorStream().available();
-                if (bytesTotal > 0) {
-                    final byte[] bytes = new byte[bytesTotal];
-                    cliProc.getErrorStream().read(bytes);
-                    System.out.println("Command's error log: '" + new String(bytes) + "'");
-                } else {
-                    System.out.println("No output data for the command.");
-                }
-            } catch (IOException e) {
-                fail("Failed to read command's error output: " + e.getLocalizedMessage());
-            }
+            logErrors(cmd, cliProc);
         }
         return exitCode;
     }
 
-    protected void readStream(final StringBuilder cliOutBuf, InputStream cliStream) {
+    protected void logErrors(String cmd, Process cliProc) {
+        System.out.println("Failed to execute '" + cmd + "'");
+        System.out.println("Command's output: '" + cliOutput + "'");
+
+        java.io.InputStreamReader isr = new java.io.InputStreamReader(cliProc.getErrorStream());
+        java.io.BufferedReader br = new java.io.BufferedReader(isr);
+        String line=null;
         try {
-            int bytesTotal = cliStream.available();
-            if (bytesTotal > 0) {
-                final byte[] bytes = new byte[bytesTotal];
-                cliStream.read(bytes);
-                cliOutBuf.append(new String(bytes));
+            line = br.readLine();
+            if(line == null) {
+                System.out.println("No output data for the command.");
+            } else {
+                StringBuilder buf = new StringBuilder(line);
+                while((line = br.readLine()) != null) {
+                    buf.append(Util.LINE_SEPARATOR);
+                    buf.append(line);
+                }
+                System.out.println("Command's error log: '" + buf + "'");
+
+            }
+        } catch (IOException e) {
+            fail("Failed to read command's error output: " + e.getLocalizedMessage());
+        }
+    }
+
+    protected void readStream(final StringBuilder cliOutBuf, InputStream cliStream) {
+        java.io.InputStreamReader isr = new java.io.InputStreamReader(cliStream);
+        java.io.BufferedReader br = new java.io.BufferedReader(isr);
+        String line=null;
+        try {
+            while ((line = br.readLine()) != null) {
+                cliOutBuf.append(line).append(Util.LINE_SEPARATOR);
             }
         } catch (IOException e) {
             fail("Failed to read command's output: " + e.getLocalizedMessage());

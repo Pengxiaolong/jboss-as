@@ -22,15 +22,18 @@
 
 package org.jboss.as.test.integration.jpa.mockprovider.classtransformer;
 
-import java.io.File;
 import java.lang.reflect.Proxy;
-import java.net.URL;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 import javax.persistence.EntityManagerFactory;
 import javax.persistence.spi.PersistenceProvider;
 import javax.persistence.spi.PersistenceUnitInfo;
 import javax.persistence.spi.ProviderUtil;
+
+import org.jboss.as.jpa.container.EntityManagerUnwrappedTargetInvocationHandler;
 
 /**
  * TestPersistenceProvider
@@ -39,14 +42,11 @@ import javax.persistence.spi.ProviderUtil;
  */
 public class TestPersistenceProvider implements PersistenceProvider {
 
-    private static volatile PersistenceUnitInfo lastPersistenceUnitInfo = null;
+    // key = pu name
+    private static Map<String,PersistenceUnitInfo> persistenceUnitInfo = new HashMap<String,PersistenceUnitInfo>();
 
-    public static PersistenceUnitInfo getLastPersistenceUnitInfo() {
-        return lastPersistenceUnitInfo;
-    }
-
-    public static void clearLastPersistenceUnitInfo() {
-        lastPersistenceUnitInfo = null;
+    public static PersistenceUnitInfo getPersistenceUnitInfo(String name) {
+        return persistenceUnitInfo.get(name);
     }
 
     @Override
@@ -56,7 +56,7 @@ public class TestPersistenceProvider implements PersistenceProvider {
 
     @Override
     public EntityManagerFactory createContainerEntityManagerFactory(PersistenceUnitInfo info, Map map) {
-        lastPersistenceUnitInfo = info;
+        persistenceUnitInfo.put(info.getPersistenceUnitName(), info);
         TestClassTransformer testClassTransformer = new TestClassTransformer();
         info.addTransformer(testClassTransformer);
 
@@ -84,34 +84,26 @@ public class TestPersistenceProvider implements PersistenceProvider {
                 testEntityManagerFactory
         );
 
-        testGetPersistenceUnitRootUrl(info);
-
         System.out.println("TestPersistenceProvider.createContainerEntityManagerFactory() is returning " + proxyEntityManagerFactory);
         return proxyEntityManagerFactory;
     }
 
-    private void testGetPersistenceUnitRootUrl(PersistenceUnitInfo info) {
-        URL rootUrl = info.getPersistenceUnitRootUrl();
-        File topFolder = new File(rootUrl.getFile());
-        if (topFolder == null) {
-            throw new RuntimeException("couldn't get root file representation of getPersistenceUnitRootUrl");
-        }
-        File metainfFolder[] = topFolder.listFiles();  // META-INF
-        File containedFiles[] = metainfFolder[0].listFiles();
+    @Override
+    public void generateSchema(PersistenceUnitInfo persistenceUnitInfo, Map map) {
 
-        for (File file :containedFiles) {
+    }
 
-            System.out.println("getPersistenceUnitRootUrl contains " + file.getName());
-            if (file.getName().equals("persistence.xml")) {
-                System.out.println("success: found persistence.xml");
-                return ;
-            }
-        }
-        throw new RuntimeException("failed to find 'persistence.xml' in PersistenceUnitInfo.getPersistenceUnitRootUrl() to verify that it contains 'persistence.xml'");
+    @Override
+    public boolean generateSchema(String s, Map map) {
+        return false;
     }
 
     @Override
     public ProviderUtil getProviderUtil() {
         return null;
+    }
+
+    public static void clearLastPersistenceUnitInfo() {
+        persistenceUnitInfo.clear();
     }
 }

@@ -43,7 +43,7 @@ import javax.security.auth.login.LoginException;
 import javax.security.sasl.RealmCallback;
 
 import org.jboss.as.controller.security.SubjectUserInfo;
-import org.jboss.as.domain.management.AuthenticationMechanism;
+import org.jboss.as.domain.management.AuthMechanism;
 import org.jboss.as.domain.management.AuthorizingCallbackHandler;
 import org.jboss.as.domain.management.SecurityRealm;
 import org.jboss.as.domain.management.security.RealmRole;
@@ -74,16 +74,24 @@ public class RealmDirectLoginModule extends UsernamePasswordLoginModule {
     private static final String DEFAULT_REALM = "ApplicationRealm";
     private static final String REALM_OPTION = "realm";
 
+    private static final String[] ALL_VALID_OPTIONS =
+    {
+        REALM_OPTION
+    };
+
     private SecurityRealm securityRealm;
-    private AuthenticationMechanism chosenMech;
+    private AuthMechanism chosenMech;
     private ValidationMode validationMode;
     private UsernamePasswordHashUtil hashUtil;
     private AuthorizingCallbackHandler callbackHandler;
 
     @Override
     public void initialize(Subject subject, CallbackHandler callbackHandler, Map<String, ?> sharedState, Map<String, ?> options) {
-        final String realm = options.containsKey(REALM_OPTION) ? (String) options.get(REALM_OPTION) : DEFAULT_REALM;
+        addValidOptions(ALL_VALID_OPTIONS);
         super.initialize(subject, callbackHandler, sharedState, options);
+
+        final String realm = options.containsKey(REALM_OPTION) ? (String) options.get(REALM_OPTION) : DEFAULT_REALM;
+
         final ServiceController<?> controller = currentServiceContainer().getService(SecurityRealmService.BASE_SERVICE_NAME.append(realm));
         if (controller != null) {
             securityRealm = (SecurityRealm) controller.getValue();
@@ -91,12 +99,12 @@ public class RealmDirectLoginModule extends UsernamePasswordLoginModule {
         if (securityRealm == null) {
             throw SecurityMessages.MESSAGES.realmNotFound(realm);
         }
-        Set<AuthenticationMechanism> authMechs = securityRealm.getSupportedAuthenticationMechanisms();
+        Set<AuthMechanism> authMechs = securityRealm.getSupportedAuthenticationMechanisms();
 
-        if (authMechs.contains(AuthenticationMechanism.DIGEST)) {
-            chosenMech = AuthenticationMechanism.DIGEST;
-        } else if (authMechs.contains(AuthenticationMechanism.PLAIN)) {
-            chosenMech = AuthenticationMechanism.PLAIN;
+        if (authMechs.contains(AuthMechanism.DIGEST)) {
+            chosenMech = AuthMechanism.DIGEST;
+        } else if (authMechs.contains(AuthMechanism.PLAIN)) {
+            chosenMech = AuthMechanism.PLAIN;
         } else {
             throw SecurityMessages.MESSAGES.noPasswordValidationAvailable(realm);
         }
@@ -108,8 +116,7 @@ public class RealmDirectLoginModule extends UsernamePasswordLoginModule {
             // callback handler can handle the conversion comparison itself.
             validationMode = ValidationMode.VALIDATION;
         } else {
-            if (chosenMech == AuthenticationMechanism.DIGEST) {
-                boolean plainTextDigest = true;
+            if (chosenMech == AuthMechanism.DIGEST) {
                 if (mechOpts.containsKey(DIGEST_PLAIN_TEXT) && Boolean.parseBoolean(mechOpts.get(DIGEST_PLAIN_TEXT))) {
                     validationMode = ValidationMode.PASSWORD;
                 } else {

@@ -22,22 +22,24 @@
 
 package org.jboss.as.osgi;
 
+import static org.jboss.logging.Logger.Level.ERROR;
+import static org.jboss.logging.Logger.Level.INFO;
+import static org.jboss.logging.Logger.Level.WARN;
+
 import java.util.Collection;
 
 import org.jboss.as.server.deployment.DeploymentUnit;
 import org.jboss.logging.BasicLogger;
+import org.jboss.logging.Logger;
 import org.jboss.logging.annotations.Cause;
 import org.jboss.logging.annotations.LogMessage;
-import org.jboss.logging.Logger;
 import org.jboss.logging.annotations.Message;
 import org.jboss.logging.annotations.MessageLogger;
 import org.jboss.modules.ModuleIdentifier;
 import org.jboss.osgi.deployment.deployer.Deployment;
 import org.osgi.framework.Bundle;
+import org.osgi.framework.wiring.BundleRevision;
 import org.osgi.resource.Requirement;
-import static org.jboss.logging.Logger.Level.ERROR;
-import static org.jboss.logging.Logger.Level.INFO;
-import static org.jboss.logging.Logger.Level.WARN;
 
 /**
  * Logging Id ranges: 11900-11949
@@ -60,9 +62,9 @@ public interface OSGiLogger extends BasicLogger {
     //@Message(id = 11901, value = "Problem adding module: %s")
     //void errorAddingModule(@Cause Throwable cause, String moduleId);
 
-    //@LogMessage(level = ERROR)
-    //@Message(id = 11902, value = "Failed to uninstall deployment: %s")
-    //void errorFailedToUninstallDeployment(@Cause Throwable cause, Deployment deployment);
+    @LogMessage(level = ERROR)
+    @Message(id = 11902, value = "Failed to uninstall deployment: %s")
+    void errorFailedToUninstallDeployment(@Cause Throwable cause, Deployment deployment);
 
     //@LogMessage(level = ERROR)
     //@Message(id = 11903, value = "Cannot add module as it was not found: %s")
@@ -73,8 +75,8 @@ public interface OSGiLogger extends BasicLogger {
     void warnCannotFindAnnotationIndex(DeploymentUnit deploymentUnit);
 
     @LogMessage(level = WARN)
-    @Message(id = 11905, value = "Cannot undeploy bundle: %s")
-    void warnCannotUndeployBundle(@Cause Throwable cause, Deployment deployment);
+    @Message(id = 11905, value = "Cannot undeploy bundle revision: %s")
+    void warnCannotUndeployBundleRevision(@Cause Throwable cause, BundleRevision brev);
 
     @LogMessage(level = INFO)
     @Message(id = 11906, value = "Activating OSGi Subsystem")
@@ -111,4 +113,16 @@ public interface OSGiLogger extends BasicLogger {
     @LogMessage(level = INFO)
     @Message(id = 11914, value = "Unregister HttpService alias: %s")
     void infoUnregisterHttpServiceAlias(String alias);
+
+    @LogMessage(level = WARN)
+    @Message(id = 11915, value = "Cannot deploy from management operation, bypassing deployment unit processors: %s")
+    void warnCannotDeployBundleFromManagementOperation(Deployment dep);
+
+    @LogMessage(level = INFO)
+    @Message(id = 11916, value = "Activate deferred module phase for: %s")
+    void infoActivateDeferredModulePhase(Bundle bundle);
+
+    @LogMessage(level = WARN)
+    @Message(id = 11917, value = "Deactivate deferred module phase for: %s")
+    void warnDeactivateDeferredModulePhase(Bundle bundle);
 }

@@ -21,8 +21,10 @@
 */
 package org.jboss.as.jsr77.subsystem;
 
-import java.security.AccessController;
-import java.security.PrivilegedAction;
+import org.wildfly.security.manager.GetClassLoaderAction;
+import org.wildfly.security.manager.WildFlySecurityManager;
+
+import static java.security.AccessController.doPrivileged;
 
 /**
  *
@@ -31,15 +33,6 @@ import java.security.PrivilegedAction;
 class SecurityActions {
 
     static ClassLoader getClassLoader(final Class<?> clazz) {
-        if (System.getSecurityManager() == null) {
-            return clazz.getClassLoader();
-        }
-        return AccessController.doPrivileged(new PrivilegedAction<ClassLoader>() {
-
-            @Override
-            public ClassLoader run() {
-                return clazz.getClassLoader();
-            }
-        });
+        return ! WildFlySecurityManager.isChecking() ? clazz.getClassLoader() : doPrivileged(new GetClassLoaderAction(clazz));
     }
 }

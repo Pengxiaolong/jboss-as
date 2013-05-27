@@ -24,12 +24,11 @@ package org.jboss.as.domain.management.security;
 
 import org.jboss.as.controller.AttributeDefinition;
 import org.jboss.as.controller.PathElement;
-import org.jboss.as.controller.ResourceDefinition;
 import org.jboss.as.controller.SimpleAttributeDefinition;
 import org.jboss.as.controller.SimpleAttributeDefinitionBuilder;
 import org.jboss.as.controller.SimpleResourceDefinition;
 import org.jboss.as.controller.descriptions.ModelDescriptionConstants;
-import org.jboss.as.controller.descriptions.common.CommonDescriptions;
+import org.jboss.as.controller.descriptions.common.ControllerResolver;
 import org.jboss.as.controller.operations.validation.StringLengthValidator;
 import org.jboss.as.controller.registry.AttributeAccess;
 import org.jboss.as.controller.registry.ManagementResourceRegistration;
@@ -38,14 +37,15 @@ import org.jboss.dmr.ModelNode;
 import org.jboss.dmr.ModelType;
 
 /**
- * {@link ResourceDefinition} for a management security realm's SSL-based server identity resource.
+ * {@link org.jboss.as.controller.ResourceDefinition} for a management security realm's SSL-based server identity resource.
  *
  * @author Brian Stansberry (c) 2011 Red Hat Inc.
  */
 public class SSLServerIdentityResourceDefinition extends SimpleResourceDefinition {
 
     public static final SimpleAttributeDefinition PROTOCOL = new SimpleAttributeDefinitionBuilder(ModelDescriptionConstants.PROTOCOL, ModelType.STRING, true)
-            .setDefaultValue(new ModelNode("TLS")).setValidator(new StringLengthValidator(1, Integer.MAX_VALUE, true, false))
+            .setDefaultValue(new ModelNode("TLS")).setValidator(new StringLengthValidator(1, Integer.MAX_VALUE, true, true))
+            .setAllowExpression(true)
             .setFlags(AttributeAccess.Flag.RESTART_RESOURCE_SERVICES).build();
 
     public static final AttributeDefinition[] ATTRIBUTE_DEFINITIONS = {
@@ -54,7 +54,7 @@ public class SSLServerIdentityResourceDefinition extends SimpleResourceDefinitio
 
     public SSLServerIdentityResourceDefinition() {
         super(PathElement.pathElement(ModelDescriptionConstants.SERVER_IDENTITY, ModelDescriptionConstants.SSL),
-                CommonDescriptions.getResourceDescriptionResolver("core.management.security-realm.server-identity.ssl"),
+                ControllerResolver.getResolver("core.management.security-realm.server-identity.ssl"),
                 new SecurityRealmChildAddHandler(false, ATTRIBUTE_DEFINITIONS),
                 new SecurityRealmChildRemoveHandler(false),
                 OperationEntry.Flag.RESTART_RESOURCE_SERVICES,

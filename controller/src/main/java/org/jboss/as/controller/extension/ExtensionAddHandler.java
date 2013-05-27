@@ -19,9 +19,9 @@
 package org.jboss.as.controller.extension;
 
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.ADD;
-import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.OP;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.OP_ADDR;
 
+import org.jboss.as.controller.ControllerMessages;
 import org.jboss.as.controller.Extension;
 import org.jboss.as.controller.OperationContext;
 import org.jboss.as.controller.OperationFailedException;
@@ -31,6 +31,8 @@ import org.jboss.dmr.ModelNode;
 import org.jboss.modules.Module;
 import org.jboss.modules.ModuleIdentifier;
 import org.jboss.modules.ModuleLoadException;
+import org.jboss.modules.ModuleNotFoundException;
+import org.wildfly.security.manager.WildFlySecurityManager;
 
 /**
  * Base handler for the extension resource add operation.
@@ -41,28 +43,23 @@ public class ExtensionAddHandler implements OperationStepHandler {
 
     public static final String OPERATION_NAME = ADD;
 
-    public static ModelNode getAddExtensionOperation(ModelNode address) {
-        ModelNode op = new ModelNode();
-        op.get(OP).set(OPERATION_NAME);
-        op.get(OP_ADDR).set(address);
-        return op;
-    }
-
     private final ExtensionRegistry extensionRegistry;
     private final boolean parallelBoot;
+    private final boolean standalone;
     private final boolean slaveHC;
 
     /**
      * Create the AbstractAddExtensionHandler
      * @param extensionRegistry registry for extensions
      * @param parallelBoot {@code true} is parallel initialization of extensions is in progress; {@code false} if not
-     * @param slaveHC
+     * @param slaveHC {@code true} if this handler will execute in a slave HostController
      */
-    public ExtensionAddHandler(final ExtensionRegistry extensionRegistry, final boolean parallelBoot, boolean slaveHC) {
+    public ExtensionAddHandler(final ExtensionRegistry extensionRegistry, final boolean parallelBoot, boolean standalone, boolean slaveHC) {
         assert extensionRegistry != null : "extensionRegistry is null";
         this.extensionRegistry = extensionRegistry;
         this.parallelBoot = parallelBoot;
         this.slaveHC = slaveHC;
+        this.standalone = standalone;
     }
 
     @Override
@@ -86,21 +83,31 @@ public class ExtensionAddHandler implements OperationStepHandler {
 
     void initializeExtension(String module) throws OperationFailedException {
         try {
+            boolean unknownModule = false;
             for (Extension extension : Module.loadServiceFromCallerModuleLoader(ModuleIdentifier.fromString(module), Extension.class)) {
-                ClassLoader oldTccl = SecurityActions.setThreadContextClassLoader(extension.getClass());
+                ClassLoader oldTccl = WildFlySecurityManager.setCurrentContextClassLoaderPrivileged(extension.getClass());
                 try {
-                    if (!extensionRegistry.getExtensionModuleNames().contains(module)) {
+                    if (unknownModule || !extensionRegistry.getExtensionModuleNames().contains(module)) {
                         // This extension wasn't handled by the standalone.xml or domain.xml parsing logic, so we
                         // need to initialize its parsers so we can display what XML namespaces it supports
                         extension.initializeParsers(extensionRegistry.getExtensionParsingContext(module, null));
+                        // AS7-6190 - ensure we initialize parsers for other extensions from this module
+                        // now that we know the registry was unaware of the module
+                        unknownModule = true;
                     }
-                    extension.initialize(extensionRegistry.getExtensionContext(module));
+                    extension.initialize(extensionRegistry.getExtensionContext(module, !standalone && !slaveHC));
                 } finally {
-                    SecurityActions.setThreadContextClassLoader(oldTccl);
+                    WildFlySecurityManager.setCurrentContextClassLoaderPrivileged(oldTccl);
                 }
             }
+        } catch (ModuleNotFoundException e) {
+            // Treat this as a user mistake, e.g. incorrect module name.
+            // Throw OFE so post-boot it only gets logged at DEBUG.
+            throw ControllerMessages.MESSAGES.extensionModuleNotFound(e, module);
         } catch (ModuleLoadException e) {
-            throw new OperationFailedException(new ModelNode().set(e.toString()));
+            // The module is there but can't be loaded. Treat this as an internal problem.
+            // Throw a runtime exception so it always gets logged at ERROR in the server log with stack trace details.
+            throw ControllerMessages.MESSAGES.extensionModuleLoadingFailure(e, module);
         }
     }
 

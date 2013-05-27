@@ -21,19 +21,39 @@
 */
 package org.jboss.as.txn;
 
+import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.ADD;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.NAME;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.OP;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.OP_ADDR;
-import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.OUTCOME;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.SUBSYSTEM;
-import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.SUCCESS;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.VALUE;
 import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.WRITE_ATTRIBUTE_OPERATION;
+import static org.jboss.as.txn.subsystem.TransactionSubsystemRootResourceDefinition.BINDING;
+import static org.jboss.as.txn.subsystem.TransactionSubsystemRootResourceDefinition.DEFAULT_TIMEOUT;
+import static org.jboss.as.txn.subsystem.TransactionSubsystemRootResourceDefinition.ENABLE_STATISTICS;
+import static org.jboss.as.txn.subsystem.TransactionSubsystemRootResourceDefinition.ENABLE_TSM_STATUS;
+import static org.jboss.as.txn.subsystem.TransactionSubsystemRootResourceDefinition.NODE_IDENTIFIER;
+import static org.jboss.as.txn.subsystem.TransactionSubsystemRootResourceDefinition.OBJECT_STORE_PATH;
+import static org.jboss.as.txn.subsystem.TransactionSubsystemRootResourceDefinition.OBJECT_STORE_RELATIVE_TO;
+import static org.jboss.as.txn.subsystem.TransactionSubsystemRootResourceDefinition.PATH;
+import static org.jboss.as.txn.subsystem.TransactionSubsystemRootResourceDefinition.PROCESS_ID_SOCKET_BINDING;
+import static org.jboss.as.txn.subsystem.TransactionSubsystemRootResourceDefinition.PROCESS_ID_SOCKET_MAX_PORTS;
+import static org.jboss.as.txn.subsystem.TransactionSubsystemRootResourceDefinition.RECOVERY_LISTENER;
+import static org.jboss.as.txn.subsystem.TransactionSubsystemRootResourceDefinition.RELATIVE_TO;
+import static org.jboss.as.txn.subsystem.TransactionSubsystemRootResourceDefinition.STATUS_BINDING;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertTrue;
 
 import java.io.IOException;
+import java.util.List;
 
 import org.jboss.as.controller.ModelVersion;
-import org.jboss.as.controller.OperationFailedException;
+import org.jboss.as.controller.PathAddress;
+import org.jboss.as.controller.PathElement;
+import org.jboss.as.controller.transform.OperationTransformer;
+import org.jboss.as.model.test.FailedOperationTransformationConfig;
+import org.jboss.as.model.test.ModelTestControllerVersion;
+import org.jboss.as.model.test.ModelTestUtils;
 import org.jboss.as.subsystem.test.AbstractSubsystemBaseTest;
 import org.jboss.as.subsystem.test.AdditionalInitialization;
 import org.jboss.as.subsystem.test.KernelServices;
@@ -55,7 +75,6 @@ public class TransactionSubsystemTestCase extends AbstractSubsystemBaseTest {
 
     @Override
     protected String getSubsystemXml() throws IOException {
-        //This is just copied from standalone.xml testing more combinations would be good
         return readResource("subsystem.xml");
     }
 
@@ -65,7 +84,37 @@ public class TransactionSubsystemTestCase extends AbstractSubsystemBaseTest {
     }
 
     @Test
-    public void testTransformers() throws Exception {
+    public void testExpressions() throws Exception {
+        standardSubsystemTest("full-expressions.xml");
+    }
+
+    @Test
+    public void testMinimalConfig() throws Exception {
+        standardSubsystemTest("minimal.xml");
+    }
+
+    @Test
+    public void testJdbcStore() throws Exception {
+        standardSubsystemTest("jdbc-store.xml");
+    }
+
+    @Test
+    public void testJdbcStoreMinimal() throws Exception {
+        standardSubsystemTest("jdbc-store-minimal.xml");
+    }
+
+    @Test
+    public void testJdbcStoreExpressions() throws Exception {
+        standardSubsystemTest("jdbc-store-expressions.xml");
+    }
+
+    @Test
+    public void testParser_1_2() throws Exception {
+        standardSubsystemTest("full-1.2.xml");
+    }
+
+    @Test
+    public void testTransformers110() throws Exception {
         String subsystemXml = readResource("subsystem.xml");
         ModelVersion modelVersion = ModelVersion.create(1, 1, 0);
         //Use the non-runtime version of the extension which will happen on the HC
@@ -73,7 +122,46 @@ public class TransactionSubsystemTestCase extends AbstractSubsystemBaseTest {
                 .setSubsystemXml(subsystemXml);
 
         // Add legacy subsystems
-        builder.createLegacyKernelServicesBuilder(null, modelVersion)
+        builder.createLegacyKernelServicesBuilder(null, ModelTestControllerVersion.V7_1_2_FINAL, modelVersion)
+            .addMavenResourceURL("org.jboss.as:jboss-as-transactions:7.1.2.Final");
+
+        KernelServices mainServices = builder.build();
+        KernelServices legacyServices = mainServices.getLegacyServices(modelVersion);
+        Assert.assertNotNull(legacyServices);
+
+        checkSubsystemModelTransformation(mainServices, modelVersion);
+    }
+
+    @Test
+    public void testTransformers111() throws Exception {
+        String subsystemXml = readResource("subsystem.xml");
+        ModelVersion modelVersion = ModelVersion.create(1, 1, 1);
+        //Use the non-runtime version of the extension which will happen on the HC
+        KernelServicesBuilder builder = createKernelServicesBuilder(AdditionalInitialization.MANAGEMENT)
+                .setSubsystemXml(subsystemXml);
+
+        // Add legacy subsystems
+        builder.createLegacyKernelServicesBuilder(null, ModelTestControllerVersion.V7_1_3_FINAL, modelVersion)
+                .addMavenResourceURL("org.jboss.as:jboss-as-transactions:7.1.3.Final");
+
+        KernelServices mainServices = builder.build();
+        KernelServices legacyServices = mainServices.getLegacyServices(modelVersion);
+        Assert.assertNotNull(legacyServices);
+
+        checkSubsystemModelTransformation(mainServices, modelVersion);
+    }
+
+
+    @Test
+    public void testTransformersFull110() throws Exception {
+        String subsystemXml = readResource("full.xml");
+        ModelVersion modelVersion = ModelVersion.create(1, 1, 0);
+        //Use the non-runtime version of the extension which will happen on the HC
+        KernelServicesBuilder builder = createKernelServicesBuilder(AdditionalInitialization.MANAGEMENT)
+                .setSubsystemXml(subsystemXml);
+
+        // Add legacy subsystems
+        builder.createLegacyKernelServicesBuilder(null, ModelTestControllerVersion.V7_1_2_FINAL, modelVersion)
             .addMavenResourceURL("org.jboss.as:jboss-as-transactions:7.1.2.Final");
 
         KernelServices mainServices = builder.build();
@@ -82,23 +170,93 @@ public class TransactionSubsystemTestCase extends AbstractSubsystemBaseTest {
 
         checkSubsystemModelTransformation(mainServices, modelVersion);
 
-        final ModelNode operation = new ModelNode();
-        operation.get(OP).set(WRITE_ATTRIBUTE_OPERATION);
-        operation.get(OP_ADDR).add(SUBSYSTEM, TransactionExtension.SUBSYSTEM_NAME);
-        operation.get(NAME).set("status-socket-binding");
-        operation.get(VALUE).set("${org.jboss.test:default-socket-binding}");
+        final ModelNode writeAttribute = new ModelNode();
+        writeAttribute.get(OP).set(WRITE_ATTRIBUTE_OPERATION);
+        writeAttribute.get(OP_ADDR).add("subsystem", "transactions");
+        writeAttribute.get(NAME).set("use-jdbc-store");
+        writeAttribute.get(VALUE).set(false);
 
-        final ModelNode mainResult = mainServices.executeOperation(operation);
-        Assert.assertTrue(SUCCESS.equals(mainResult.get(OUTCOME).asString()));
+        final OperationTransformer.TransformedOperation op = mainServices.transformOperation(modelVersion, writeAttribute);
+        Assert.assertNotNull(op);
+        Assert.assertNotNull(op.getTransformedOperation());
 
-        try {
-            mainServices.transformOperation(modelVersion, operation);
-            // legacyServices.executeOperation(operation); would actually work - however it does not understand the expr
-            // so we need to reject the expression on the DC already
-            Assert.fail("should reject the expression");
-        } catch (OperationFailedException e) {
-            // OK
-        }
+    }
+
+
+    @Test
+    public void testTransformersFull111() throws Exception {
+        String subsystemXml = readResource("full-expressions.xml");
+        ModelVersion modelVersion = ModelVersion.create(1, 1, 1);
+        //Use the non-runtime version of the extension which will happen on the HC
+        KernelServicesBuilder builder = createKernelServicesBuilder(AdditionalInitialization.MANAGEMENT)
+                .setSubsystemXml(subsystemXml);
+
+        final PathAddress subsystemAddress = PathAddress.pathAddress(PathElement.pathElement(SUBSYSTEM, mainSubsystemName));
+        // Add legacy subsystems
+        builder.createLegacyKernelServicesBuilder(null, ModelTestControllerVersion.V7_1_3_FINAL, modelVersion)
+                .addMavenResourceURL("org.jboss.as:jboss-as-transactions:7.1.3.Final")
+                .addOperationValidationResolve(ADD, subsystemAddress);
+
+        KernelServices mainServices = builder.build();
+        KernelServices legacyServices = mainServices.getLegacyServices(modelVersion);
+        Assert.assertNotNull(legacyServices);
+
+        checkSubsystemModelTransformation(mainServices, modelVersion);
+
+    }
+
+    @Test
+    public void testRejectTransformers110() throws Exception {
+        KernelServicesBuilder builder = createKernelServicesBuilder(createAdditionalInitialization());
+
+        // Add legacy subsystems
+        ModelVersion version_1_1 = ModelVersion.create(1, 1, 0);
+        builder.createLegacyKernelServicesBuilder(createAdditionalInitialization(), ModelTestControllerVersion.V7_1_2_FINAL, version_1_1)
+            .addMavenResourceURL("org.jboss.as:jboss-as-transactions:7.1.2.Final");
+
+        KernelServices mainServices = builder.build();
+        assertTrue(mainServices.isSuccessfulBoot());
+        KernelServices legacyServices = mainServices.getLegacyServices(version_1_1);
+        assertNotNull(legacyServices);
+        assertTrue(legacyServices.isSuccessfulBoot());
+
+        List<ModelNode> ops = builder.parseXmlResource("full-expressions.xml");
+        ModelTestUtils.checkFailedTransformedBootOperations(mainServices, version_1_1, ops, new FailedOperationTransformationConfig()
+            .addFailedAttribute(PathAddress.pathAddress(PathElement.pathElement(SUBSYSTEM, TransactionExtension.SUBSYSTEM_NAME)),
+                    new FailedOperationTransformationConfig.RejectExpressionsConfig(
+                            DEFAULT_TIMEOUT,
+                            ENABLE_STATISTICS,
+                            ENABLE_TSM_STATUS,
+                            BINDING,
+                            STATUS_BINDING,
+                            RECOVERY_LISTENER,
+                            NODE_IDENTIFIER,
+                            PATH,
+                            RELATIVE_TO,
+                            PROCESS_ID_SOCKET_BINDING,
+                            PROCESS_ID_SOCKET_MAX_PORTS,
+                            OBJECT_STORE_PATH,
+                            OBJECT_STORE_RELATIVE_TO
+                            )));
+    }
+
+    @Test
+    public void testRejectTransformers111() throws Exception {
+        KernelServicesBuilder builder = createKernelServicesBuilder(createAdditionalInitialization());
+
+        // Add legacy subsystems
+        ModelVersion version_1_1_1 = ModelVersion.create(1, 1, 1);
+        builder.createLegacyKernelServicesBuilder(createAdditionalInitialization(), ModelTestControllerVersion.V7_1_3_FINAL, version_1_1_1)
+                .addMavenResourceURL("org.jboss.as:jboss-as-transactions:7.1.3.Final");
+
+        KernelServices mainServices = builder.build();
+        assertTrue(mainServices.isSuccessfulBoot());
+        KernelServices legacyServices = mainServices.getLegacyServices(version_1_1_1);
+        assertNotNull(legacyServices);
+        assertTrue(legacyServices.isSuccessfulBoot());
+
+        List<ModelNode> ops = builder.parseXmlResource("full-expressions.xml");
+        ModelTestUtils.checkFailedTransformedBootOperations(mainServices, version_1_1_1, ops, new FailedOperationTransformationConfig());
     }
 
 }

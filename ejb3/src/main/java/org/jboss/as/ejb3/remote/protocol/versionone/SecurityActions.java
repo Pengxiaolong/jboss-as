@@ -22,8 +22,13 @@
 
 package org.jboss.as.ejb3.remote.protocol.versionone;
 
-import java.security.AccessController;
 import java.security.PrivilegedAction;
+
+import org.jboss.as.security.remoting.RemotingContext;
+import org.jboss.remoting3.Connection;
+import org.wildfly.security.manager.WildFlySecurityManager;
+
+import static java.security.AccessController.doPrivileged;
 
 final class SecurityActions {
 
@@ -32,41 +37,70 @@ final class SecurityActions {
     }
 
     /**
-     * Gets context classloader.
+     * Set the Remoting Connection on the RemotingContext.
      *
-     * @return the current context classloader
+     * @param connection - The Remoting connection.
      */
-    static ClassLoader getContextClassLoader() {
-        if (System.getSecurityManager() == null) {
-            return Thread.currentThread().getContextClassLoader();
-        } else {
-            return AccessController.doPrivileged(new PrivilegedAction<ClassLoader>() {
-                @Override
-                public ClassLoader run() {
-                    return Thread.currentThread().getContextClassLoader();
-                }
-            });
-        }
+    static void remotingContextSetConnection(final Connection connection) {
+        remotingContextAssociationActions().setConnection(connection);
     }
 
     /**
-     * Sets context classloader.
-     *
-     * @param classLoader
-     *            the classloader
+     * Clear the Remoting Connection on the RemotingContext.
      */
-    static void setContextClassLoader(final ClassLoader classLoader) {
-        if (System.getSecurityManager() == null) {
-            Thread.currentThread().setContextClassLoader(classLoader);
-        } else {
-            AccessController.doPrivileged(new PrivilegedAction<Object>() {
-                @Override
-                public Object run() {
-                    Thread.currentThread().setContextClassLoader(classLoader);
+    static void remotingContextClear() {
+        remotingContextAssociationActions().clear();
+    }
+
+    private static RemotingContextAssociationActions remotingContextAssociationActions() {
+        return ! WildFlySecurityManager.isChecking() ? RemotingContextAssociationActions.NON_PRIVILEGED
+                : RemotingContextAssociationActions.PRIVILEGED;
+    }
+
+    private interface RemotingContextAssociationActions {
+
+        void setConnection(final Connection connection);
+
+        void clear();
+
+        RemotingContextAssociationActions NON_PRIVILEGED = new RemotingContextAssociationActions() {
+
+            public void setConnection(Connection connection) {
+                RemotingContext.setConnection(connection);
+            }
+
+            public void clear() {
+                RemotingContext.clear();
+            }
+        };
+
+        RemotingContextAssociationActions PRIVILEGED = new RemotingContextAssociationActions() {
+
+            private PrivilegedAction<Void> CLEAR_ACTION = new PrivilegedAction<Void>() {
+
+                public Void run() {
+                    NON_PRIVILEGED.clear();
                     return null;
                 }
-            });
-        }
+            };
+
+            public void setConnection(final Connection connection) {
+                doPrivileged(new PrivilegedAction<Void>() {
+
+                    public Void run() {
+                        NON_PRIVILEGED.setConnection(connection);
+                        return null;
+                    }
+                });
+
+            }
+
+            @Override
+            public void clear() {
+                doPrivileged(CLEAR_ACTION);
+            }
+        };
+
     }
 
 }

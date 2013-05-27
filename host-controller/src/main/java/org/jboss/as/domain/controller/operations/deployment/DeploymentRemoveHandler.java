@@ -65,6 +65,7 @@ public abstract class DeploymentRemoveHandler implements OperationStepHandler {
 
     public void execute(OperationContext context, ModelNode operation) throws OperationFailedException {
         checkCanRemove(context, operation);
+        final String name = PathAddress.pathAddress(operation.require(OP_ADDR)).getLastElement().getValue();
         final Resource resource = context.readResource(PathAddress.EMPTY_ADDRESS);
         final List<byte[]> deploymentHashes = DeploymentUtils.getDeploymentHash(resource);
 
@@ -73,17 +74,23 @@ public abstract class DeploymentRemoveHandler implements OperationStepHandler {
         context.addStep(new OperationStepHandler() {
             public void execute(OperationContext context, ModelNode operation) throws OperationFailedException {
 
-                if (context.completeStep() != ResultAction.ROLLBACK) {
-                    removeContent(deploymentHashes);
-                }
+                context.completeStep(new OperationContext.ResultHandler() {
+                    @Override
+                    public void handleResult(ResultAction resultAction, OperationContext context, ModelNode operation) {
+                        if (resultAction != ResultAction.ROLLBACK) {
+                            removeContent(name, deploymentHashes);
+                        }
+                    }
+                });
             }
         }, OperationContext.Stage.RUNTIME);
-        context.completeStep(OperationContext.RollbackHandler.NOOP_ROLLBACK_HANDLER);
+
+        context.stepCompleted();
     }
 
     protected void checkCanRemove(OperationContext context, ModelNode operation) throws OperationFailedException {
         final String deploymentName = PathAddress.pathAddress(operation.require(OP_ADDR)).getLastElement().getValue();
-        final Resource root = context.getRootResource();
+        final Resource root = context.readResourceFromRoot(PathAddress.EMPTY_ADDRESS);
 
         if(root.hasChild(PathElement.pathElement(SERVER_GROUP))) {
             final List<String> badGroups = new ArrayList<String>();
@@ -99,7 +106,7 @@ public abstract class DeploymentRemoveHandler implements OperationStepHandler {
         }
     }
 
-    abstract void removeContent(List<byte[]> hashes);
+    abstract void removeContent(String name, List<byte[]> hashes);
 
     private static class MasterDeploymentRemoveHandler extends DeploymentRemoveHandler {
         final ContentRepository contentRepository;
@@ -110,11 +117,11 @@ public abstract class DeploymentRemoveHandler implements OperationStepHandler {
         }
 
         @Override
-        void removeContent(List<byte[]> hashes) {
+        void removeContent(String name, List<byte[]> hashes) {
             for (byte[] hash : hashes) {
                 try {
                     if (contentRepository != null) {
-                        contentRepository.removeContent(hash);
+                        contentRepository.removeContent(hash, name);
                     }
                 } catch (Exception e) {
                     DEPLOYMENT_LOGGER.debugf(e, "Exception occurred removing %s", Arrays.asList(hash));
@@ -133,7 +140,7 @@ public abstract class DeploymentRemoveHandler implements OperationStepHandler {
         }
 
         @Override
-        void removeContent(List<byte[]> hashes) {
+        void removeContent(String name, List<byte[]> hashes) {
             for (byte[] hash : hashes) {
                 try {
                     if (fileRepository != null) {

@@ -36,6 +36,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.jar.Manifest;
 
+import org.jboss.as.web.common.WarMetaData;
 import org.jboss.as.ee.component.DeploymentDescriptorEnvironment;
 import org.jboss.as.ee.component.EEModuleDescription;
 import org.jboss.as.ee.metadata.MetadataCompleteMarker;
@@ -47,6 +48,7 @@ import org.jboss.as.server.deployment.DeploymentUnit;
 import org.jboss.as.server.deployment.DeploymentUnitProcessingException;
 import org.jboss.as.server.deployment.DeploymentUnitProcessor;
 import org.jboss.as.server.deployment.DeploymentUtils;
+import org.jboss.as.server.deployment.ManifestHelper;
 import org.jboss.as.server.deployment.module.ResourceRoot;
 import org.jboss.logging.Logger;
 import org.jboss.metadata.ear.spec.EarMetaData;
@@ -60,6 +62,7 @@ import org.jboss.metadata.web.spec.AbsoluteOrderingMetaData;
 import org.jboss.metadata.web.spec.OrderingElementMetaData;
 import org.jboss.metadata.web.spec.Web25MetaData;
 import org.jboss.metadata.web.spec.Web30MetaData;
+import org.jboss.metadata.web.spec.Web31MetaData;
 import org.jboss.metadata.web.spec.WebCommonMetaData;
 import org.jboss.metadata.web.spec.WebFragmentMetaData;
 import org.jboss.metadata.web.spec.WebMetaData;
@@ -244,8 +247,8 @@ public class WarMetaDataProcessor implements DeploymentUnitProcessor {
         WebCommonMetaData mergedFragmentMetaData = new WebCommonMetaData();
         if (specMetaData == null) {
             // If there is no web.xml, it has to be considered to be the latest version
-            specMetaData = new Web30MetaData();
-            specMetaData.setVersion("3.0");
+            specMetaData = new Web31MetaData();
+            specMetaData.setVersion("3.1");
         }
         // Augment with meta data from annotations in /WEB-INF/classes
         WebMetaData annotatedMetaData = annotationsMetaData.get("classes");
@@ -328,7 +331,7 @@ public class WarMetaDataProcessor implements DeploymentUnitProcessor {
         String contextRoot = mergedMetaData.getContextRoot();
         Manifest manifest = deploymentUnit.getAttachment(Attachments.OSGI_MANIFEST);
         if (contextRoot == null && manifest != null) {
-            contextRoot = manifest.getMainAttributes().getValue("Web-ContextPath");
+            contextRoot = ManifestHelper.getMainAttributeValue(manifest, "Web-ContextPath");
             mergedMetaData.setContextRoot(contextRoot);
         }
         warMetaData.setMergedJBossWebMetaData(mergedMetaData);

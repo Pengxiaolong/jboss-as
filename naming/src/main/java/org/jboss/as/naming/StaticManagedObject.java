@@ -22,12 +22,15 @@
 
 package org.jboss.as.naming;
 
+import org.wildfly.security.manager.WildFlySecurityManager;
+
 /**
  * A JNDI injectable which returns a static object and takes no action when the value is returned.
  *
  * @author <a href="mailto:david.lloyd@redhat.com">David M. Lloyd</a>
+ * @author Eduardo Martins
  */
-public final class StaticManagedObject implements ManagedReferenceFactory {
+public final class StaticManagedObject implements ContextListManagedReferenceFactory,JndiViewManagedReferenceFactory {
     private final Object value;
 
     /**
@@ -52,6 +55,25 @@ public final class StaticManagedObject implements ManagedReferenceFactory {
                 return value;
             }
         };
+    }
+
+    @Override
+    public String getInstanceClassName() {
+        return value != null ? value.getClass().getName() : ContextListManagedReferenceFactory.DEFAULT_INSTANCE_CLASS_NAME;
+    }
+
+    @Override
+    public String getJndiViewInstanceValue() {
+        if (value == null) {
+            return "null";
+        }
+        final ClassLoader cl = WildFlySecurityManager.getCurrentContextClassLoaderPrivileged();
+        try {
+            WildFlySecurityManager.setCurrentContextClassLoaderPrivileged(value.getClass().getClassLoader());
+            return value.toString();
+        } finally {
+            WildFlySecurityManager.setCurrentContextClassLoaderPrivileged(cl);
+        }
     }
 
 }

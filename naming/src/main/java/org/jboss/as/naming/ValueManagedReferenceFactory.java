@@ -25,14 +25,16 @@ package org.jboss.as.naming;
 import java.io.Serializable;
 
 import org.jboss.msc.value.Value;
+import org.wildfly.security.manager.WildFlySecurityManager;
 
 /**
  * A JNDI injectable which simply uses an MSC {@link Value}
  * to fetch the injected value, and takes no action when the value is returned.
  *
  * @author <a href="mailto:david.lloyd@redhat.com">David M. Lloyd</a>
+ * @author Eduardo Martins
  */
-public final class ValueManagedReferenceFactory implements ManagedReferenceFactory {
+public final class ValueManagedReferenceFactory implements ContextListAndJndiViewManagedReferenceFactory {
     private final Value<?> value;
 
     /**
@@ -47,6 +49,30 @@ public final class ValueManagedReferenceFactory implements ManagedReferenceFacto
     @Override
     public ManagedReference getReference() {
         return new ValueManagedReference(value.getValue());
+    }
+
+    @Override
+    public String getInstanceClassName() {
+        final Object instance = value != null ? value.getValue() : null;
+        if(instance == null) {
+            return ContextListManagedReferenceFactory.DEFAULT_INSTANCE_CLASS_NAME;
+        }
+        return instance.getClass().getName();
+    }
+
+    @Override
+    public String getJndiViewInstanceValue() {
+        final Object instance = value != null ? value.getValue() : null;
+        if (instance == null) {
+            return "null";
+        }
+        final ClassLoader cl = WildFlySecurityManager.getCurrentContextClassLoaderPrivileged();
+        try {
+            WildFlySecurityManager.setCurrentContextClassLoaderPrivileged(instance.getClass().getClassLoader());
+            return instance.toString();
+        } finally {
+            WildFlySecurityManager.setCurrentContextClassLoaderPrivileged(cl);
+        }
     }
 
     public static class ValueManagedReference implements ManagedReference, Serializable {

@@ -24,7 +24,7 @@ package org.jboss.as.controller;
 
 import java.util.Locale;
 import java.util.ResourceBundle;
-import javax.xml.stream.Location;
+
 import javax.xml.stream.XMLStreamException;
 import javax.xml.stream.XMLStreamReader;
 import javax.xml.stream.XMLStreamWriter;
@@ -32,6 +32,7 @@ import javax.xml.stream.XMLStreamWriter;
 import org.jboss.as.controller.descriptions.ResourceDescriptionResolver;
 import org.jboss.as.controller.operations.validation.ListValidator;
 import org.jboss.as.controller.operations.validation.ParameterValidator;
+import org.jboss.as.controller.parsing.ParseUtils;
 import org.jboss.as.controller.registry.AttributeAccess;
 import org.jboss.dmr.ModelNode;
 import org.jboss.dmr.ModelType;
@@ -47,29 +48,29 @@ public abstract class ListAttributeDefinition extends AttributeDefinition {
     private final ParameterValidator elementValidator;
 
     public ListAttributeDefinition(final String name, final boolean allowNull, final ParameterValidator elementValidator) {
-        this(name, name, allowNull, 0, Integer.MAX_VALUE, elementValidator, null, null, null);
+        this(name, name, allowNull, false, 0, Integer.MAX_VALUE, elementValidator, null, null);
     }
 
     protected ListAttributeDefinition(final String name, final boolean allowNull, final ParameterValidator elementValidator, final AttributeAccess.Flag... flags) {
-        this(name, name, allowNull, 0, Integer.MAX_VALUE, elementValidator, null, null, null,false, null, flags);
+        this(name, name, allowNull, false, 0, Integer.MAX_VALUE, elementValidator, null, null, null,false, null, flags);
     }
 
     public ListAttributeDefinition(final String name, final String xmlName, final boolean allowNull,
                                    final int minSize, final int maxSize, final ParameterValidator elementValidator) {
-        this(name, xmlName, allowNull, minSize, maxSize, elementValidator, null, null, null);
+        this(name, xmlName, allowNull, false, minSize, maxSize, elementValidator, null, null);
     }
 
-    protected ListAttributeDefinition(final String name, final String xmlName, final boolean allowNull,
+    protected ListAttributeDefinition(final String name, final String xmlName, final boolean allowNull, final boolean allowExpressions,
                                    final int minSize, final int maxSize, final ParameterValidator elementValidator,
                                    final String[] alternatives, final String[] requires, final AttributeMarshaller attributeMarshaller, boolean resourceOnly, DeprecationData deprecated, final AttributeAccess.Flag... flags) {
-        super(name, xmlName, null, ModelType.LIST, allowNull, false, null, null, new ListValidator(elementValidator, allowNull, minSize, maxSize), allowNull, alternatives, requires, attributeMarshaller, resourceOnly, deprecated, flags);
+        super(name, xmlName, null, ModelType.LIST, allowNull, allowExpressions, null, null, new ListValidator(elementValidator, allowNull, minSize, maxSize), allowNull, alternatives, requires, attributeMarshaller, resourceOnly, deprecated, flags);
         this.elementValidator = elementValidator;
     }
 
-    protected ListAttributeDefinition(final String name, final String xmlName, final boolean allowNull,
+    protected ListAttributeDefinition(final String name, final String xmlName, final boolean allowNull, final boolean allowExpressions,
                                    final int minSize, final int maxSize, final ParameterValidator elementValidator,
                                    final String[] alternatives, final String[] requires, final AttributeAccess.Flag... flags) {
-        super(name, xmlName, null, ModelType.LIST, allowNull, false, null, null, new ListValidator(elementValidator, allowNull, minSize, maxSize), allowNull, alternatives, requires,null, false, null, flags);
+        super(name, xmlName, null, ModelType.LIST, allowNull, allowExpressions, null, null, new ListValidator(elementValidator, allowNull, minSize, maxSize), allowNull, alternatives, requires,null, false, null, flags);
         this.elementValidator = elementValidator;
     }
 
@@ -109,35 +110,6 @@ public abstract class ListAttributeDefinition extends AttributeDefinition {
     }
 
     /**
-     * Creates and returns a {@link org.jboss.dmr.ModelNode} using the given {@code value} after first validating the node
-     * against {@link #getElementValidator() this object's element validator}.
-     * <p>
-     * If {@code value} is {@code null} an {@link ModelType#UNDEFINED undefined} node will be returned.
-     * </p>
-     *
-     * @param value the value. Will be {@link String#trim() trimmed} before use if not {@code null}.
-     * @param location current location of the parser's {@link javax.xml.stream.XMLStreamReader}. Used for any exception
-     *                 message
-     *
-     * @return {@code ModelNode} representing the parsed value
-     *
-     * @throws javax.xml.stream.XMLStreamException if {@code value} is not valid
-     *
-     * @deprecated use {@link #parse(String, XMLStreamReader)}
-     *
-     * @see #parseAndAddParameterElement(String, ModelNode, Location)
-     */
-    @Deprecated
-    public ModelNode parse(final String value, final Location location) throws XMLStreamException {
-
-        try {
-            return parse(value);
-        } catch (OperationFailedException e) {
-            throw new XMLStreamException(e.getFailureDescription().toString(), location);
-        }
-    }
-
-    /**
      * Creates a {@link ModelNode} using the given {@code value} after first validating the node
      * against {@link #getValidator() this object's validator}, and then stores it in the given {@code operation}
      * model node as an element in a {@link ModelType#LIST} value in a key/value pair whose key is this attribute's
@@ -160,35 +132,6 @@ public abstract class ListAttributeDefinition extends AttributeDefinition {
      */
     public void parseAndAddParameterElement(final String value, final ModelNode operation, final XMLStreamReader reader) throws XMLStreamException {
         ModelNode paramVal = parse(value, reader);
-        operation.get(getName()).add(paramVal);
-    }
-
-    /**
-     * Creates a {@link ModelNode} using the given {@code value} after first validating the node
-     * against {@link #getValidator() this object's validator}, and then stores it in the given {@code operation}
-     * model node as an element in a {@link ModelType#LIST} value in a key/value pair whose key is this attribute's
-     * {@link #getName() name}.
-     * <p>
-     * If {@code value} is {@code null} an {@link ModelType#UNDEFINED undefined} node will be stored if such a value
-     * is acceptable to the validator.
-     * </p>
-     * <p>
-     * The expected usage of this method is in parsers seeking to build up an operation to store their parsed data
-     * into the configuration.
-     * </p>
-     *
-     * @param value the value. Will be {@link String#trim() trimmed} before use if not {@code null}.
-     * @param operation model node of type {@link ModelType#OBJECT} into which the parsed value should be stored
-     * @param location current location of the parser's {@link javax.xml.stream.XMLStreamReader}. Used for any exception
-     *                 message
-     * @throws XMLStreamException if {@code value} is not valid
-     *
-     * @deprecated use {@link #parseAndAddParameterElement(String, ModelNode, XMLStreamReader)}
-     */
-    @Deprecated
-    public void parseAndAddParameterElement(final String value, final ModelNode operation, final Location location) throws XMLStreamException {
-        @SuppressWarnings("deprecation")
-        ModelNode paramVal = parse(value, location);
         operation.get(getName()).add(paramVal);
     }
 
@@ -236,8 +179,38 @@ public abstract class ListAttributeDefinition extends AttributeDefinition {
 
         final String trimmed = value == null ? null : value.trim();
         ModelNode node;
-        if (trimmed != null ) {
-            node = new ModelNode().set(trimmed);
+        if (trimmed != null) {
+            if (isAllowExpression()) {
+                node = ParseUtils.parsePossibleExpression(trimmed);
+            } else {
+                node = new ModelNode().set(trimmed);
+            }
+            if (node.getType() != ModelType.EXPRESSION) {
+                // Convert the string to the expected type
+                switch (getType()) {
+                    case BIG_DECIMAL:
+                        node.set(node.asBigDecimal());
+                        break;
+                    case BIG_INTEGER:
+                        node.set(node.asBigInteger());
+                        break;
+                    case BOOLEAN:
+                        node.set(node.asBoolean());
+                        break;
+                    case BYTES:
+                        node.set(node.asBytes());
+                        break;
+                    case DOUBLE:
+                        node.set(node.asDouble());
+                        break;
+                    case INT:
+                        node.set(node.asInt());
+                        break;
+                    case LONG:
+                        node.set(node.asLong());
+                        break;
+                }
+            }
         } else {
             node = new ModelNode();
         }
@@ -250,5 +223,47 @@ public abstract class ListAttributeDefinition extends AttributeDefinition {
     @Override
     public void marshallAsElement(ModelNode resourceModel, boolean marshallDefault, XMLStreamWriter writer) throws XMLStreamException {
         attributeMarshaller.marshallAsElement(this,resourceModel,marshallDefault,writer);
+    }
+
+    /**
+     * Iterates through the elements in the {@code parameter} list, calling {@link #convertParameterElementExpressions(ModelNode)}
+     * for each.
+     * <p>
+     * <strong>Note</strong> that the default implementation of {@link #convertParameterElementExpressions(ModelNode)}
+     * will only convert simple {@link ModelType#STRING} elements. If users need to handle complex elements
+     * with embedded expressions, they should use a subclass that overrides that method.
+     * </p>
+     *
+     * {@inheritDoc}
+     */
+    @Override
+    protected ModelNode convertParameterExpressions(ModelNode parameter) {
+        ModelNode result = parameter;
+        if (parameter.isDefined()) {
+            boolean changeMade = false;
+            ModelNode newList = new ModelNode().setEmptyList();
+            for (ModelNode item : parameter.asList()) {
+                ModelNode converted = convertParameterElementExpressions(item);
+                newList.add(converted);
+                changeMade |= !converted.equals(item);
+            }
+            if (changeMade) {
+                result = newList;
+            }
+        }
+        return result;
+    }
+
+    /**
+     * Examine the given element of a parameter list for any expression syntax, converting the relevant node to
+     * {@link ModelType#EXPRESSION} if such is supported. This implementation will only convert elements of
+     * {@link ModelType#STRING}. Subclasses that need to handle complex elements should override this method.
+     *
+     * @param parameterElement the node to examine. Will not be {@code null}
+     * @return the parameter element with expressions converted, or the original parameter if no conversion was performed
+     *         Cannot return {@code null}
+     */
+    protected ModelNode convertParameterElementExpressions(ModelNode parameterElement) {
+        return isAllowExpression() ? convertStringExpression(parameterElement) : parameterElement;
     }
 }

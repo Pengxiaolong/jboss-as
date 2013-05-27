@@ -22,6 +22,10 @@
 
 package org.jboss.as.connector.services.workmanager;
 
+import static org.jboss.as.connector.logging.ConnectorLogger.ROOT_LOGGER;
+
+import java.util.concurrent.Executor;
+
 import org.jboss.as.connector.util.ConnectorServices;
 import org.jboss.jca.core.api.workmanager.WorkManager;
 import org.jboss.jca.core.security.DefaultCallback;
@@ -35,12 +39,7 @@ import org.jboss.msc.service.StopContext;
 import org.jboss.msc.value.InjectedValue;
 import org.jboss.threads.BlockingExecutor;
 import org.jboss.tm.JBossXATerminator;
-
-import java.security.AccessController;
-import java.security.PrivilegedAction;
-import java.util.concurrent.Executor;
-
-import static org.jboss.as.connector.logging.ConnectorLogger.ROOT_LOGGER;
+import org.wildfly.security.manager.WildFlySecurityManager;
 
 /**
  * A WorkManager Service.
@@ -88,12 +87,7 @@ public final class WorkManagerService implements Service<WorkManager> {
         this.value.setXATerminator(new XATerminatorImpl(xaTerminator.getValue()));
 
         // TODO - Remove and do proper integration (IronJacamar 1.1)
-        String callbackProperties = AccessController.doPrivileged(new PrivilegedAction<String>() {
-            @Override
-            public String run() {
-                return System.getProperty("callback.properties");
-            }
-        });
+        String callbackProperties = WildFlySecurityManager.getPropertyPrivileged("callback.properties", null);
         if (callbackProperties != null) {
             try {
                 DefaultCallback defaultCallback = new DefaultCallback(callbackProperties);

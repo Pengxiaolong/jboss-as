@@ -29,6 +29,7 @@ import org.jboss.as.controller.PathAddress;
 import org.jboss.as.controller.ServiceVerificationHandler;
 import org.jboss.as.controller.registry.Resource;
 import org.jboss.as.host.controller.HostControllerEnvironment;
+import org.jboss.as.host.controller.resources.HttpManagementResourceDefinition;
 import org.jboss.dmr.ModelNode;
 
 /**
@@ -42,6 +43,7 @@ public class HttpManagementWriteAttributeHandler extends AbstractWriteAttributeH
     private final HostControllerEnvironment environment;
 
     public HttpManagementWriteAttributeHandler(final LocalHostControllerInfoImpl hostControllerInfo, final HostControllerEnvironment environment) {
+        super(HttpManagementResourceDefinition.ATTRIBUTE_DEFINITIONS);
         this.hostControllerInfo = hostControllerInfo;
         this.environment = environment;
     }
@@ -73,7 +75,8 @@ public class HttpManagementWriteAttributeHandler extends AbstractWriteAttributeH
                                             final HostControllerEnvironment environment, final ServiceVerificationHandler verificationHandler) throws OperationFailedException {
         HttpManagementRemoveHandler.removeHttpManagementService(context);
         HttpManagementAddHandler.populateHostControllerInfo(hostControllerInfo, context, subModel);
-        HttpManagementAddHandler.installHttpManagementServices(context.getRunningMode(), context.getServiceTarget(), hostControllerInfo, environment, verificationHandler, false);
+        boolean httpUpgrade = HttpManagementResourceDefinition.HTTP_UPGRADE_ENABLED.resolveModelAttribute(context, subModel).asBoolean();
+        HttpManagementAddHandler.installHttpManagementServices(context.getRunningMode(), context.getServiceTarget(), hostControllerInfo, environment, verificationHandler, false, httpUpgrade, context.getServiceRegistry(false), null);
     }
 
 }

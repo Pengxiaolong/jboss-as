@@ -22,16 +22,12 @@
 
 package org.jboss.as.security.context;
 
-import java.security.AccessController;
-import java.security.PrivilegedActionException;
-import java.security.PrivilegedExceptionAction;
-
-import org.jboss.as.security.SecurityMessages;
-import org.jboss.modules.Module;
+import org.wildfly.security.manager.GetClassLoaderAction;
 import org.jboss.modules.ModuleClassLoader;
-import org.jboss.modules.ModuleIdentifier;
 import org.jboss.modules.ModuleLoadException;
-import org.jboss.modules.ModuleLoader;
+import org.wildfly.security.manager.WildFlySecurityManager;
+
+import static java.security.AccessController.doPrivileged;
 
 /**
  * Privileged blocks for this package
@@ -41,22 +37,10 @@ import org.jboss.modules.ModuleLoader;
 class SecurityActions {
 
     static ModuleClassLoader getModuleClassLoader() throws ModuleLoadException {
-        if (System.getSecurityManager() != null) {
-            try {
-                return AccessController.doPrivileged(new PrivilegedExceptionAction<ModuleClassLoader>() {
-                    public ModuleClassLoader run() throws ModuleLoadException {
-                        ModuleLoader loader = Module.getCallerModuleLoader();
-                        ModuleIdentifier identifier = ModuleIdentifier.create("org.jboss.as.security", "main");
-                        return loader.loadModule(identifier).getClassLoader();
-                    }
-                });
-            } catch (PrivilegedActionException pae) {
-                throw SecurityMessages.MESSAGES.moduleLoadException(pae);
-            }
+        if (! WildFlySecurityManager.isChecking()) {
+            return (ModuleClassLoader) SecurityActions.class.getClassLoader();
         } else {
-            ModuleLoader loader = Module.getCallerModuleLoader();
-            ModuleIdentifier identifier = ModuleIdentifier.create("org.jboss.as.security", "main");
-            return loader.loadModule(identifier).getClassLoader();
+            return (ModuleClassLoader) doPrivileged(new GetClassLoaderAction(SecurityActions.class));
         }
     }
 

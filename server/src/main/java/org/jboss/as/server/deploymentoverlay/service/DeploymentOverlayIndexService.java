@@ -1,3 +1,25 @@
+/*
+ * JBoss, Home of Professional Open Source.
+ * Copyright 2012, Red Hat, Inc., and individual contributors
+ * as indicated by the @author tags. See the copyright.txt file in the
+ * distribution for a full listing of individual contributors.
+ *
+ * This is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU Lesser General Public License as
+ * published by the Free Software Foundation; either version 2.1 of
+ * the License, or (at your option) any later version.
+ *
+ * This software is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with this software; if not, write to the Free
+ * Software Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA
+ * 02110-1301 USA, or see the FSF site: http://www.fsf.org.
+ */
+
 package org.jboss.as.server.deploymentoverlay.service;
 
 import java.util.ArrayList;
@@ -50,7 +72,7 @@ public class DeploymentOverlayIndexService implements Service<DeploymentOverlayI
 
         final List<DeploymentOverlayLinkService> matched = new ArrayList<DeploymentOverlayLinkService>();
         for (final DeploymentOverlayLinkService service : services) {
-            if (service.isRegex()) {
+            if (service.isWildcard()) {
                 if (service.getPattern().matcher(deploymentName).matches()) {
                     matched.add(service);
                 }
@@ -65,9 +87,9 @@ public class DeploymentOverlayIndexService implements Service<DeploymentOverlayI
                 if (res != 0) {
                     return res;
                 }
-                if (o2.isRegex() && !o1.isRegex()) {
+                if (o2.isWildcard() && !o1.isWildcard()) {
                     return -1;
-                } else if (o1.isRegex() && !o2.isRegex()) {
+                } else if (o1.isWildcard() && !o2.isWildcard()) {
                     return 1;
                 }
                 return 0;

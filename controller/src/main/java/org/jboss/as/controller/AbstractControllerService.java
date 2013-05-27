@@ -44,6 +44,7 @@ import org.jboss.msc.service.StartContext;
 import org.jboss.msc.service.StartException;
 import org.jboss.msc.service.StopContext;
 import org.jboss.msc.value.InjectedValue;
+import org.wildfly.security.manager.WildFlySecurityManager;
 
 /**
  * A base class for controller services.
@@ -69,7 +70,7 @@ public abstract class AbstractControllerService implements Service<ModelControll
     public static final int DEFAULT_BOOT_STACK_SIZE = 2 * 1024 * 1024;
 
     private static int getBootStackSize() {
-        String prop = SecurityActions.getSystemProperty(BOOT_STACK_SIZE_PROPERTY);
+        String prop = WildFlySecurityManager.getPropertyPrivileged(BOOT_STACK_SIZE_PROPERTY, null);
         if (prop == null) {
             return  DEFAULT_BOOT_STACK_SIZE;
         } else {
@@ -117,11 +118,13 @@ public abstract class AbstractControllerService implements Service<ModelControll
      * @param prepareStep             the prepare step to prepend to operation execution
      * @param expressionResolver      the expression resolver
      */
+    @Deprecated
     protected AbstractControllerService(final ProcessType processType, final RunningModeControl runningModeControl,
                                         final ConfigurationPersister configurationPersister,
                                         final ControlledProcessState processState, final DescriptionProvider rootDescriptionProvider,
                                         final OperationStepHandler prepareStep, final ExpressionResolver expressionResolver) {
         assert rootDescriptionProvider != null : "Null root description provider";
+        assert expressionResolver != null : "Null expressionResolver";
         this.processType = processType;
         this.runningModeControl = runningModeControl;
         this.configurationPersister = configurationPersister;
@@ -129,7 +132,7 @@ public abstract class AbstractControllerService implements Service<ModelControll
         this.rootResourceDefinition = null;
         this.processState = processState;
         this.prepareStep = prepareStep;
-        this.expressionResolver = expressionResolver != null ? expressionResolver : ExpressionResolver.DEFAULT;
+        this.expressionResolver = expressionResolver;
     }
 
     /**
@@ -148,6 +151,7 @@ public abstract class AbstractControllerService implements Service<ModelControll
                                         final ControlledProcessState processState, final ResourceDefinition rootResourceDefinition,
                                         final OperationStepHandler prepareStep, final ExpressionResolver expressionResolver) {
         assert rootResourceDefinition != null : "Null root resource definition";
+        assert expressionResolver != null : "Null expressionResolver";
         this.processType = processType;
         this.runningModeControl = runningModeControl;
         this.configurationPersister = configurationPersister;
@@ -155,7 +159,7 @@ public abstract class AbstractControllerService implements Service<ModelControll
         this.rootResourceDefinition = rootResourceDefinition;
         this.processState = processState;
         this.prepareStep = prepareStep;
-        this.expressionResolver = expressionResolver != null ? expressionResolver : ExpressionResolver.DEFAULT;
+        this.expressionResolver = expressionResolver;
 
     }
 
@@ -171,7 +175,7 @@ public abstract class AbstractControllerService implements Service<ModelControll
         ManagementResourceRegistration rootResourceRegistration = rootDescriptionProvider != null ? ManagementResourceRegistration.Factory.create(rootDescriptionProvider) : ManagementResourceRegistration.Factory.create(rootResourceDefinition);
         final ModelControllerImpl controller = new ModelControllerImpl(container, target,
                 rootResourceRegistration,
-                new ContainerStateMonitor(container, serviceController),
+                new ContainerStateMonitor(container),
                 configurationPersister, processType, runningModeControl, prepareStep,
                 processState, executorService, expressionResolver);
         initModel(controller.getRootResource(), controller.getRootRegistration());
@@ -223,7 +227,19 @@ public abstract class AbstractControllerService implements Service<ModelControll
     }
 
     protected ModelNode internalExecute(final ModelNode operation, final OperationMessageHandler handler, final ModelController.OperationTransactionControl control, final OperationAttachments attachments, final OperationStepHandler prepareStep) {
-        return controller.internalExecute(operation, handler, control, attachments, prepareStep);
+        return controller.internalExecute(operation, handler, control, attachments, prepareStep, false);
+    }
+
+    protected ModelNode internalExecute(final ModelNode operation, final OperationMessageHandler handler, final ModelController.OperationTransactionControl control, final OperationAttachments attachments, final OperationStepHandler prepareStep, final boolean attemptLock) {
+        return controller.internalExecute(operation, handler, control, attachments, prepareStep, attemptLock);
+    }
+
+    /**
+     * @deprecated internal use only
+     */
+    @Deprecated
+    protected ModelNode executeReadOnlyOperation(final ModelNode operation, final OperationMessageHandler handler, final ModelController.OperationTransactionControl control, final OperationAttachments attachments, final OperationStepHandler prepareStep, int lockPermit) {
+        return controller.executeReadOnlyOperation(operation, handler, control, attachments, prepareStep, lockPermit);
     }
 
     protected void finishBoot() throws ConfigurationPersistenceException {
@@ -239,7 +255,16 @@ public abstract class AbstractControllerService implements Service<ModelControll
         controller = null;
     }
 
+    /**
+     * {@inheritDoc}
+     *
+     * @throws SecurityException if the caller does not have {@link ModelController#ACCESS_PERMISSION}
+     */
     public ModelController getValue() throws IllegalStateException, IllegalArgumentException {
+        SecurityManager sm = System.getSecurityManager();
+        if (sm != null) {
+            sm.checkPermission(ModelController.ACCESS_PERMISSION);
+        }
         final ModelController controller = this.controller;
         if (controller == null) {
             throw new IllegalStateException();
@@ -256,6 +281,5 @@ public abstract class AbstractControllerService implements Service<ModelControll
     }
 
     protected abstract void initModel(Resource rootResource, ManagementResourceRegistration rootRegistration);
-
 
 }

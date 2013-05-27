@@ -26,7 +26,7 @@ import org.jboss.as.controller.PathElement;
 import org.jboss.as.controller.SimpleAttributeDefinition;
 import org.jboss.as.controller.SimpleAttributeDefinitionBuilder;
 import org.jboss.as.controller.descriptions.ModelDescriptionConstants;
-import org.jboss.as.controller.descriptions.common.CommonDescriptions;
+import org.jboss.as.controller.descriptions.common.ControllerResolver;
 import org.jboss.as.controller.operations.validation.IntRangeValidator;
 import org.jboss.as.controller.operations.validation.StringLengthValidator;
 import org.jboss.as.controller.registry.AttributeAccess;
@@ -39,6 +39,8 @@ import org.jboss.dmr.ModelType;
  * @author Jaikiran Pai
  */
 public class RemoteDestinationOutboundSocketBindingResourceDefinition extends OutboundSocketBindingResourceDefinition {
+
+    public static final PathElement PATH = PathElement.pathElement(ModelDescriptionConstants.REMOTE_DESTINATION_OUTBOUND_SOCKET_BINDING);
 
     public static final RemoteDestinationOutboundSocketBindingResourceDefinition INSTANCE = new RemoteDestinationOutboundSocketBindingResourceDefinition();
 
@@ -57,8 +59,8 @@ public class RemoteDestinationOutboundSocketBindingResourceDefinition extends Ou
     public static final SimpleAttributeDefinition[] ATTRIBUTES = {HOST, PORT, SOURCE_INTERFACE, SOURCE_PORT, FIXED_SOURCE_PORT};
 
     private RemoteDestinationOutboundSocketBindingResourceDefinition() {
-        super(PathElement.pathElement(ModelDescriptionConstants.REMOTE_DESTINATION_OUTBOUND_SOCKET_BINDING),
-                CommonDescriptions.getResourceDescriptionResolver(ModelDescriptionConstants.REMOTE_DESTINATION_OUTBOUND_SOCKET_BINDING),
+        super(PATH,
+                ControllerResolver.getResolver(ModelDescriptionConstants.REMOTE_DESTINATION_OUTBOUND_SOCKET_BINDING),
                 RemoteDestinationOutboundSocketBindingAddHandler.INSTANCE,
                 OutboundSocketBindingRemoveHandler.INSTANCE, true);
     }

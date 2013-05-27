@@ -20,9 +20,9 @@
   ~ 02110-1301 USA, or see the FSF site: http://www.fsf.org.
   -->
 
-<host xmlns="urn:jboss:domain:1.4"
+<host xmlns="urn:jboss:domain:2.0"
       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-      xsi:schemaLocation="urn:jboss:domain:1.4 jboss-as-config_1_4.xsd"
+      xsi:schemaLocation="urn:jboss:domain:2.0 jboss-as-config_2_0.xsd"
       name="master">
 
     <paths>
@@ -48,7 +48,7 @@
             <native-interface security-realm="ManagementRealm">
                 <socket interface="management" port="9999"/>
             </native-interface>
-            <http-interface security-realm="ManagementRealm">
+            <http-interface security-realm="ManagementRealm"  http-upgrade-enabled="true">
                 <socket interface="management" port="9990"/>
             </http-interface>
         </management-interfaces>
@@ -76,7 +76,7 @@
                 <option value="-Xdebug"/>
                 <option value="-Xnoagent"/>
                 <option value="-Djava.compiler=NONE"/>
-                <option value="-Xrunjdwp:transport=dt_socket,address=5005,server=y,suspend=y"/>
+                <option value="-agentlib:jdwp=transport=dt_socket,address=5005,server=y,suspend=y"/>
 
             </jvm-options>
             -->
@@ -129,6 +129,7 @@
                     <inet-address value="${jboss.test.host.master.address}"/>
                 </interface>
             </interfaces>
+            <jvm name="default" />
         </server>
     </servers>
 </host>

@@ -51,12 +51,14 @@ import org.jboss.as.controller.client.MessageSeverity;
 import org.jboss.as.controller.persistence.ConfigurationPersistenceException;
 import org.jboss.as.controller.persistence.ConfigurationPersister;
 import org.jboss.dmr.ModelNode;
+import org.wildfly.security.manager.WildFlySecurityManager;
 
 /**
  * Operation context implementation.
  *
  * @author <a href="mailto:david.lloyd@redhat.com">David M. Lloyd</a>
  */
+@SuppressWarnings("deprecation")
 abstract class AbstractOperationContext implements OperationContext {
 
     static final ThreadLocal<Thread> controllingThread = new ThreadLocal<Thread>();
@@ -127,6 +129,13 @@ abstract class AbstractOperationContext implements OperationContext {
     }
 
     @Override
+    public void addStep(final ModelNode operation, final OperationStepHandler step, final Stage stage, final boolean addFirst)
+            throws IllegalArgumentException {
+        final ModelNode response = activeStep == null ? new ModelNode().setEmptyObject() : activeStep.response;
+        addStep(response, operation, null, step, stage, addFirst);
+    }
+
+    @Override
     public void addStep(final ModelNode response, final ModelNode operation, final OperationStepHandler step, final Stage stage)
             throws IllegalArgumentException {
         addStep(response, operation, null, step, stage);
@@ -167,7 +176,7 @@ abstract class AbstractOperationContext implements OperationContext {
         if (currentStage == Stage.DONE) {
             throw MESSAGES.operationAlreadyComplete();
         }
-        if (stage.compareTo(currentStage) < 0 && (stage != Stage.IMMEDIATE || currentStage == Stage.DONE)) {
+        if (stage.compareTo(currentStage) < 0) {
             throw MESSAGES.stageAlreadyComplete(stage);
         }
         if (stage == Stage.DOMAIN && processType != ProcessType.HOST_CONTROLLER) {
@@ -183,15 +192,12 @@ abstract class AbstractOperationContext implements OperationContext {
                 operation.get(OPERATION_HEADERS, CALLER_TYPE).set(activeStep.operation.get(OPERATION_HEADERS, CALLER_TYPE));
             }
         }
-        if (stage == Stage.IMMEDIATE) {
-            steps.get(currentStage).addFirst(new Step(step, response, operation, address));
+
+        final Deque<Step> deque = steps.get(stage);
+        if (addFirst) {
+            deque.addFirst(new Step(step, response, operation, address));
         } else {
-            final Deque<Step> deque = steps.get(stage);
-            if (addFirst) {
-                deque.addFirst(new Step(step, response, operation, address));
-            } else {
-                deque.addLast(new Step(step, response, operation, address));
-            }
+            deque.addLast(new Step(step, response, operation, address));
         }
     }
 
@@ -210,8 +216,15 @@ abstract class AbstractOperationContext implements OperationContext {
         return activeStep.response.get(RESPONSE_HEADERS);
     }
 
-    @Override
-    public final ResultAction completeStep() {
+    /**
+     * Package-protected method used to initiate operation execution.
+     * @return the result action
+     */
+    ResultAction executeOperation() {
+        return completeStepInternal();
+    }
+
+    private ResultAction completeStepInternal() {
         try {
             doCompleteStep();
             if (resultAction == ResultAction.KEEP) {
@@ -230,13 +243,26 @@ abstract class AbstractOperationContext implements OperationContext {
         if (rollbackHandler == null) {
             throw MESSAGES.nullVar("rollbackHandler");
         }
-        this.activeStep.rollbackHandler = rollbackHandler;
+        if (rollbackHandler == RollbackHandler.NOOP_ROLLBACK_HANDLER) {
+            completeStep(ResultHandler.NOOP_RESULT_HANDLER);
+        } else {
+            completeStep(new RollbackDelegatingResultHandler(rollbackHandler));
+        }
+        // we return and executeStep picks it up
+    }
+
+    @Override
+    public final void completeStep(ResultHandler resultHandler) {
+        if (resultHandler == null) {
+            throw MESSAGES.nullVar("resultHandler");
+        }
+        this.activeStep.resultHandler = resultHandler;
         // we return and executeStep picks it up
     }
 
     @Override
     public final void stepCompleted() {
-        completeStep(RollbackHandler.NOOP_ROLLBACK_HANDLER);
+        completeStep(ResultHandler.NOOP_RESULT_HANDLER);
     }
 
     /**
@@ -281,7 +307,7 @@ abstract class AbstractOperationContext implements OperationContext {
                             resultAction = ResultAction.ROLLBACK;
                             respectInterruption = false;
                             Thread.currentThread().interrupt();
-                            if (activeStep != null && activeStep.rollbackHandler != null) {
+                            if (activeStep != null && activeStep.resultHandler != null) {
                                 // Finalize
                                 activeStep.finalizeStep(null);
                             }
@@ -299,7 +325,7 @@ abstract class AbstractOperationContext implements OperationContext {
                 } catch (Error e) {
                     toThrow = e;
                 } finally {
-                    if (step.rollbackHandler == null) {
+                    if (step.resultHandler == null) {
                         // A recursive step executed
                         throwThrowable(toThrow);
                         return;
@@ -409,11 +435,16 @@ abstract class AbstractOperationContext implements OperationContext {
 
         try {
             try {
-                ClassLoader oldTccl = SecurityActions.setThreadContextClassLoader(step.handler.getClass());
+                ClassLoader oldTccl = WildFlySecurityManager.setCurrentContextClassLoaderPrivileged(step.handler.getClass());
                 try {
                     step.handler.execute(this, step.operation);
+                    // AS7-6046
+                    if (isErrorLoggingNecessary() && step.response.hasDefined(FAILURE_DESCRIPTION)) {
+                        MGMT_OP_LOGGER.operationFailed(step.operation.get(OP), step.operation.get(OP_ADDR),
+                                step.response.get(FAILURE_DESCRIPTION));
+                    }
                 } finally {
-                    SecurityActions.setThreadContextClassLoader(oldTccl);
+                    WildFlySecurityManager.setCurrentContextClassLoaderPrivileged(oldTccl);
                 }
 
             } catch (Throwable t) {
@@ -428,17 +459,15 @@ abstract class AbstractOperationContext implements OperationContext {
                     // completeStep()
                     final ModelNode failDesc = OperationClientException.class.cast(t).getFailureDescription();
                     step.response.get(FAILURE_DESCRIPTION).set(failDesc);
-                    if (isBooting()) {
-                        // An OCE on boot needs to be logged as an ERROR
+                    if (isErrorLoggingNecessary()) {
                         MGMT_OP_LOGGER.operationFailed(step.operation.get(OP), step.operation.get(OP_ADDR),
                                 step.response.get(FAILURE_DESCRIPTION));
                     } else {
-                        // An OCE post-boot is a client-side mistake and is
-                        // logged at DEBUG
+                        // A client-side mistake post-boot that only affects model, not runtime, is logged at DEBUG
                         MGMT_OP_LOGGER.operationFailedOnClientError(step.operation.get(OP), step.operation.get(OP_ADDR),
                                 step.response.get(FAILURE_DESCRIPTION));
                     }
-                    completeStep();
+                    completeStepInternal();
                 } else {
                     // Handler threw OCE after calling completeStep()
                     // Throw it on and let standard error handling deal with it
@@ -475,17 +504,28 @@ abstract class AbstractOperationContext implements OperationContext {
         }
     }
 
+    /** Whether ERROR level logging is appropriate for any operation failures*/
+    private boolean isErrorLoggingNecessary() {
+        // Log for any boot failure or for any failure that may affect this processes' runtime services.
+        // Post-boot MODEL failures aren't ERROR logged as they have no impact outside the scope of
+        // the soon-to-be-abandoned OperationContext.
+        // TODO consider logging Stage.DOMAIN problems if it's clear the message will be comprehensible.
+        // Currently Stage.DOMAIN failure handling involves message manipulation before sending the
+        // failure data to the client; logging stuff before that is done is liable to just produce a log mess.
+        return isBooting() || currentStage == Stage.RUNTIME || currentStage == Stage.VERIFY;
+    }
+
     private void finishStep(Step step) {
         boolean finalize = true;
         Throwable toThrow = null;
         try {
-            if (step.rollbackHandler != null) {
+            if (step.resultHandler != null) {
                 // A non-recursive step executed
                 if (!hasMoreSteps()) {
                     // this step was the last registered step;
                     // go ahead and shift back into recursive mode to wrap
                     // things up
-                    completeStep();
+                    completeStepInternal();
                 } else {
                     // Let doCompleteStep carry on with subsequent steps.
                     // If this step has failed in a way that will prevent
@@ -546,13 +586,6 @@ abstract class AbstractOperationContext implements OperationContext {
 
     public final RunningMode getRunningMode() {
         return runningMode;
-    }
-
-    @Override
-    @Deprecated
-    @SuppressWarnings("deprecation")
-    public final Type getType() {
-        return Type.getType(processType, runningMode);
     }
 
     @Override
@@ -663,7 +696,7 @@ abstract class AbstractOperationContext implements OperationContext {
         final ModelNode operation;
         final PathAddress address;
         private Object restartStamp;
-        private RollbackHandler rollbackHandler;
+        private ResultHandler resultHandler;
         Step predecessor;
 
         private Step(final OperationStepHandler handler, final ModelNode response, final ModelNode operation,
@@ -700,7 +733,7 @@ abstract class AbstractOperationContext implements OperationContext {
 
             Step step = this.predecessor;
             while (step != null) {
-                if (step.rollbackHandler != null) {
+                if (step.resultHandler != null) {
                     try {
                         step.finalizeInternal();
                     } catch (RuntimeException t) {
@@ -765,28 +798,43 @@ abstract class AbstractOperationContext implements OperationContext {
         }
 
         private void handleRollback() {
-            if (rollbackHandler != null) {
+            if (resultHandler != null) {
                 try {
-                    if (resultAction == ResultAction.ROLLBACK) {
-                        ClassLoader oldTccl = SecurityActions.setThreadContextClassLoader(handler.getClass());
-                        try {
-                            rollbackHandler.handleRollback(AbstractOperationContext.this, operation);
-                        } finally {
-                            SecurityActions.setThreadContextClassLoader(oldTccl);
-                            waitForRemovals();
-                        }
+                    ClassLoader oldTccl = WildFlySecurityManager.setCurrentContextClassLoaderPrivileged(handler.getClass());
+                    try {
+                        resultHandler.handleResult(resultAction, AbstractOperationContext.this, operation);
+                    } finally {
+                        WildFlySecurityManager.setCurrentContextClassLoaderPrivileged(oldTccl);
+                        waitForRemovals();
                     }
                 } catch (Exception e) {
                     report(MessageSeverity.ERROR,
                             MESSAGES.stepHandlerFailedRollback(handler, operation.get(OP).asString(), address,
                                     e.getLocalizedMessage()));
                 } finally {
-                    // Clear the rollback handler so we never try and finalize
+                    // Clear the result handler so we never try and finalize
                     // this step again
-                    rollbackHandler = null;
+                    resultHandler = null;
                 }
             }
         }
 
+    }
+
+    private static class RollbackDelegatingResultHandler implements ResultHandler {
+
+        private final RollbackHandler delegate;
+
+        private RollbackDelegatingResultHandler(RollbackHandler delegate) {
+            this.delegate = delegate;
+        }
+
+
+        @Override
+        public void handleResult(ResultAction resultAction, OperationContext context, ModelNode operation) {
+            if (resultAction == ResultAction.ROLLBACK) {
+                delegate.handleRollback(context, operation);
+            }
+        }
     }
 }

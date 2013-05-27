@@ -27,6 +27,7 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 
+import org.jboss.as.web.common.WarMetaData;
 import org.jboss.as.ee.structure.DeploymentType;
 import org.jboss.as.ee.structure.DeploymentTypeMarker;
 import org.jboss.as.server.deployment.Attachments;
@@ -35,13 +36,15 @@ import org.jboss.as.server.deployment.DeploymentUnit;
 import org.jboss.as.server.deployment.DeploymentUnitProcessingException;
 import org.jboss.as.server.deployment.DeploymentUnitProcessor;
 import org.jboss.as.server.deployment.PrivateSubDeploymentMarker;
+import org.jboss.as.server.deployment.module.FilterSpecification;
 import org.jboss.as.server.deployment.module.ModuleRootMarker;
 import org.jboss.as.server.deployment.module.ModuleSpecification;
 import org.jboss.as.server.deployment.module.MountHandle;
 import org.jboss.as.server.deployment.module.ResourceRoot;
 import org.jboss.as.server.deployment.module.TempFileProviderService;
-import org.jboss.as.web.SharedTldsMetaDataBuilder;
+import org.jboss.as.web.common.SharedTldsMetaDataBuilder;
 import org.jboss.metadata.web.spec.WebMetaData;
+import org.jboss.modules.filter.PathFilters;
 import org.jboss.vfs.VFS;
 import org.jboss.vfs.VirtualFile;
 import org.jboss.vfs.VirtualFileFilter;
@@ -60,6 +63,7 @@ public class WarStructureDeploymentProcessor implements DeploymentUnitProcessor 
 
     public static final String WEB_INF_LIB = "WEB-INF/lib";
     public static final String WEB_INF_CLASSES = "WEB-INF/classes";
+    public static final String META_INF = "META-INF";
 
     public static final VirtualFileFilter DEFAULT_WEB_INF_LIB_FILTER = new SuffixMatchFilter(".jar", VisitorAttributes.DEFAULT);
 
@@ -99,8 +103,11 @@ public class WarStructureDeploymentProcessor implements DeploymentUnitProcessor 
         if (!deploymentUnit.hasAttachment(Attachments.OSGI_MANIFEST) || deploymentRoot.getChild(WEB_INF_CLASSES).exists()) {
             // we do not want to index the resource root, only WEB-INF/classes and WEB-INF/lib
             deploymentResourceRoot.putAttachment(Attachments.INDEX_RESOURCE_ROOT, false);
-            // Make sure the root does not end up in the module
-            ModuleRootMarker.mark(deploymentResourceRoot, false);
+
+            // Make sure the root does not end up in the module, only META-INF
+            deploymentResourceRoot.getExportFilters().add(new FilterSpecification(PathFilters.getMetaInfFilter(), true));
+            deploymentResourceRoot.getExportFilters().add(new FilterSpecification(PathFilters.acceptAll(), false));
+            ModuleRootMarker.mark(deploymentResourceRoot, true);
         }
 
         // TODO: This needs to be ported to add additional resource roots the standard way

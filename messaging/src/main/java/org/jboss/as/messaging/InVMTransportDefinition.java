@@ -42,6 +42,8 @@ import org.jboss.dmr.ModelNode;
 public class InVMTransportDefinition extends AbstractTransportDefinition {
 
     public static final SimpleAttributeDefinition SERVER_ID = create("server-id", INT)
+            .setDefaultValue(new ModelNode(0))
+            .setAllowExpression(true)
             .setAttributeMarshaller(new AttributeMarshaller() {
                 public void marshallAsAttribute(AttributeDefinition attribute, ModelNode resourceModel, boolean marshallDefault, XMLStreamWriter writer) throws XMLStreamException {
                     if(isMarshallable(attribute, resourceModel)) {
@@ -53,6 +55,8 @@ public class InVMTransportDefinition extends AbstractTransportDefinition {
             .build();
 
     static AttributeDefinition[] ATTRIBUTES = { SERVER_ID };
+
+    public static final AttributeDefinition[] ATTRIBUTES_WITH_EXPRESSION_ALLOWED_IN_1_2_0 = { SERVER_ID };
 
     public static SimpleResourceDefinition createAcceptorDefinition(final boolean registerRuntimeOnly) {
         return new InVMTransportDefinition(registerRuntimeOnly, true, CommonAttributes.IN_VM_ACCEPTOR);

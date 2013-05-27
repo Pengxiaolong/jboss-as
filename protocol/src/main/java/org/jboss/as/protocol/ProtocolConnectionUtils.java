@@ -38,9 +38,11 @@ import javax.security.auth.callback.NameCallback;
 import javax.security.auth.callback.UnsupportedCallbackException;
 import java.io.IOException;
 import java.net.InetAddress;
+import java.net.InetSocketAddress;
 import java.net.NetworkInterface;
 import java.net.URI;
 import java.util.ArrayList;
+import java.util.Enumeration;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
@@ -55,6 +57,7 @@ import java.util.concurrent.TimeUnit;
 public class ProtocolConnectionUtils {
 
     private static final String JBOSS_LOCAL_USER = "JBOSS-LOCAL-USER";
+    private static final String REMOTE_PROTOCOL = "remote";
 
     /**
      * Connect.
@@ -71,7 +74,15 @@ public class ProtocolConnectionUtils {
         final Endpoint endpoint = configuration.getEndpoint();
         final OptionMap options = getOptions(configuration);
         final CallbackHandler actualHandler = handler != null ? handler : new AnonymousCallbackHandler();
-        return endpoint.connect(configuration.getUri(), options, actualHandler, configuration.getSslContext());
+
+        String clientBindAddress = configuration.getClientBindAddress();
+        if (clientBindAddress == null) {
+            return endpoint.connect(configuration.getUri(), options, actualHandler, configuration.getSslContext());
+        } else {
+            InetSocketAddress bindAddr = new InetSocketAddress(clientBindAddress, 0);
+            InetSocketAddress destAddr = new InetSocketAddress(configuration.getUri().getHost(), configuration.getUri().getPort());
+            return endpoint.connect(REMOTE_PROTOCOL, bindAddr, destAddr, options, actualHandler, configuration.getSslContext());
+        }
     }
 
     /**
@@ -147,7 +158,27 @@ public class ProtocolConnectionUtils {
         try {
             final String hostName = uri.getHost();
             final InetAddress address = InetAddress.getByName(hostName);
-            final NetworkInterface nic = NetworkInterface.getByInetAddress(address);
+            NetworkInterface nic;
+            if (address.isLinkLocalAddress()) {
+                /*
+                 * AS7-6382 On Windows the getByInetAddress was not identifying a NIC where the address did not have the zone
+                 * ID, this manual iteration does allow for the address to be matched.
+                 */
+                Enumeration<NetworkInterface> interfaces = NetworkInterface.getNetworkInterfaces();
+                nic = null;
+                while (interfaces.hasMoreElements() && nic == null) {
+                    NetworkInterface current = interfaces.nextElement();
+                    Enumeration<InetAddress> addresses = current.getInetAddresses();
+                    while (addresses.hasMoreElements() && nic == null) {
+                        InetAddress currentAddress = addresses.nextElement();
+                        if (address.equals(currentAddress)) {
+                            nic = current;
+                        }
+                    }
+                }
+            } else {
+                nic = NetworkInterface.getByInetAddress(address);
+            }
             return address.isLoopbackAddress() || nic != null;
         } catch (Exception e) {
             return false;

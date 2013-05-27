@@ -24,6 +24,7 @@ package org.jboss.as.messaging.jms;
 
 
 import static org.jboss.as.messaging.CommonAttributes.NAME;
+import static org.jboss.as.messaging.HornetQActivationService.ignoreOperationIfServerNotActive;
 import static org.jboss.as.messaging.MessagingMessages.MESSAGES;
 
 import org.hornetq.api.core.management.ResourceNames;
@@ -62,12 +63,16 @@ public class JMSQueueReadAttributeHandler extends AbstractRuntimeOnlyHandler {
     @Override
     public void executeRuntimeStep(OperationContext context, ModelNode operation) throws OperationFailedException {
 
+        if (ignoreOperationIfServerNotActive(context, operation)) {
+            return;
+        }
+
         validator.validate(operation);
         final String attributeName = operation.require(ModelDescriptionConstants.NAME).asString();
 
         JMSQueueControl control = getControl(context, operation);
         if (control == null) {
-            ManagementUtil.rollbackOperationWithNoHandler(context, operation);
+            ManagementUtil.rollbackOperationWithResourceNotFound(context, operation);
             return;
         }
 
@@ -90,9 +95,19 @@ public class JMSQueueReadAttributeHandler extends AbstractRuntimeOnlyHandler {
         } else if (JMSQueueDefinition.QUEUE_ADDRESS.getName().equals(attributeName)) {
             context.getResult().set(control.getAddress());
         } else if (JMSQueueDefinition.EXPIRY_ADDRESS.getName().equals(attributeName)) {
-            context.getResult().set(control.getExpiryAddress());
+            // create the result node in all cases
+            ModelNode result = context.getResult();
+            String expiryAddress = control.getExpiryAddress();
+            if (expiryAddress != null) {
+                result.set(expiryAddress);
+            }
         } else if (JMSQueueDefinition.DEAD_LETTER_ADDRESS.getName().equals(attributeName)) {
-            context.getResult().set(control.getDeadLetterAddress());
+            // create the result node in all cases
+            ModelNode result = context.getResult();
+            String dla = control.getDeadLetterAddress();
+            if (dla != null) {
+                result.set(dla);
+            }
         } else if (CommonAttributes.PAUSED.getName().equals(attributeName)) {
             try {
                 context.getResult().set(control.isPaused());
@@ -106,7 +121,7 @@ public class JMSQueueReadAttributeHandler extends AbstractRuntimeOnlyHandler {
         } else {
             throw MESSAGES.unsupportedAttribute(attributeName);
         }
-        context.completeStep();
+        context.stepCompleted();
     }
 
     private JMSQueueControl getControl(OperationContext context, ModelNode operation) {

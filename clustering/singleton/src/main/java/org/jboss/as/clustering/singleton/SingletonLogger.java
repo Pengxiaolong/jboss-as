@@ -22,13 +22,23 @@
 package org.jboss.as.clustering.singleton;
 
 import static org.jboss.logging.Logger.Level.DEBUG;
+import static org.jboss.logging.Logger.Level.ERROR;
 import static org.jboss.logging.Logger.Level.INFO;
 
-import org.jboss.logging.annotations.LogMessage;
 import org.jboss.logging.Logger;
+import org.jboss.logging.annotations.Cause;
+import org.jboss.logging.annotations.LogMessage;
 import org.jboss.logging.annotations.Message;
 import org.jboss.logging.annotations.MessageLogger;
+import org.jboss.msc.service.StartException;
 
+/**
+ * SingletonLogger
+ *
+ * logging id ranges: 10340 - 10349
+ *
+ * @author <a href="mailto:pferraro@redhat.com">Paul Ferraro</a>
+ */
 @MessageLogger(projectCode = "JBAS")
 public interface SingletonLogger {
     String ROOT_LOGGER_CATEGORY = SingletonLogger.class.getPackage().getName();
@@ -53,4 +63,16 @@ public interface SingletonLogger {
     @LogMessage(level = DEBUG)
     @Message(id = 10343, value = "No response received from master node of the %s service, retrying...")
     void noResponseFromMaster(String service);
+
+    @LogMessage(level = ERROR)
+    @Message(id = 10344, value = "Failed to start %s service")
+    void serviceStartFailed(@Cause StartException e, String service);
+
+    @LogMessage(level = ERROR)
+    @Message(id = 10345, value = "Failed to reach quorum of %2$d for %1$s service. No singleton master will be elected.")
+    void quorumNotReached(String service, int quorum);
+
+    @LogMessage(level = ERROR)
+    @Message(id = 10346, value = "Just reached required quorum of %2$d for %1$s service. If this cluster loses another member, no node will be chosen to provide this service.")
+    void quorumJustReached(String service, int quorum);
 }

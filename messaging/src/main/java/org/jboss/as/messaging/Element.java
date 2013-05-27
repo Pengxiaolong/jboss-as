@@ -58,7 +58,9 @@ public enum Element {
    BROADCAST_GROUP(CommonAttributes.BROADCAST_GROUP),
    BROADCAST_GROUPS(CommonAttributes.BROADCAST_GROUPS),
    BROADCAST_PERIOD(BroadcastGroupDefinition.BROADCAST_PERIOD),
+   CHECK_FOR_LIVE_SERVER(CommonAttributes.CHECK_FOR_LIVE_SERVER),
    CLASS_NAME(CommonAttributes.CLASS_NAME),
+   @Deprecated
    CLUSTERED(CommonAttributes.CLUSTERED),
    CLUSTER_CONNECTION(CommonAttributes.CLUSTER_CONNECTION),
    CLUSTER_CONNECTIONS(CommonAttributes.CLUSTER_CONNECTIONS),
@@ -86,10 +88,13 @@ public enum Element {
    GROUP_PORT(CommonAttributes.GROUP_PORT),
    GROUPING_HANDLER(CommonAttributes.GROUPING_HANDLER),
    HORNETQ_SERVER(CommonAttributes.HORNETQ_SERVER),
+   SERVLET_CONNECTOR(CommonAttributes.SERVLET_CONNECTOR),
    ID_CACHE_SIZE(CommonAttributes.ID_CACHE_SIZE),
    INITIAL_WAIT_TIMEOUT(DiscoveryGroupDefinition.INITIAL_WAIT_TIMEOUT),
    IN_VM_ACCEPTOR(CommonAttributes.IN_VM_ACCEPTOR),
    IN_VM_CONNECTOR(CommonAttributes.IN_VM_CONNECTOR),
+   JGROUPS_CHANNEL(CommonAttributes.JGROUPS_CHANNEL),
+   JGROUPS_STACK(CommonAttributes.JGROUPS_STACK),
    JMX_DOMAIN(CommonAttributes.JMX_DOMAIN),
    JMX_MANAGEMENT_ENABLED(CommonAttributes.JMX_MANAGEMENT_ENABLED),
    JOURNAL_BUFFER_SIZE(CommonAttributes.JOURNAL_BUFFER_SIZE),
@@ -104,6 +109,7 @@ public enum Element {
    JOURNAL_SYNC_TRANSACTIONAL(CommonAttributes.JOURNAL_SYNC_TRANSACTIONAL),
    JOURNAL_TYPE(CommonAttributes.JOURNAL_TYPE),
    LARGE_MESSAGES_DIRECTORY(CommonAttributes.LARGE_MESSAGES_DIRECTORY),
+   @Deprecated
    LIVE_CONNECTOR_REF(CommonAttributes.LIVE_CONNECTOR_REF),
    LOCAL_BIND_ADDRESS(CommonAttributes.LOCAL_BIND_ADDRESS),
    LOCAL_BIND_PORT(CommonAttributes.LOCAL_BIND_PORT),
@@ -121,6 +127,7 @@ public enum Element {
    NAME(CommonAttributes.NAME),
    NETTY_ACCEPTOR(CommonAttributes.NETTY_ACCEPTOR),
    NETTY_CONNECTOR(CommonAttributes.NETTY_CONNECTOR),
+   BACKUP_GROUP_NAME(CommonAttributes.BACKUP_GROUP_NAME),
    PAGE_MAX_CONCURRENT_IO(CommonAttributes.PAGE_MAX_CONCURRENT_IO),
    PAGING_DIRECTORY(CommonAttributes.PAGING_DIRECTORY),
    PERF_BLAST_PAGES(CommonAttributes.PERF_BLAST_PAGES),
@@ -130,6 +137,9 @@ public enum Element {
    QUEUE(CommonAttributes.QUEUE),
    REFRESH_TIMEOUT(DiscoveryGroupDefinition.REFRESH_TIMEOUT),
    REMOTING_INTERCEPTORS(CommonAttributes.REMOTING_INTERCEPTORS),
+   REMOTING_INCOMING_INTERCEPTORS(CommonAttributes.REMOTING_INCOMING_INTERCEPTORS),
+   REMOTING_OUTGOING_INTERCEPTORS(CommonAttributes.REMOTING_OUTGOING_INTERCEPTORS),
+   REPLICATION_CLUSTERNAME(CommonAttributes.REPLICATION_CLUSTERNAME),
    ROUTING_NAME(DivertDefinition.ROUTING_NAME),
    RUN_SYNC_SPEED_TEST(CommonAttributes.RUN_SYNC_SPEED_TEST),
    SECURITY_DOMAIN(CommonAttributes.SECURITY_DOMAIN),
@@ -175,14 +185,15 @@ public enum Element {
    BLOCK_ON_NON_DURABLE_SEND(Common.BLOCK_ON_NON_DURABLE_SEND),
    CACHE_LARGE_MESSAGE_CLIENT(Common.CACHE_LARGE_MESSAGE_CLIENT),
    CALL_TIMEOUT(CommonAttributes.CALL_TIMEOUT),
+   CALL_FAILOVER_TIMEOUT(CommonAttributes.CALL_FAILOVER_TIMEOUT),
    CHECK_PERIOD(getCheckPeriodDefinitions()),
    CLIENT_FAILURE_CHECK_PERIOD(Common.CLIENT_FAILURE_CHECK_PERIOD),
    CLIENT_ID(CommonAttributes.CLIENT_ID),
    CONNECTION_FACTORY(getConnectionFactoryDefinitions()),
    CONNECTION_FACTORIES(CommonAttributes.JMS_CONNECTION_FACTORIES),
    CONNECTION_TTL(getConnectionTTLDefinitions()),
-   CONFIRMATION_WINDOW_SIZE(Common.CONFIRMATION_WINDOW_SIZE),
-   CONSUMER_MAX_RATE(CommonAttributes.CONSUMER_MAX_RATE),
+   CONFIRMATION_WINDOW_SIZE(getConfirmationWindowSizeDefinitions()),
+   CONSUMER_MAX_RATE(Common.CONSUMER_MAX_RATE),
    CONSUMER_WINDOW_SIZE(Common.CONSUMER_WINDOW_SIZE),
    DISCOVERY_INITIAL_WAIT_TIMEOUT(Common.DISCOVERY_INITIAL_WAIT_TIMEOUT),
    DISCOVERY_GROUP_REF(CommonAttributes.DISCOVERY_GROUP_REF),
@@ -203,6 +214,8 @@ public enum Element {
    MAX_RETRY_INTERVAL(getMaxRetryIntervalDefinitions()),
    MIN_LARGE_MESSAGE_SIZE(getMinLargeMessageSizeDefinitions()),
    MIN_POOL_SIZE(Pooled.MIN_POOL_SIZE),
+   NOTIFICATION_ATTEMPTS(ClusterConnectionDefinition.NOTIFICATION_ATTEMPTS),
+   NOTIFICATION_INTERVAL(ClusterConnectionDefinition.NOTIFICATION_INTERVAL),
    PASSWORD(getPasswordDefinitions()),
    PRE_ACK(Common.PRE_ACKNOWLEDGE),
    PRODUCER_WINDOW_SIZE(Common.PRODUCER_WINDOW_SIZE),
@@ -361,10 +374,18 @@ public enum Element {
 
     private static Map<String, AttributeDefinition> getReconnectAttemptsDefinitions() {
         final Map<String, AttributeDefinition> result = new HashMap<String, AttributeDefinition>();
-        result.put("connection", CommonAttributes.RECONNECT_ATTEMPTS);
+        result.put("connection", Common.RECONNECT_ATTEMPTS);
         result.put("pooled-connection", Pooled.RECONNECT_ATTEMPTS);
         result.put("bridge", BridgeDefinition.RECONNECT_ATTEMPTS);
         result.put("cluster", ClusterConnectionDefinition.RECONNECT_ATTEMPTS);
+        return result;
+
+    }
+
+    private static Map<String, AttributeDefinition> getConfirmationWindowSizeDefinitions() {
+        final Map<String, AttributeDefinition> result = new HashMap<String, AttributeDefinition>();
+        result.put("connection", ConnectionFactoryAttributes.Common.CONFIRMATION_WINDOW_SIZE);
+        result.put("bridge", CommonAttributes.BRIDGE_CONFIRMATION_WINDOW_SIZE);
         return result;
 
     }

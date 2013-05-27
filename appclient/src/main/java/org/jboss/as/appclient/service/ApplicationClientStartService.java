@@ -41,11 +41,13 @@ import org.jboss.ejb.client.EJBClientConfiguration;
 import org.jboss.ejb.client.EJBClientContext;
 import org.jboss.ejb.client.remoting.ConfigBasedEJBClientContextSelector;
 import org.jboss.msc.service.Service;
+import org.jboss.msc.service.ServiceContainer;
 import org.jboss.msc.service.ServiceName;
 import org.jboss.msc.service.StartContext;
 import org.jboss.msc.service.StartException;
 import org.jboss.msc.service.StopContext;
 import org.jboss.msc.value.InjectedValue;
+import org.wildfly.security.manager.WildFlySecurityManager;
 
 import static org.jboss.as.appclient.logging.AppClientLogger.ROOT_LOGGER;
 
@@ -100,11 +102,11 @@ public class ApplicationClientStartService implements Service<ApplicationClientS
 
             @Override
             public void run() {
-                final ClassLoader oldTccl = SecurityActions.getContextClassLoader();
+                final ClassLoader oldTccl = WildFlySecurityManager.getCurrentContextClassLoaderPrivileged();
                 try {
                     try {
                         try {
-                            SecurityActions.setContextClassLoader(classLoader);
+                            WildFlySecurityManager.setCurrentContextClassLoaderPrivileged(classLoader);
                             AccessController.doPrivileged(new SetSelectorAction(contextSelector));
                             applicationClientDeploymentServiceInjectedValue.getValue().getDeploymentCompleteLatch().await();
                             NamespaceContextSelector.setDefault(namespaceContextSelectorInjectedValue);
@@ -137,7 +139,7 @@ public class ApplicationClientStartService implements Service<ApplicationClientS
                         } catch (Exception e) {
                             ROOT_LOGGER.exceptionRunningAppClient(e, e.getClass().getSimpleName());
                         } finally {
-                            SecurityActions.setContextClassLoader(oldTccl);
+                            WildFlySecurityManager.setCurrentContextClassLoaderPrivileged(oldTccl);
                         }
                     } finally {
                         if(contextSelector instanceof LazyConnectionContextSelector) {
@@ -153,7 +155,10 @@ public class ApplicationClientStartService implements Service<ApplicationClientS
         Runtime.getRuntime().addShutdownHook(new Thread(new Runnable() {
             @Override
             public void run() {
-                CurrentServiceContainer.getServiceContainer().shutdown();
+                final ServiceContainer serviceContainer = CurrentServiceContainer.getServiceContainer();
+                if(serviceContainer != null) {
+                    serviceContainer.shutdown();
+                }
             }
         }));
 

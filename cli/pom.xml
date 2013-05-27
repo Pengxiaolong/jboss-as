@@ -27,15 +27,15 @@
     <modelVersion>4.0.0</modelVersion>
 
     <parent>
-        <groupId>org.jboss.as</groupId>
-        <artifactId>jboss-as-parent</artifactId>
-        <version>7.2.0.Alpha1-SNAPSHOT</version>
+        <groupId>org.wildfly</groupId>
+        <artifactId>wildfly-parent</artifactId>
+        <version>8.0.0.Alpha2-SNAPSHOT</version>
     </parent>
 
-    <groupId>org.jboss.as</groupId>
-    <artifactId>jboss-as-cli</artifactId>
+    <groupId>org.wildfly</groupId>
+    <artifactId>wildfly-cli</artifactId>
 
-    <name>JBoss Application Server: Command line interface</name>
+    <name>WildFly: Command line interface</name>
 
     <build>
         <plugins>
@@ -47,15 +47,9 @@
                         <include>**/*TestCase.java</include>
                     </includes>
                     <enableAssertions>false</enableAssertions>
-                </configuration>
-            </plugin>
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-compiler-plugin</artifactId>
-                <configuration>
-                    <compilerArgument>
-                        -AgeneratedTranslationFilesPath=${project.build.directory}/generated-translation-files
-                    </compilerArgument>
+                    <systemPropertyVariables>
+                        <jboss.cli.config>${project.basedir}/../build/src/main/resources/bin/jboss-cli.xml</jboss.cli.config>
+                    </systemPropertyVariables>
                 </configuration>
             </plugin>
             <plugin>
@@ -84,8 +78,8 @@
 
     <dependencies>
         <dependency>
-            <groupId>org.jboss.jreadline</groupId>
-            <artifactId>jreadline</artifactId>
+            <groupId>org.jboss.aesh</groupId>
+            <artifactId>aesh</artifactId>
         </dependency>
 
         <dependency>
@@ -93,8 +87,12 @@
             <artifactId>staxmapper</artifactId>
         </dependency>
         <dependency>
-            <groupId>org.jboss.as</groupId>
-            <artifactId>jboss-as-controller-client</artifactId>
+            <groupId>org.wildfly</groupId>
+            <artifactId>wildfly-controller-client</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.wildfly</groupId>
+            <artifactId>wildfly-security-manager</artifactId>
         </dependency>
         <dependency>
             <groupId>org.jboss.logging</groupId>
@@ -114,13 +112,8 @@
         </dependency>
 
         <dependency>
-            <groupId>org.jboss.remoting3</groupId>
+            <groupId>org.jboss.remoting</groupId>
             <artifactId>jboss-remoting</artifactId>
-        </dependency>
-
-        <dependency>
-           <groupId>org.jboss.as</groupId>
-           <artifactId>jboss-as-controller</artifactId>
         </dependency>
 
         <dependency>

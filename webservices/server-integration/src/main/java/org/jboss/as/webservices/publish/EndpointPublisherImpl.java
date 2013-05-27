@@ -1,6 +1,6 @@
 /*
  * JBoss, Home of Professional Open Source.
- * Copyright 2011, Red Hat, Inc., and individual contributors
+ * Copyright 2012, Red Hat, Inc., and individual contributors
  * as indicated by the @author tags. See the copyright.txt file in the
  * distribution for a full listing of individual contributors.
  *
@@ -24,21 +24,16 @@ package org.jboss.as.webservices.publish;
 import static org.jboss.as.webservices.WSMessages.MESSAGES;
 
 import java.io.File;
-import java.lang.reflect.InvocationTargetException;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 
-import javax.naming.NamingException;
 
-import org.apache.catalina.Container;
-import org.apache.catalina.Host;
-import org.apache.catalina.LifecycleException;
-import org.apache.catalina.Loader;
-import org.apache.catalina.Wrapper;
-import org.apache.catalina.core.StandardContext;
-import org.apache.catalina.startup.ContextConfig;
-import org.apache.tomcat.InstanceManager;
-import org.jboss.as.web.deployment.WebCtxLoader;
+import org.jboss.as.web.host.ServletBuilder;
+import org.jboss.as.web.host.WebDeploymentController;
+import org.jboss.as.web.host.WebDeploymentBuilder;
+import org.jboss.as.web.host.WebHost;
+import org.jboss.as.webservices.deployers.EndpointServiceDeploymentAspect;
 import org.jboss.as.webservices.deployers.deployment.DeploymentAspectsProvider;
 import org.jboss.as.webservices.deployers.deployment.WSDeploymentBuilder;
 import org.jboss.as.webservices.service.ServerConfigService;
@@ -50,19 +45,19 @@ import org.jboss.metadata.web.jboss.JBossWebMetaData;
 import org.jboss.metadata.web.spec.ServletMappingMetaData;
 import org.jboss.msc.service.ServiceTarget;
 import org.jboss.ws.common.deployment.DeploymentAspectManagerImpl;
-import org.jboss.wsf.spi.SPIProvider;
-import org.jboss.wsf.spi.SPIProviderResolver;
+import org.jboss.ws.common.invocation.InvocationHandlerJAXWS;
 import org.jboss.wsf.spi.classloading.ClassLoaderProvider;
 import org.jboss.wsf.spi.deployment.Deployment;
 import org.jboss.wsf.spi.deployment.DeploymentAspect;
 import org.jboss.wsf.spi.deployment.DeploymentAspectManager;
 import org.jboss.wsf.spi.deployment.Endpoint;
+import org.jboss.wsf.spi.deployment.EndpointState;
 import org.jboss.wsf.spi.deployment.WSFServlet;
-import org.jboss.wsf.spi.management.EndpointRegistry;
-import org.jboss.wsf.spi.management.EndpointRegistryFactory;
+import org.jboss.wsf.spi.metadata.webservices.JBossWebservicesMetaData;
 import org.jboss.wsf.spi.metadata.webservices.WebservicesMetaData;
 import org.jboss.wsf.spi.publish.Context;
 import org.jboss.wsf.spi.publish.EndpointPublisher;
+import org.wildfly.security.manager.WildFlySecurityManager;
 
 /**
  * WS endpoint publisher, allows for publishing a WS endpoint on AS 7
@@ -72,124 +67,132 @@ import org.jboss.wsf.spi.publish.EndpointPublisher;
  */
 public final class EndpointPublisherImpl implements EndpointPublisher {
 
-    private Host host;
+   private WebHost host;
+    private boolean runningInService = false;
+    private static List<DeploymentAspect> depAspects = null;
 
-    public EndpointPublisherImpl(Host host) {
+    public EndpointPublisherImpl(WebHost host) {
         this.host = host;
+    }
+
+    public EndpointPublisherImpl(WebHost host, boolean runningInService) {
+        this(host);
+        this.runningInService = runningInService;
     }
 
     @Override
     public Context publish(String context, ClassLoader loader, Map<String, String> urlPatternToClassNameMap) throws Exception {
-        return publish(null, context, loader, urlPatternToClassNameMap, null, null);
+        return publish(getBaseTarget(), context, loader, urlPatternToClassNameMap, null, null, null);
     }
 
     @Override
     public Context publish(String context, ClassLoader loader, Map<String, String> urlPatternToClassNameMap, WebservicesMetaData metadata) throws Exception {
-        return publish(null, context, loader, urlPatternToClassNameMap, null, metadata);
+        return publish(getBaseTarget(), context, loader, urlPatternToClassNameMap, null, metadata, null);
+    }
+
+    @Override
+    public Context publish(String context, ClassLoader loader, Map<String, String> urlPatternToClassNameMap,
+            WebservicesMetaData metadata, JBossWebservicesMetaData jbwsMetadata) throws Exception {
+        return publish(getBaseTarget(), context, loader, urlPatternToClassNameMap, null, metadata, jbwsMetadata);
     }
 
     public Context publish(ServiceTarget target, String context, ClassLoader loader,
-            Map<String, String> urlPatternToClassNameMap, JBossWebMetaData jbwmd, WebservicesMetaData metadata)
+            Map<String, String> urlPatternToClassNameMap, JBossWebMetaData jbwmd, WebservicesMetaData metadata, JBossWebservicesMetaData jbwsMetadata)
             throws Exception {
-        WSEndpointDeploymentUnit unit = new WSEndpointDeploymentUnit(loader, context, urlPatternToClassNameMap, jbwmd, metadata);
+        WSEndpointDeploymentUnit unit = new WSEndpointDeploymentUnit(loader, context, urlPatternToClassNameMap, jbwmd, metadata, jbwsMetadata);
         return new Context(context, publish(target, unit));
+    }
+
+    private static ServiceTarget getBaseTarget() {
+        return WSServices.getContainerRegistry().getService(WSServices.CONFIG_SERVICE).getServiceContainer();
     }
 
     /**
      * Publishes the endpoints declared to the provided WSEndpointDeploymentUnit
      */
     public List<Endpoint> publish(ServiceTarget target, WSEndpointDeploymentUnit unit) throws Exception {
-        List<DeploymentAspect> aspects = DeploymentAspectsProvider.getSortedDeploymentAspects();
-        ClassLoader origClassLoader = SecurityActions.getContextClassLoader();
+        List<DeploymentAspect> aspects = getDeploymentAspects();
+        ClassLoader origClassLoader = WildFlySecurityManager.getCurrentContextClassLoaderPrivileged();
         Deployment dep = null;
         try {
-            SecurityActions.setContextClassLoader(ClassLoaderProvider.getDefaultProvider().getServerIntegrationClassLoader());
+            WildFlySecurityManager.setCurrentContextClassLoaderPrivileged(ClassLoaderProvider.getDefaultProvider().getServerIntegrationClassLoader());
             WSDeploymentBuilder.getInstance().build(unit);
             dep = unit.getAttachment(WSAttachmentKeys.DEPLOYMENT_KEY);
             dep.addAttachment(ServiceTarget.class, target);
             DeploymentAspectManager dam = new DeploymentAspectManagerImpl();
             dam.setDeploymentAspects(aspects);
             dam.deploy(dep);
-            // TODO: [JBWS-3426] fix this. START workaround
-            if (target == null) {
-                SPIProvider spiProvider = SPIProviderResolver.getInstance().getProvider();
-                EndpointRegistryFactory factory = spiProvider.getSPI(EndpointRegistryFactory.class);
-                EndpointRegistry registry = factory.getEndpointRegistry();
-                for (final Endpoint endpoint : dep.getService().getEndpoints()) {
-                    registry.register(endpoint);
-                }
+            // [JBWS-3441] hack - fallback JAXWS invocation handler for dynamically generated deployments
+            for (Endpoint ep : dep.getService().getEndpoints()) {
+                ep.setState(EndpointState.STOPPED);
+                ep.setInvocationHandler(new InvocationHandlerJAXWS());
+                ep.setState(EndpointState.STARTED);
             }
-            // END workaround
         } finally {
             if (dep != null) {
                 dep.removeAttachment(ServiceTarget.class);
             }
-            SecurityActions.setContextClassLoader(origClassLoader);
+            WildFlySecurityManager.setCurrentContextClassLoaderPrivileged(origClassLoader);
         }
         Deployment deployment = unit.getAttachment(WSAttachmentKeys.DEPLOYMENT_KEY);
-        deployment.addAttachment(StandardContext.class, startWebApp(host, unit)); //TODO simplify and use findChild later in destroy()/stopWebApp()
+        deployment.addAttachment(WebDeploymentController.class, startWebApp(host, unit)); //TODO simplify and use findChild later in destroy()/stopWebApp()
         return deployment.getService().getEndpoints();
     }
 
-    private static StandardContext startWebApp(Host host, WSEndpointDeploymentUnit unit) throws Exception {
-        StandardContext context = new StandardContext();
+    private static WebDeploymentController startWebApp(WebHost host, WSEndpointDeploymentUnit unit) throws Exception {
+        WebDeploymentBuilder deployment = new WebDeploymentBuilder();
+        WebDeploymentController handle;
         try {
             JBossWebMetaData jbwebMD = unit.getAttachment(WSAttachmentKeys.JBOSSWEB_METADATA_KEY);
-            context.setPath(jbwebMD.getContextRoot());
-            context.addLifecycleListener(new ContextConfig());
+            deployment.setContextRoot(jbwebMD.getContextRoot());
             ServerConfigService config = (ServerConfigService)unit.getServiceRegistry().getService(WSServices.CONFIG_SERVICE).getService();
             File docBase = new File(config.getValue().getServerTempDir(), jbwebMD.getContextRoot());
             if (!docBase.exists()) {
                 docBase.mkdirs();
             }
-            context.setDocBase(docBase.getPath());
+            deployment.setDocumentRoot(docBase);
+            deployment.setClassLoader(unit.getAttachment(WSAttachmentKeys.CLASSLOADER_KEY));
 
-            final Loader loader = new WebCtxLoader(unit.getAttachment(WSAttachmentKeys.CLASSLOADER_KEY));
-            loader.setContainer(host);
-            context.setLoader(loader);
-            context.setInstanceManager(new LocalInstanceManager());
+            addServlets(jbwebMD, deployment);
 
-            addServlets(jbwebMD, context);
-
-            host.addChild(context);
-            context.create();
+            handle = host.addWebDeployment(deployment);
+            handle.create();
         } catch (Exception e) {
             throw MESSAGES.createContextPhaseFailed(e);
         }
         try {
-            context.start();
-        } catch (LifecycleException e) {
+            handle.start();
+        } catch (Exception e) {
             throw MESSAGES.startContextPhaseFailed(e);
         }
-        return context;
+        return handle;
     }
 
-    private static void addServlets(JBossWebMetaData jbwebMD, StandardContext context) {
+    private static void addServlets(JBossWebMetaData jbwebMD, WebDeploymentBuilder deployment) {
         for (JBossServletMetaData smd : jbwebMD.getServlets()) {
             final String sc = smd.getServletClass();
             if (sc.equals(WSFServlet.class.getName())) {
+                ServletBuilder servletBuilder = new ServletBuilder();
                 final String servletName = smd.getServletName();
+
                 List<ParamValueMetaData> params = smd.getInitParam();
                 List<String> urlPatterns = null;
                 for (ServletMappingMetaData smmd : jbwebMD.getServletMappings()) {
                     if (smmd.getServletName().equals(servletName)) {
                         urlPatterns = smmd.getUrlPatterns();
+                        servletBuilder.addUrlMappings(urlPatterns);
                         break;
                     }
                 }
 
                 WSFServlet wsfs = new WSFServlet();
-                Wrapper wsfsWrapper = context.createWrapper();
-                wsfsWrapper.setName(servletName);
-                wsfsWrapper.setServlet(wsfs);
-                wsfsWrapper.setServletClass(WSFServlet.class.getName());
+                servletBuilder.setServletName(servletName);
+                servletBuilder.setServlet(wsfs);
+                servletBuilder.setServletClass(WSFServlet.class);
                 for (ParamValueMetaData param : params) {
-                    wsfsWrapper.addInitParameter(param.getParamName(), param.getParamValue());
+                    servletBuilder.addInitParam(param.getParamName(), param.getParamValue());
                 }
-                context.addChild(wsfsWrapper);
-                for (String urlPattern : urlPatterns) {
-                    context.addServletMapping(urlPattern, servletName);
-                }
+                deployment.addServlet(servletBuilder);
             }
         }
     }
@@ -201,40 +204,26 @@ public final class EndpointPublisherImpl implements EndpointPublisher {
             return;
         }
         Deployment deployment = eps.get(0).getService().getDeployment();
-        List<DeploymentAspect> aspects = DeploymentAspectsProvider.getSortedDeploymentAspects();
+        List<DeploymentAspect> aspects = getDeploymentAspects();
         try {
-            stopWebApp(deployment.getAttachment(StandardContext.class));
+            stopWebApp(deployment.getAttachment(WebDeploymentController.class));
         } finally {
-            ClassLoader origClassLoader = SecurityActions.getContextClassLoader();
+            ClassLoader origClassLoader = WildFlySecurityManager.getCurrentContextClassLoaderPrivileged();
             try {
-                SecurityActions.setContextClassLoader(ClassLoaderProvider.getDefaultProvider().getServerIntegrationClassLoader());
-                // TODO: [JBWS-3426] fix this. START workaround
-                try {
-                    SPIProvider spiProvider = SPIProviderResolver.getInstance().getProvider();
-                    EndpointRegistryFactory factory = spiProvider.getSPI(EndpointRegistryFactory.class);
-                    EndpointRegistry registry = factory.getEndpointRegistry();
-                    for (final Endpoint endpoint : deployment.getService().getEndpoints()) {
-                        registry.unregister(endpoint);
-                    }
-                } catch (IllegalStateException e) {
-                    //ignore; there will be no need for unregistering here once 3426 is solved
-                }
-                // END workaround
+                WildFlySecurityManager.setCurrentContextClassLoaderPrivileged(ClassLoaderProvider.getDefaultProvider().getServerIntegrationClassLoader());
                 DeploymentAspectManager dam = new DeploymentAspectManagerImpl();
                 dam.setDeploymentAspects(aspects);
                 dam.undeploy(deployment);
             } finally {
-                SecurityActions.setContextClassLoader(origClassLoader);
+                WildFlySecurityManager.setCurrentContextClassLoaderPrivileged(origClassLoader);
             }
         }
     }
 
-    private static void stopWebApp(StandardContext context) throws Exception {
+    private static void stopWebApp(WebDeploymentController context) throws Exception {
         try {
-            Container container = context.getParent();
-            container.removeChild(context);
             context.stop();
-        } catch (LifecycleException e) {
+        } catch (Exception e) {
             throw MESSAGES.stopContextPhaseFailed(e);
         }
         try {
@@ -244,31 +233,27 @@ public final class EndpointPublisherImpl implements EndpointPublisher {
         }
     }
 
-    private static class LocalInstanceManager implements InstanceManager {
-        LocalInstanceManager() {
-        }
-        @Override
-        public Object newInstance(String className) throws IllegalAccessException, InvocationTargetException, NamingException, InstantiationException, ClassNotFoundException {
-            return Class.forName(className).newInstance();
-        }
-
-        @Override
-        public Object newInstance(String fqcn, ClassLoader classLoader) throws IllegalAccessException, InvocationTargetException, NamingException, InstantiationException, ClassNotFoundException {
-            return Class.forName(fqcn, false, classLoader).newInstance();
-        }
-
-        @Override
-        public Object newInstance(Class<?> c) throws IllegalAccessException, InvocationTargetException, NamingException, InstantiationException {
-            return c.newInstance();
-        }
-
-        @Override
-        public void newInstance(Object o) throws IllegalAccessException, InvocationTargetException, NamingException {
-            throw new IllegalStateException();
-        }
-
-        @Override
-        public void destroyInstance(Object o) throws IllegalAccessException, InvocationTargetException {
-        }
+    private List<DeploymentAspect> getDeploymentAspects() {
+        return runningInService ? DeploymentAspectsProvider.getSortedDeploymentAspects() : getPublisherDeploymentAspects();
     }
+
+    private static synchronized List<DeploymentAspect> getPublisherDeploymentAspects() {
+        if (depAspects == null) {
+            depAspects = new LinkedList<DeploymentAspect>();
+            final List<DeploymentAspect> serverAspects = DeploymentAspectsProvider.getSortedDeploymentAspects();
+            // copy to replace the EndpointServiceDeploymentAspect
+            for (DeploymentAspect aspect : serverAspects) {
+                if (aspect instanceof EndpointServiceDeploymentAspect) {
+                    final EndpointServiceDeploymentAspect a = (EndpointServiceDeploymentAspect) aspect;
+                    EndpointServiceDeploymentAspect clone = (EndpointServiceDeploymentAspect) (a.clone());
+                    clone.setStopServices(true);
+                    depAspects.add(clone);
+                } else {
+                    depAspects.add(aspect);
+                }
+            }
+        }
+        return depAspects;
+    }
+
 }

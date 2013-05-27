@@ -22,6 +22,18 @@
 
 package org.jboss.as.connector.subsystems.datasources;
 
+import static org.jboss.as.connector.logging.ConnectorLogger.SUBSYSTEM_DATASOURCES_LOGGER;
+import static org.jboss.as.connector.logging.ConnectorMessages.MESSAGES;
+import static org.jboss.as.connector.subsystems.datasources.Constants.JNDI_NAME;
+import static org.jboss.as.connector.subsystems.datasources.DataSourceModelNodeUtil.from;
+import static org.jboss.as.connector.subsystems.datasources.DataSourceModelNodeUtil.xaFrom;
+import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.ENABLED;
+import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.OP_ADDR;
+import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.PERSISTENT;
+
+import java.util.ArrayList;
+import java.util.List;
+
 import org.jboss.as.controller.OperationContext;
 import org.jboss.as.controller.OperationContext.Stage;
 import org.jboss.as.controller.OperationFailedException;
@@ -42,17 +54,6 @@ import org.jboss.msc.service.ServiceController;
 import org.jboss.msc.service.ServiceName;
 import org.jboss.msc.service.ServiceRegistry;
 import org.jboss.msc.service.ServiceTarget;
-
-import java.util.List;
-
-import static org.jboss.as.connector.logging.ConnectorLogger.SUBSYSTEM_DATASOURCES_LOGGER;
-import static org.jboss.as.connector.logging.ConnectorMessages.MESSAGES;
-import static org.jboss.as.connector.subsystems.datasources.Constants.JNDINAME;
-import static org.jboss.as.connector.subsystems.datasources.DataSourceModelNodeUtil.from;
-import static org.jboss.as.connector.subsystems.datasources.DataSourceModelNodeUtil.xaFrom;
-import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.ENABLED;
-import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.OP_ADDR;
-import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.PERSISTENT;
 
 /**
  * Operation handler responsible for enabling an existing data-source.
@@ -81,6 +82,8 @@ public class DataSourceEnable implements OperationStepHandler {
         } else if (model.hasDefined(ENABLED) && !model.get(ENABLED).asBoolean()) {
             // Just clear the "false" value that gets stored by default
             model.get(ENABLED).set(new ModelNode());
+        } else {
+            model.get(ENABLED).set(true);
         }
 
         if (context.isNormalServer()) {
@@ -88,22 +91,27 @@ public class DataSourceEnable implements OperationStepHandler {
             context.addStep(new OperationStepHandler() {
                 public void execute(OperationContext context, ModelNode operation) throws OperationFailedException {
                     ServiceVerificationHandler verificationHandler = new ServiceVerificationHandler();
-                    addServices(context, operation, verificationHandler, model, isXa());
+                    final List<ServiceController<?>> controllers = new ArrayList<ServiceController<?>>();
+                    addServices(context, operation, verificationHandler, model, isXa(), controllers);
                     context.addStep(verificationHandler, Stage.VERIFY);
-                    // TODO AS7-5607 handle rollback
-                    context.completeStep(OperationContext.RollbackHandler.NOOP_ROLLBACK_HANDLER);
+                    context.completeStep(new OperationContext.RollbackHandler() {
+                                            @Override
+                                            public void handleRollback(OperationContext context, ModelNode operation) {
+                                                rollbackRuntime(context, operation, model, controllers);
+                                            }
+                                        });
                 }
             }, OperationContext.Stage.RUNTIME);
         }
         context.stepCompleted();
     }
 
-    static void addServices(OperationContext context, ModelNode operation, ServiceVerificationHandler verificationHandler, ModelNode model, boolean isXa) throws OperationFailedException {
+    static void addServices(OperationContext context, ModelNode operation, ServiceVerificationHandler verificationHandler, ModelNode model, boolean isXa, final List<ServiceController<?>> controllers) throws OperationFailedException {
         final ServiceTarget serviceTarget = context.getServiceTarget();
 
         final ModelNode address = operation.require(OP_ADDR);
         final String dsName = PathAddress.pathAddress(address).getLastElement().getValue();
-        final String jndiName = model.get(JNDINAME.getName()).asString();
+        final String jndiName = model.get(JNDI_NAME.getName()).asString();
         final ServiceRegistry registry = context.getServiceRegistry(true);
         final List<ServiceName> serviceNames = registry.getServiceNames();
 
@@ -136,25 +144,20 @@ public class DataSourceEnable implements OperationStepHandler {
                     final ServiceController<?> xaConfigPropertyController = registry.getService(name);
                     XaDataSourcePropertiesService xaPropService = (XaDataSourcePropertiesService) xaConfigPropertyController.getService();
 
-                    if (xaConfigPropertyController != null) {
+                    if (!ServiceController.State.UP.equals(xaConfigPropertyController.getState())) {
+                        propertiesCount++;
+                        xaConfigPropertyController.setMode(ServiceController.Mode.ACTIVE);
+                        builder.addDependency(name, String.class, xaDataSourceConfigService.getXaDataSourcePropertyInjector(xaPropService.getName()));
 
-                        if (!ServiceController.State.UP.equals(xaConfigPropertyController.getState())) {
-                            propertiesCount++;
-                            xaConfigPropertyController.setMode(ServiceController.Mode.ACTIVE);
-                            builder.addDependency(name, String.class, xaDataSourceConfigService.getXaDataSourcePropertyInjector(xaPropService.getName()));
-
-                        } else {
-                            throw new OperationFailedException(new ModelNode().set(MESSAGES.serviceAlreadyStarted("Data-source.xa-config-property", name)));
-                        }
                     } else {
-                        throw new OperationFailedException(new ModelNode().set(MESSAGES.serviceNotAvailable("Data-source.xa-config-property", name)));
+                        throw new OperationFailedException(new ModelNode().set(MESSAGES.serviceAlreadyStarted("Data-source.xa-config-property", name)));
                     }
                 }
             }
             if (propertiesCount == 0) {
                 throw MESSAGES.xaDataSourcePropertiesNotPresent();
             }
-            builder.install();
+            controllers.add(builder.install());
 
         } else {
 
@@ -184,20 +187,16 @@ public class DataSourceEnable implements OperationStepHandler {
                     final ServiceController<?> dataSourceController = registry.getService(name);
                     ConnectionPropertiesService connPropService = (ConnectionPropertiesService) dataSourceController.getService();
 
-                    if (dataSourceController != null) {
-                        if (!ServiceController.State.UP.equals(dataSourceController.getState())) {
-                            dataSourceController.setMode(ServiceController.Mode.ACTIVE);
-                            builder.addDependency(name, String.class, configService.getConnectionPropertyInjector(connPropService.getName()));
+                    if (!ServiceController.State.UP.equals(dataSourceController.getState())) {
+                        dataSourceController.setMode(ServiceController.Mode.ACTIVE);
+                        builder.addDependency(name, String.class, configService.getConnectionPropertyInjector(connPropService.getName()));
 
-                        } else {
-                            throw new OperationFailedException(new ModelNode().set(MESSAGES.serviceAlreadyStarted("Data-source.connectionProperty", name)));
-                        }
                     } else {
-                        throw new OperationFailedException(new ModelNode().set(MESSAGES.serviceNotAvailable("Data-source.connectionProperty", name)));
+                        throw new OperationFailedException(new ModelNode().set(MESSAGES.serviceAlreadyStarted("Data-source.connectionProperty", name)));
                     }
                 }
             }
-            builder.install();
+            controllers.add(builder.install());
 
 
         }
@@ -227,7 +226,7 @@ public class DataSourceEnable implements OperationStepHandler {
             referenceBuilder.addListener(verificationHandler);
         }
 
-        referenceBuilder.install();
+        controllers.add(referenceBuilder.install());
 
         final ContextNames.BindInfo bindInfo = ContextNames.bindInfoFor(jndiName);
         final BinderService binderService = new BinderService(bindInfo.getBindName());
@@ -241,7 +240,7 @@ public class DataSourceEnable implements OperationStepHandler {
                                 SUBSYSTEM_DATASOURCES_LOGGER.boundDataSource(jndiName);
                                 break;
                             }
-                            case START_REQUESTED_to_DOWN: {
+                            case STOPPING_to_DOWN: {
                                 SUBSYSTEM_DATASOURCES_LOGGER.unboundDataSource(jndiName);
                                 break;
                             }
@@ -256,7 +255,7 @@ public class DataSourceEnable implements OperationStepHandler {
         if (verificationHandler != null) {
             binderBuilder.addListener(verificationHandler);
         }
-        binderBuilder.install();
+        controllers.add(binderBuilder.install());
 
     }
 
@@ -266,5 +265,12 @@ public class DataSourceEnable implements OperationStepHandler {
 
     public boolean isXa() {
         return xa;
+    }
+
+
+    protected void rollbackRuntime(OperationContext context, final ModelNode operation, final ModelNode model, List<ServiceController<?>> controllers) {
+        for (ServiceController<?> controller : controllers) {
+            context.removeService(controller.getName());
+        }
     }
 }

@@ -28,7 +28,7 @@ import java.util.Map;
 
 import org.jboss.as.controller.AttributeDefinition;
 import org.jboss.as.controller.PathElement;
-import org.jboss.as.controller.ResourceDefinition;
+import org.jboss.as.controller.ServiceRemoveStepHandler;
 import org.jboss.as.controller.SimpleAttributeDefinition;
 import org.jboss.as.controller.SimpleAttributeDefinitionBuilder;
 import org.jboss.as.controller.SimpleResourceDefinition;
@@ -38,12 +38,15 @@ import org.jboss.as.controller.operations.validation.TimeUnitValidator;
 import org.jboss.as.controller.registry.AttributeAccess;
 import org.jboss.as.controller.registry.ManagementResourceRegistration;
 import org.jboss.as.controller.registry.OperationEntry;
+import org.jboss.as.controller.transform.description.RejectAttributeChecker;
+import org.jboss.as.controller.transform.description.ResourceTransformationDescriptionBuilder;
+import org.jboss.as.ejb3.component.pool.PoolConfigService;
 import org.jboss.as.ejb3.component.pool.StrictMaxPoolConfig;
 import org.jboss.dmr.ModelNode;
 import org.jboss.dmr.ModelType;
 
 /**
- * {@link ResourceDefinition} for the strict-max-bean-pool resource.
+ * {@link org.jboss.as.controller.ResourceDefinition} for the strict-max-bean-pool resource.
  *
  * @author Brian Stansberry (c) 2011 Red Hat Inc.
  */
@@ -69,9 +72,10 @@ public class StrictMaxPoolResourceDefinition extends SimpleResourceDefinition {
     public static final SimpleAttributeDefinition INSTANCE_ACQUISITION_TIMEOUT_UNIT =
             new SimpleAttributeDefinitionBuilder(EJB3SubsystemModel.INSTANCE_ACQUISITION_TIMEOUT_UNIT, ModelType.STRING, true)
                     .setXmlName(EJB3SubsystemXMLAttribute.INSTANCE_ACQUISITION_TIMEOUT_UNIT.getLocalName())
-                    .setValidator(TimeUnitValidator.ANY_OPTIONAL)
+                    .setValidator(new TimeUnitValidator(true,true))
                     .setDefaultValue(new ModelNode().set(StrictMaxPoolConfig.DEFAULT_TIMEOUT_UNIT.name()))
                     .setFlags(AttributeAccess.Flag.RESTART_NONE)
+                    .setAllowExpression(true)
                     .build();
 
     public static final Map<String, AttributeDefinition> ATTRIBUTES ;
@@ -88,7 +92,7 @@ public class StrictMaxPoolResourceDefinition extends SimpleResourceDefinition {
     private StrictMaxPoolResourceDefinition() {
         super(PathElement.pathElement(EJB3SubsystemModel.STRICT_MAX_BEAN_INSTANCE_POOL),
                 EJB3Extension.getResourceDescriptionResolver(EJB3SubsystemModel.STRICT_MAX_BEAN_INSTANCE_POOL),
-                StrictMaxPoolAdd.INSTANCE, StrictMaxPoolRemove.INSTANCE,
+                StrictMaxPoolAdd.INSTANCE, new ServiceRemoveStepHandler(PoolConfigService.EJB_POOL_CONFIG_BASE_SERVICE_NAME, StrictMaxPoolAdd.INSTANCE),
                 OperationEntry.Flag.RESTART_NONE, OperationEntry.Flag.RESTART_RESOURCE_SERVICES);
     }
 
@@ -97,5 +101,11 @@ public class StrictMaxPoolResourceDefinition extends SimpleResourceDefinition {
         for (AttributeDefinition attr : ATTRIBUTES.values()) {
             resourceRegistration.registerReadWriteAttribute(attr, null, StrictMaxPoolWriteHandler.INSTANCE);
         }
+    }
+
+    static void registerTransformers_1_1_0(ResourceTransformationDescriptionBuilder parent) {
+        parent.addChildResource(INSTANCE.getPathElement())
+            .getAttributeBuilder()
+            .addRejectCheck(RejectAttributeChecker.SIMPLE_EXPRESSIONS, INSTANCE_ACQUISITION_TIMEOUT_UNIT);
     }
 }

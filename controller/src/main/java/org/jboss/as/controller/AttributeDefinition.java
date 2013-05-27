@@ -22,10 +22,12 @@
 
 package org.jboss.as.controller;
 
+import java.util.Collections;
 import java.util.EnumSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.ResourceBundle;
+import java.util.Set;
 
 import javax.xml.stream.XMLStreamException;
 import javax.xml.stream.XMLStreamWriter;
@@ -50,6 +52,9 @@ import org.jboss.dmr.ModelType;
  */
 public abstract class AttributeDefinition {
 
+    /** The {@link ModelType} types that reflect complex DMR structures -- {@code LIST}, {@code OBJECT}, {@code PROPERTY}} */
+    protected static final Set<ModelType> COMPLEX_TYPES = Collections.unmodifiableSet(EnumSet.of(ModelType.LIST, ModelType.OBJECT, ModelType.PROPERTY));
+
     private final String name;
     private final String xmlName;
     private final ModelType type;
@@ -65,6 +70,7 @@ public abstract class AttributeDefinition {
     protected final AttributeMarshaller attributeMarshaller;
     private final boolean resourceOnly;
     private final DeprecationData deprecationData;
+
 
     protected AttributeDefinition(String name, String xmlName, final ModelNode defaultValue, final ModelType type,
                                final boolean allowNull, final boolean allowExpression, final MeasurementUnit measurementUnit,
@@ -102,7 +108,7 @@ public abstract class AttributeDefinition {
         }
         if (flags == null || flags.length == 0) {
             this.flags = EnumSet.noneOf(AttributeAccess.Flag.class);
-        } else if (flags.length == 0) {
+        } else if (flags.length == 1) {
             this.flags = EnumSet.of(flags[0]);
         } else {
             this.flags = EnumSet.of(flags[0], flags);
@@ -197,7 +203,7 @@ public abstract class AttributeDefinition {
      * @throws OperationFailedException if the value is not valid
      */
     public ModelNode validateOperation(final ModelNode operationObject) throws OperationFailedException {
-        return validateOperation(operationObject, true);
+        return validateOperation(operationObject, false);
     }
 
     /**
@@ -210,26 +216,23 @@ public abstract class AttributeDefinition {
      * @throws OperationFailedException if the value is not valid
      */
     public final void validateAndSet(ModelNode operationObject, final ModelNode model) throws OperationFailedException {
-        final ModelNode newValue = correctValue(operationObject.get(name), model.get(name));
-        if (!newValue.equals(operationObject.get(name))) {
-            operationObject.get(name).set(newValue);
+        if (operationObject.hasDefined(name) && isDeprecated()) {
+            ControllerLogger.DEPRECATED_LOGGER.attributeDeprecated(getName());
         }
-        ModelNode node = validateOperation(operationObject, false);
+        // AS7-6224 -- convert expression strings to ModelType.EXPRESSION *before* correcting
+        ModelNode newValue = convertParameterExpressions(operationObject.get(name));
+        final ModelNode correctedValue = correctValue(newValue, model.get(name));
+        if (!correctedValue.equals(operationObject.get(name))) {
+            operationObject.get(name).set(correctedValue);
+        }
+        ModelNode node = validateOperation(operationObject, true);
         model.get(name).set(node);
     }
 
     /**
-     *
-     * @deprecated Use {@link #resolveModelAttribute(OperationContext, ModelNode)} instead
-     */
-    @Deprecated
-    public ModelNode validateResolvedOperation(final ModelNode operationObject) throws OperationFailedException {
-        return resolveModelAttribute(NO_OPERATION_CONTEXT_FOR_RESOLVING_MODEL_PARAMETERS, operationObject);
-    }
-
-    /**
      * Finds a value in the given {@code model} whose key matches this attribute's {@link #getName() name},
-     * resolves it and validates it using this attribute's {@link #getValidator() validator}. If the value is
+     * uses the given {@code context} to {@link OperationContext#resolveExpressions(org.jboss.dmr.ModelNode) resolve}
+     * it and validates it using this attribute's {@link #getValidator() validator}. If the value is
      * undefined and a {@link #getDefaultValue() default value} is available, the default value is used.
      *
      * @param context the operation context
@@ -248,11 +251,62 @@ public abstract class AttributeDefinition {
         }, model);
     }
 
+    /**
+     * Finds a value in the given {@code model} whose key matches this attribute's {@link #getName() name},
+     * uses the given {@code resolver} to {@link ExpressionResolver#resolveExpressions(org.jboss.dmr.ModelNode)} resolve}
+     * it and validates it using this attribute's {@link #getValidator() validator}. If the value is
+     * undefined and a {@link #getDefaultValue() default value} is available, the default value is used.
+     *
+     * @param resolver the expression resolver
+     * @param model model node of type {@link ModelType#OBJECT}, typically representing a model resource
+     *
+     * @return the resolved value, possibly the default value if the model does not have a defined value matching
+     *              this attribute's name
+     * @throws OperationFailedException if the value is not valid
+     */
     public ModelNode resolveModelAttribute(final ExpressionResolver resolver, final ModelNode model) throws OperationFailedException {
         final ModelNode node = new ModelNode();
         if(model.has(name)) {
             node.set(model.get(name));
         }
+        return resolveValue(resolver, node);
+    }
+
+    /**
+     * Takes the given {@code value}, resolves it using the given {@code context}
+     * and validates it using this attribute's {@link #getValidator() validator}. If the value is
+     * undefined and a {@link #getDefaultValue() default value} is available, the default value is used.
+     *
+     * @param context the context to use to {@link OperationContext#resolveExpressions(org.jboss.dmr.ModelNode) resolve} the value
+     * @param value a node that is expected to be a valid value for an attribute defined by this definition
+     *
+     * @return the resolved value, possibly the default value if {@code value} is not defined
+     *
+     * @throws OperationFailedException if the value is not valid
+     */
+    public ModelNode resolveValue(final OperationContext context, final ModelNode value) throws OperationFailedException {
+        return resolveValue(new ExpressionResolver() {
+            @Override
+            public ModelNode resolveExpressions(ModelNode node) throws OperationFailedException {
+                return context.resolveExpressions(node);
+            }
+        }, value);
+    }
+
+    /**
+     * Takes the given {@code value}, resolves it using the given {@code resolver}
+     * and validates it using this attribute's {@link #getValidator() validator}. If the value is
+     * undefined and a {@link #getDefaultValue() default value} is available, the default value is used.
+     *
+     * @param resolver the expression resolver
+     * @param value a node that is expected to be a valid value for an attribute defined by this definition
+     *
+     * @return the resolved value, possibly the default value if {@code value} is not defined
+     *
+     * @throws OperationFailedException if the value is not valid
+     */
+    public ModelNode resolveValue(final ExpressionResolver resolver, final ModelNode value) throws OperationFailedException {
+        final ModelNode node = value.clone();
         if (!node.isDefined() && defaultValue.isDefined()) {
             node.set(defaultValue);
         }
@@ -436,7 +490,7 @@ public abstract class AttributeDefinition {
             result.get(ModelDescriptionConstants.REQUIRED).set(!isAllowNull());
         }
         result.get(ModelDescriptionConstants.NILLABLE).set(isAllowNull());
-        if (!forOperation && defaultValue != null && defaultValue.isDefined()) {
+        if (defaultValue != null && defaultValue.isDefined()) {
             result.get(ModelDescriptionConstants.DEFAULT).set(defaultValue);
         }
         if (measurementUnit != null && measurementUnit != MeasurementUnit.NONE) {
@@ -481,6 +535,17 @@ public abstract class AttributeDefinition {
                 }
             }
         }
+        addAllowedValuesToDescription(result, validator);
+        return result;
+    }
+
+    /**
+     * Adds the allowed values. Override for attributes who should not use the allowed values.
+     *
+     * @param result the node to add the allowed values to
+     * @param validator the validator to get the allowed values from
+     */
+    protected void addAllowedValuesToDescription(ModelNode result, ParameterValidator validator) {
         if (validator instanceof AllowedValuesValidator) {
             AllowedValuesValidator avv = (AllowedValuesValidator) validator;
             List<ModelNode> allowed = avv.getAllowedValues();
@@ -490,7 +555,6 @@ public abstract class AttributeDefinition {
                 }
             }
         }
-        return result;
     }
 
     /**
@@ -510,20 +574,66 @@ public abstract class AttributeDefinition {
         return newValue;
     }
 
-    private ModelNode validateOperation(final ModelNode operationObject, final boolean correctValue) throws OperationFailedException {
+    /**
+     * Examine the given operation parameter value for any expression syntax, converting the relevant node to
+     * {@link ModelType#EXPRESSION} if such is supported.
+     * <p>
+     * This implementation checks if {@link #isAllowExpression() expressions are allowed} and if so, calls
+     * {@link #convertStringExpression(ModelNode)} to convert a {@link ModelType#STRING} to a {@link ModelType#EXPRESSION}.
+     * No other conversions are performed. For use cases requiring more complex behavior, a subclass that overrides
+     * this method should be used.
+     * </p>
+     * <p>
+     * If expressions are supported this implementation also checks if the {@link #getType() attribute type} is one of
+     * the {@link #COMPLEX_TYPES complex DMR types}. If it is, an {@link IllegalStateException} is thrown, as this
+     * implementation cannot properly handle such a combination, and a subclass that overrides this method should be used.
+     * </p>
+     *
+     * @param parameter the node to examine. Cannot not be {@code null}
+     * @return a node matching {@code parameter} but with expressions converted, or the original parameter if no
+     *         conversion was performed. Will not return {@code null}
+     *
+     * @throws IllegalStateException if expressions are supported, but the {@link #getType() attribute type} is {@link #COMPLEX_TYPES complex}
+     */
+    protected ModelNode convertParameterExpressions(final ModelNode parameter) {
+        if (isAllowExpression() && COMPLEX_TYPES.contains(type)) {
+            // They need to subclass and override
+            throw new IllegalStateException();
+        }
+        return isAllowExpression() ? convertStringExpression(parameter) : parameter;
+    }
+
+    /**
+     * Checks if the given node is of {@link ModelType#STRING} with a string value that includes expression syntax.
+     * If so returns a node of {@link ModelType#EXPRESSION}, else simply returns {@code node} unchanged
+     *
+     * @param node the node to examine. Will not be {@code null}
+     * @return the node with expressions converted, or the original node if no conversion was performed
+     *         Cannot return {@code null}
+     */
+    protected static ModelNode convertStringExpression(ModelNode node) {
+        if (node.getType() == ModelType.STRING) {
+            return ParseUtils.parsePossibleExpression(node.asString());
+        }
+        return node;
+    }
+
+    private ModelNode validateOperation(final ModelNode operationObject, final boolean immutableValue) throws OperationFailedException {
 
         ModelNode node = new ModelNode();
         if(operationObject.has(name)) {
             node.set(operationObject.get(name));
         }
-        if (isAllowExpression() && node.getType() == ModelType.STRING) {
-            node = ParseUtils.parsePossibleExpression(node.asString());
+
+        if (!immutableValue) {
+            node = convertParameterExpressions(node);
         }
+
         if (!node.isDefined() && defaultValue.isDefined()) {
-            if (correctValue) correctValue(node, node);
+            if (!immutableValue) correctValue(node, node);
             validator.validateParameter(name, defaultValue);
         } else {
-            if (correctValue) correctValue(node, node);
+            if (!immutableValue) correctValue(node, node);
             validator.validateParameter(name, node);
         }
 
@@ -557,11 +667,4 @@ public abstract class AttributeDefinition {
     public DeprecationData getDeprecationData() {
         return deprecationData;
     }
-
-    private static final ExpressionResolver NO_OPERATION_CONTEXT_FOR_RESOLVING_MODEL_PARAMETERS = new ExpressionResolver() {
-        @Override
-        public ModelNode resolveExpressions(ModelNode node) throws OperationFailedException {
-            return ExpressionResolver.DEFAULT.resolveExpressions(node);
-        }
-    };
 }

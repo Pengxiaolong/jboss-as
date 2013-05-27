@@ -22,17 +22,19 @@
 
 package org.jboss.as.logging;
 
-import static org.jboss.as.logging.CommonAttributes.CLASS;
+import static org.jboss.as.logging.AsyncHandlerResourceDefinition.QUEUE_LENGTH;
+import static org.jboss.as.logging.AsyncHandlerResourceDefinition.SUBHANDLERS;
+import static org.jboss.as.logging.CommonAttributes.ENABLED;
 import static org.jboss.as.logging.CommonAttributes.ENCODING;
 import static org.jboss.as.logging.CommonAttributes.FILE;
 import static org.jboss.as.logging.CommonAttributes.FILTER;
+import static org.jboss.as.logging.CommonAttributes.FILTER_SPEC;
 import static org.jboss.as.logging.CommonAttributes.FORMATTER;
-import static org.jboss.as.logging.CommonAttributes.LEVEL;
-import static org.jboss.as.logging.CommonAttributes.MODULE;
 import static org.jboss.as.logging.CommonAttributes.HANDLER_NAME;
-import static org.jboss.as.logging.CommonAttributes.PROPERTIES;
-import static org.jboss.as.logging.CommonAttributes.SUBHANDLERS;
-import static org.jboss.as.logging.LoggerOperations.ADD_HANDLER;
+import static org.jboss.as.logging.CommonAttributes.LEVEL;
+import static org.jboss.as.logging.CustomHandlerResourceDefinition.CLASS;
+import static org.jboss.as.logging.CustomHandlerResourceDefinition.MODULE;
+import static org.jboss.as.logging.CustomHandlerResourceDefinition.PROPERTIES;
 import static org.jboss.as.logging.Logging.createOperationFailure;
 
 import java.util.ArrayList;
@@ -42,24 +44,29 @@ import java.util.List;
 import java.util.Map;
 import java.util.logging.Handler;
 
+import org.apache.log4j.Appender;
 import org.jboss.as.controller.AttributeDefinition;
 import org.jboss.as.controller.OperationContext;
 import org.jboss.as.controller.OperationFailedException;
+import org.jboss.as.controller.OperationStepHandler;
 import org.jboss.as.controller.PathAddress;
-import org.jboss.as.logging.LoggingOperations.LoggingAddOperationStepHandler;
-import org.jboss.as.logging.LoggingOperations.LoggingRemoveOperationStepHandler;
-import org.jboss.as.logging.LoggingOperations.LoggingUpdateOperationStepHandler;
-import org.jboss.as.logging.LoggingOperations.LoggingWriteAttributeHandler;
-import org.jboss.as.logging.resolvers.FilterResolver;
+import org.jboss.as.controller.registry.Resource;
+import org.jboss.as.logging.logmanager.Log4jAppenderHandler;
+import org.jboss.as.logging.resolvers.ModelNodeResolver;
 import org.jboss.dmr.ModelNode;
 import org.jboss.dmr.Property;
+import org.jboss.logmanager.LogContext;
 import org.jboss.logmanager.Logger;
 import org.jboss.logmanager.Logger.AttachmentKey;
 import org.jboss.logmanager.config.FormatterConfiguration;
 import org.jboss.logmanager.config.HandlerConfiguration;
 import org.jboss.logmanager.config.LogContextConfiguration;
-import org.jboss.logmanager.config.LoggerConfiguration;
+import org.jboss.logmanager.config.PojoConfiguration;
+import org.jboss.logmanager.config.PropertyConfigurable;
 import org.jboss.logmanager.formatters.PatternFormatter;
+import org.jboss.modules.ModuleIdentifier;
+import org.jboss.modules.ModuleLoadException;
+import org.jboss.modules.ModuleLoader;
 
 /**
  * @author <a href="mailto:david.lloyd@redhat.com">David M. Lloyd</a>
@@ -74,7 +81,7 @@ final class HandlerOperations {
     /**
      * A step handler for updating logging handler properties.
      */
-    static class HandlerUpdateOperationStepHandler extends LoggingUpdateOperationStepHandler {
+    static class HandlerUpdateOperationStepHandler extends LoggingOperations.LoggingUpdateOperationStepHandler {
         private final AttributeDefinition[] attributes;
 
         protected HandlerUpdateOperationStepHandler() {
@@ -88,7 +95,19 @@ final class HandlerOperations {
         @Override
         public void updateModel(final ModelNode operation, final ModelNode model) throws OperationFailedException {
             for (AttributeDefinition attribute : attributes) {
-                attribute.validateAndSet(operation, model);
+                // Filter attribute needs to be converted to filter spec
+                if (CommonAttributes.FILTER.equals(attribute)) {
+                    final ModelNode filter = CommonAttributes.FILTER.validateOperation(operation);
+                    if (filter.isDefined()) {
+                        final String value = Filters.filterToFilterSpec(filter);
+                        model.get(CommonAttributes.FILTER_SPEC.getName()).set(value);
+                    }
+                } else {
+                    // Only update the model for attributes that are defined in the operation
+                    if (operation.has(attribute.getName())) {
+                        attribute.validateAndSet(operation, model);
+                    }
+                }
             }
         }
 
@@ -99,43 +118,26 @@ final class HandlerOperations {
                 throw createOperationFailure(LoggingMessages.MESSAGES.handlerConfigurationNotFound(name));
             }
             if (attributes != null) {
+                boolean restartRequired = false;
+                boolean reloadRequired = false;
                 for (AttributeDefinition attribute : attributes) {
-                    handleProperty(attribute, context, model, logContextConfiguration, configuration);
-                    if (Logging.requiresRestart(attribute.getFlags())) {
-                        context.restartRequired();
+                    // Only update values for attributes defined in the operation
+                    if (operation.has(attribute.getName())) {
+                        handleProperty(attribute, context, model, logContextConfiguration, configuration);
+                        restartRequired = restartRequired || Logging.requiresRestart(attribute.getFlags());
+                        reloadRequired = reloadRequired || Logging.requiresReload(attribute.getFlags());
                     }
+                }
+                if (restartRequired) {
+                    context.restartRequired();
+                } else if (reloadRequired) {
+                    context.reloadRequired();
                 }
             }
             performRuntime(context, configuration, name, model);
         }
 
-        @Override
-        public final void performRollback(final OperationContext context, final ModelNode operation, final ModelNode model, final LogContextConfiguration logContextConfiguration, final String name, final ModelNode originalModel) throws OperationFailedException {
-            final HandlerConfiguration configuration = logContextConfiguration.getHandlerConfiguration(name);
-            if (configuration != null) {
-                if (attributes != null) {
-                    // Remove all properties from the operation, they will be added if there are any previously
-                    if (model.hasDefined(PROPERTIES.getName())) {
-                        for (Property property : PROPERTIES.resolveModelAttribute(context, model).asPropertyList()) {
-                            configuration.removeProperty(property.getName());
-                        }
-                    }
-                    for (AttributeDefinition attribute : attributes) {
-                        handleProperty(attribute, context, originalModel, logContextConfiguration, configuration);
-                        if (Logging.requiresRestart(attribute.getFlags())) {
-                            context.restartRequired();
-                        }
-                    }
-                }
-                performRollback(context, configuration, name, originalModel);
-            }
-        }
-
         public void performRuntime(final OperationContext context, final HandlerConfiguration configuration, final String name, final ModelNode model) throws OperationFailedException {
-            // No-op by default
-        }
-
-        public void performRollback(final OperationContext context, final HandlerConfiguration configuration, final String name, final ModelNode originalModel) throws OperationFailedException {
             // No-op by default
         }
     }
@@ -143,7 +145,7 @@ final class HandlerOperations {
     /**
      * A step handler for add operations of logging handlers. Adds default properties to the handler configuration.
      */
-    static class HandlerAddOperationStepHandler extends LoggingAddOperationStepHandler {
+    static class HandlerAddOperationStepHandler extends LoggingOperations.LoggingAddOperationStepHandler {
         private final String[] constructionProperties;
         private final AttributeDefinition[] attributes;
         private final Class<? extends Handler> type;
@@ -167,43 +169,21 @@ final class HandlerOperations {
         @Override
         public void updateModel(final ModelNode operation, final ModelNode model) throws OperationFailedException {
             for (AttributeDefinition attribute : attributes) {
-                attribute.validateAndSet(operation, model);
+                // Filter attribute needs to be converted to filter spec
+                if (CommonAttributes.FILTER.equals(attribute)) {
+                    final ModelNode filter = CommonAttributes.FILTER.validateOperation(operation);
+                    if (filter.isDefined()) {
+                        final String value = Filters.filterToFilterSpec(filter);
+                        model.get(CommonAttributes.FILTER_SPEC.getName()).set(value);
+                    }
+                } else {
+                    attribute.validateAndSet(operation, model);
+                }
             }
         }
 
         @Override
         public void performRuntime(final OperationContext context, final ModelNode operation, final LogContextConfiguration logContextConfiguration, final String name, final ModelNode model) throws OperationFailedException {
-            HandlerConfiguration configuration = logContextConfiguration.getHandlerConfiguration(name);
-            final boolean exists = configuration != null;
-            if (!exists) {
-                LoggingLogger.ROOT_LOGGER.tracef("Adding handler '%s' at '%s'", name, LoggingOperations.getAddress(operation));
-                configuration = createHandlerConfiguration(context, model, name, logContextConfiguration);
-            }
-
-            for (AttributeDefinition attribute : attributes) {
-                // CLASS and MODULE should be ignored
-                final boolean skip;
-                if ((attribute.equals(CLASS) || attribute.equals(MODULE))) {
-                    skip = true;
-                } else {
-                    // No need to change values that are equal
-                    skip = (exists && equalValue(attribute, context, model, logContextConfiguration, configuration));
-                }
-
-                if (!skip)
-                    handleProperty(attribute, context, model, logContextConfiguration, configuration);
-            }
-        }
-
-        @Override
-        public void performRollback(final OperationContext context, final ModelNode operation, final LogContextConfiguration logContextConfiguration, final String name) throws OperationFailedException {
-            if (logContextConfiguration != null)
-                logContextConfiguration.removeHandlerConfiguration(name);
-        }
-
-        protected HandlerConfiguration createHandlerConfiguration(final OperationContext context,
-                                                                  final ModelNode model, final String name,
-                                                                  final LogContextConfiguration logContextConfiguration) throws OperationFailedException {
             final String className;
             final String moduleName;
 
@@ -215,12 +195,83 @@ final class HandlerOperations {
                 className = type.getName();
                 moduleName = null;
             }
+
+            HandlerConfiguration configuration = logContextConfiguration.getHandlerConfiguration(name);
+            final boolean exists = configuration != null;
+            if (!exists) {
+                LoggingLogger.ROOT_LOGGER.tracef("Adding handler '%s' at '%s'", name, LoggingOperations.getAddress(operation));
+                configuration = createHandlerConfiguration(className, moduleName, name, logContextConfiguration);
+            } else if (!className.equals(configuration.getClassName()) || (moduleName == null ? configuration.getModuleName() != null : !moduleName.equals(configuration.getModuleName()))) {
+                LoggingLogger.ROOT_LOGGER.replacingNamedHandler(name);
+                LoggingLogger.ROOT_LOGGER.debugf("Removing handler %s of type '%s' in module '%s' and replacing with type '%s' in module '%s'",
+                        name, configuration.getClassName(), configuration.getModuleName(), className, moduleName);
+                // Remove the original configuration and set-up the new one. This overrides anything in the original
+                // configuration, e.g. the logging.properties configuration, with the model configuration.
+                logContextConfiguration.removeHandlerConfiguration(name);
+                // Remove POJO if it exists
+                if (logContextConfiguration.getPojoNames().contains(name)) {
+                    logContextConfiguration.removePojoConfiguration(name);
+                }
+                configuration = createHandlerConfiguration(className, moduleName, name, logContextConfiguration);
+            }
+
+            for (AttributeDefinition attribute : attributes) {
+                // CLASS and MODULE should be ignored
+                final boolean skip;
+                if ((attribute.equals(CLASS) || attribute.equals(MODULE)) || attribute.equals(FILTER)) {
+                    skip = true;
+                } else {
+                    // No need to change values that are equal
+                    skip = (exists && equalValue(attribute, context, model, logContextConfiguration, configuration));
+                }
+
+                if (!skip)
+                    handleProperty(attribute, context, model, logContextConfiguration, configuration);
+            }
+        }
+
+        protected HandlerConfiguration createHandlerConfiguration(final String className,
+                                                                  final String moduleName, final String name,
+                                                                  final LogContextConfiguration logContextConfiguration) throws OperationFailedException {
+
             final HandlerConfiguration configuration;
-            // Check for construction parameters
-            if (constructionProperties == null) {
-                configuration = logContextConfiguration.addHandlerConfiguration(moduleName, className, name);
+
+            if (moduleName != null) {
+                // Check if this is a log4j appender
+                final ModuleLoader moduleLoader = ModuleLoader.forClass(HandlerOperations.class);
+                final ModuleIdentifier id = ModuleIdentifier.create(moduleName);
+                try {
+                    final Class<?> actualClass = Class.forName(className, false, moduleLoader.loadModule(id).getClassLoader());
+                    if (Appender.class.isAssignableFrom(actualClass)) {
+                        // Check for construction parameters
+                        if (constructionProperties == null) {
+                            logContextConfiguration.addPojoConfiguration(moduleName, className, name);
+                        } else {
+                            logContextConfiguration.addPojoConfiguration(moduleName, className, name, constructionProperties);
+                        }
+                        configuration = logContextConfiguration.addHandlerConfiguration("org.jboss.as.logging", Log4jAppenderHandler.class.getName(), name);
+                        configuration.addPostConfigurationMethod("activate");
+                        configuration.setPropertyValueString("appender", name);
+                    } else {
+                        // Check for construction parameters
+                        if (constructionProperties == null) {
+                            configuration = logContextConfiguration.addHandlerConfiguration(moduleName, className, name);
+                        } else {
+                            configuration = logContextConfiguration.addHandlerConfiguration(moduleName, className, name, constructionProperties);
+                        }
+                    }
+                } catch (ClassNotFoundException e) {
+                    throw createOperationFailure(LoggingMessages.MESSAGES.classNotFound(e, className));
+                } catch (ModuleLoadException e) {
+                    throw LoggingMessages.MESSAGES.cannotLoadModule(e, moduleName, "handler", name);
+                }
             } else {
-                configuration = logContextConfiguration.addHandlerConfiguration(moduleName, className, name, constructionProperties);
+                // Check for construction parameters
+                if (constructionProperties == null) {
+                    configuration = logContextConfiguration.addHandlerConfiguration(moduleName, className, name);
+                } else {
+                    configuration = logContextConfiguration.addHandlerConfiguration(moduleName, className, name, constructionProperties);
+                }
             }
             return configuration;
         }
@@ -229,7 +280,7 @@ final class HandlerOperations {
     /**
      * A default log handler write attribute step handler.
      */
-    public static class LogHandlerWriteAttributeHandler extends LoggingWriteAttributeHandler {
+    static class LogHandlerWriteAttributeHandler extends LoggingOperations.LoggingWriteAttributeHandler {
 
         protected LogHandlerWriteAttributeHandler(final AttributeDefinition... attributes) {
             super(attributes);
@@ -242,8 +293,12 @@ final class HandlerOperations {
                 final HandlerConfiguration configuration = logContextConfiguration.getHandlerConfiguration(addressName);
                 if (LEVEL.getName().equals(attributeName)) {
                     handleProperty(LEVEL, context, value, logContextConfiguration, configuration, false);
+                    handleProperty(LEVEL, context, value, logContextConfiguration, configuration, false);
                 } else if (FILTER.getName().equals(attributeName)) {
-                    handleProperty(FILTER, context, value, logContextConfiguration, configuration, false);
+                    // Filter should be replaced by the filter-spec in the super class
+                    handleProperty(FILTER_SPEC, context, value, logContextConfiguration, configuration, false);
+                } else if (FILTER_SPEC.getName().equals(attributeName)) {
+                    handleProperty(FILTER_SPEC, context, value, logContextConfiguration, configuration, false);
                 } else if (FORMATTER.getName().equals(attributeName)) {
                     handleProperty(FORMATTER, context, value, logContextConfiguration, configuration, false);
                 } else if (ENCODING.getName().equals(attributeName)) {
@@ -251,9 +306,31 @@ final class HandlerOperations {
                 } else if (SUBHANDLERS.getName().equals(attributeName)) {
                     handleProperty(SUBHANDLERS, context, value, logContextConfiguration, configuration, false);
                 } else if (PROPERTIES.getName().equals(attributeName)) {
-                    for (Property property : value.asPropertyList()) {
-                        configuration.setPropertyValueString(property.getName(), property.getValue().asString());
+                    final PropertyConfigurable propertyConfigurable;
+                    // A POJO configuration will have the same name as the handler
+                    final PojoConfiguration pojoConfiguration = logContextConfiguration.getPojoConfiguration(configuration.getName());
+                    if (pojoConfiguration == null) {
+                        propertyConfigurable = configuration;
+                    } else {
+                        propertyConfigurable = pojoConfiguration;
                     }
+                    if (value.isDefined()) {
+                        for (Property property : value.asPropertyList()) {
+                            propertyConfigurable.setPropertyValueString(property.getName(), property.getValue().asString());
+                        }
+                    } else {
+                        final List<String> propertyNames = propertyConfigurable.getPropertyNames();
+                        for (String propertyName : propertyNames) {
+                            // Ignore the enable attribute if found
+                            if (propertyName.equals("enabled")) continue;
+                            propertyConfigurable.removeProperty(propertyName);
+                            // Set to restart required if undefining properties
+                            restartRequired = true;
+                        }
+                    }
+                } else if (QUEUE_LENGTH.getName().equals(attributeName)) {
+                    // queue-length is a construction parameter, runtime changes are not allowed
+                    restartRequired = true;
                 } else {
                     for (AttributeDefinition attribute : getAttributes()) {
                         if (attribute.getName().equals(attributeName)) {
@@ -266,17 +343,30 @@ final class HandlerOperations {
             }
             return restartRequired;
         }
+
+        @Override
+        protected void finishModelStage(final OperationContext context, final ModelNode operation, final String attributeName,
+                                        final ModelNode newValue, final ModelNode oldValue, final Resource model) throws OperationFailedException {
+            super.finishModelStage(context, operation, attributeName, newValue, oldValue, model);
+            // If a filter attribute, update the filter-spec attribute
+            if (CommonAttributes.FILTER.getName().equals(attributeName)) {
+                final String filterSpec = Filters.filterToFilterSpec(newValue);
+                final ModelNode filterSpecValue = (filterSpec == null ? new ModelNode() : new ModelNode(filterSpec));
+                // Undefine the filter-spec
+                model.getModel().get(CommonAttributes.FILTER_SPEC.getName()).set(filterSpecValue);
+            }
+        }
     }
 
     /**
      * A step handler to remove a handler
      */
-    public static HandlerUpdateOperationStepHandler CHANGE_LEVEL = new HandlerUpdateOperationStepHandler(LEVEL);
+    static final OperationStepHandler CHANGE_LEVEL = new HandlerUpdateOperationStepHandler(LEVEL);
 
     /**
      * A step handler to remove a handler
      */
-    public static LoggingRemoveOperationStepHandler REMOVE_HANDLER = new LoggingRemoveOperationStepHandler() {
+    static final OperationStepHandler REMOVE_HANDLER = new LoggingOperations.LoggingRemoveOperationStepHandler() {
 
         @Override
         public void performRemove(final OperationContext context, final ModelNode operation, final LogContextConfiguration logContextConfiguration, final String name, final ModelNode model) throws OperationFailedException {
@@ -285,44 +375,26 @@ final class HandlerOperations {
 
         @Override
         public void performRuntime(final OperationContext context, final ModelNode operation, final LogContextConfiguration logContextConfiguration, final String name, final ModelNode model) throws OperationFailedException {
-            // Check to see if the handler is assigned to a logger
-            final List<String> attached = new ArrayList<String>();
-            for (String loggerName : logContextConfiguration.getLoggerNames()) {
-                final LoggerConfiguration loggerConfig = logContextConfiguration.getLoggerConfiguration(loggerName);
-                if (loggerConfig.getHandlerNames().contains(name)) {
-                    attached.add(loggerName);
-                }
-            }
-            if (!attached.isEmpty()) {
-                throw createOperationFailure(LoggingMessages.MESSAGES.handlerAttachedToLoggers(name, attached));
-            }
-            // Check to see if the handler is assigned to another handler
-            for (String handlerName : logContextConfiguration.getHandlerNames()) {
-                final HandlerConfiguration handlerConfig = logContextConfiguration.getHandlerConfiguration(handlerName);
-                if (handlerConfig.getHandlerNames().contains(name)) {
-                    attached.add(handlerName);
-                }
-            }
-            if (!attached.isEmpty()) {
-                throw createOperationFailure(LoggingMessages.MESSAGES.handlerAttachedToHandlers(name, attached));
-            }
+            // Validating wouldn't work until the LogContextConfiguration.commit() happens as handlers could still be
+            // named as attached removed the check for this reason.
+
+            // Remove the handler
             logContextConfiguration.removeHandlerConfiguration(name);
             // Remove the formatter if there is one
             if (logContextConfiguration.getFormatterNames().contains(name)) {
                 logContextConfiguration.removeFormatterConfiguration(name);
             }
-        }
-
-        @Override
-        protected void performRollback(final OperationContext context, final ModelNode operation, final LogContextConfiguration logContextConfiguration, final String name, final ModelNode originalModel) throws OperationFailedException {
-            ADD_HANDLER.performRuntime(context, operation, logContextConfiguration, name, originalModel);
+            // Remove the POJO if it exists
+            if (logContextConfiguration.getPojoNames().contains(name)) {
+                logContextConfiguration.removePojoConfiguration(name);
+            }
         }
     };
 
     /**
      * The handler for adding a subhandler to an {@link org.jboss.logmanager.handlers.AsyncHandler}.
      */
-    public static final HandlerUpdateOperationStepHandler ADD_SUBHANDLER = new HandlerUpdateOperationStepHandler() {
+    static final OperationStepHandler ADD_SUBHANDLER = new HandlerUpdateOperationStepHandler() {
         @Override
         public void updateModel(final ModelNode operation, final ModelNode model) throws OperationFailedException {
             HANDLER_NAME.validateAndSet(operation, model);
@@ -341,17 +413,12 @@ final class HandlerOperations {
             }
             configuration.addHandlerName(handlerName);
         }
-
-        @Override
-        public void performRollback(final OperationContext context, final HandlerConfiguration configuration, final String name, final ModelNode originalModel) throws OperationFailedException {
-            REMOVE_SUBHANDLER.performRollback(context, configuration, name, originalModel);
-        }
     };
 
     /**
      * The handler for removing a subhandler to an {@link org.jboss.logmanager.handlers.AsyncHandler}.
      */
-    public static final HandlerUpdateOperationStepHandler REMOVE_SUBHANDLER = new HandlerUpdateOperationStepHandler() {
+    static final OperationStepHandler REMOVE_SUBHANDLER = new HandlerUpdateOperationStepHandler() {
         @Override
         public void updateModel(final ModelNode operation, final ModelNode model) throws OperationFailedException {
             HANDLER_NAME.validateAndSet(operation, model);
@@ -376,49 +443,36 @@ final class HandlerOperations {
         public void performRuntime(final OperationContext context, final HandlerConfiguration configuration, final String name, final ModelNode model) throws OperationFailedException {
             configuration.removeHandlerName(HANDLER_NAME.resolveModelAttribute(context, model).asString());
         }
-
-        @Override
-        public void performRollback(final OperationContext context, final HandlerConfiguration configuration, final String name, final ModelNode originalModel) throws OperationFailedException {
-            ADD_SUBHANDLER.performRollback(context, configuration, name, originalModel);
-        }
     };
 
     /**
      * Changes the file for a file handler.
      */
-    public static HandlerUpdateOperationStepHandler CHANGE_FILE = new HandlerUpdateOperationStepHandler(FILE);
+    static final OperationStepHandler CHANGE_FILE = new HandlerUpdateOperationStepHandler(FILE);
 
-    public static LoggingUpdateOperationStepHandler ENABLE_HANDLER = new LoggingUpdateOperationStepHandler() {
+    static final LoggingOperations.LoggingUpdateOperationStepHandler ENABLE_HANDLER = new LoggingOperations.LoggingUpdateOperationStepHandler() {
         @Override
         public void updateModel(final ModelNode operation, final ModelNode model) throws OperationFailedException {
-            // Nothing to do
+            // Set the enable attribute to true
+            model.get(CommonAttributes.ENABLED.getName()).set(true);
         }
 
         @Override
         public void performRuntime(final OperationContext context, final ModelNode operation, final LogContextConfiguration configuration, final String name, final ModelNode model) throws OperationFailedException {
             enableHandler(configuration, name);
         }
-
-        @Override
-        public void performRollback(final OperationContext context, final ModelNode operation, final ModelNode model, final LogContextConfiguration logContextConfiguration, final String name, final ModelNode originalModel) throws OperationFailedException {
-            // Nothing to do
-        }
     };
 
-    public static LoggingUpdateOperationStepHandler DISABLE_HANDLER = new LoggingUpdateOperationStepHandler() {
+    static final LoggingOperations.LoggingUpdateOperationStepHandler DISABLE_HANDLER = new LoggingOperations.LoggingUpdateOperationStepHandler() {
         @Override
         public void updateModel(final ModelNode operation, final ModelNode model) throws OperationFailedException {
-            // Nothing to do
+            // Set the enable attribute to false
+            model.get(CommonAttributes.ENABLED.getName()).set(false);
         }
 
         @Override
         public void performRuntime(final OperationContext context, final ModelNode operation, final LogContextConfiguration configuration, final String name, final ModelNode model) throws OperationFailedException {
             disableHandler(configuration, name);
-        }
-
-        @Override
-        public void performRollback(final OperationContext context, final ModelNode operation, final ModelNode model, final LogContextConfiguration logContextConfiguration, final String name, final ModelNode originalModel) throws OperationFailedException {
-            // Nothing to do
         }
     };
 
@@ -455,8 +509,15 @@ final class HandlerOperations {
     private static void handleProperty(final AttributeDefinition attribute, final OperationContext context, final ModelNode model,
                                        final LogContextConfiguration logContextConfiguration, final HandlerConfiguration configuration, final boolean resolveValue)
             throws OperationFailedException {
-        if (attribute.getName().equals(ENCODING.getName())) {
-            final String resolvedValue = (resolveValue ? ENCODING.resolvePropertyValue(context, model) : model.asString());
+        if (attribute.getName().equals(ENABLED.getName())) {
+            final boolean value = ((resolveValue ? ENABLED.resolveModelAttribute(context, model).asBoolean() : model.asBoolean()));
+            if (value) {
+                enableHandler(logContextConfiguration, configuration.getName());
+            } else {
+                disableHandler(logContextConfiguration, configuration.getName());
+            }
+        } else if (attribute.getName().equals(ENCODING.getName())) {
+            final String resolvedValue = (resolveValue ? ENCODING.resolvePropertyValue(context, model) : model.isDefined() ? model.asString() : null);
             configuration.setEncoding(resolvedValue);
         } else if (attribute.getName().equals(FORMATTER.getName())) {
             final String formatterName = configuration.getName();
@@ -469,9 +530,9 @@ final class HandlerOperations {
             final String resolvedValue = (resolveValue ? FORMATTER.resolvePropertyValue(context, model) : model.asString());
             fmtConfig.setPropertyValueString("pattern", resolvedValue);
             configuration.setFormatterName(formatterName);
-        } else if (attribute.getName().equals(FILTER.getName())) {
-            final ModelNode valueNode = (resolveValue ? FILTER.resolveModelAttribute(context, model) : model);
-            final String resolvedValue = FilterResolver.INSTANCE.resolveValue(context, valueNode);
+        } else if (attribute.getName().equals(FILTER_SPEC.getName())) {
+            final ModelNode valueNode = (resolveValue ? FILTER_SPEC.resolveModelAttribute(context, model) : model);
+            final String resolvedValue = (valueNode.isDefined() ? valueNode.asString() : null);
             configuration.setFilter(resolvedValue);
         } else if (attribute.getName().equals(LEVEL.getName())) {
             final String resolvedValue = (resolveValue ? LEVEL.resolvePropertyValue(context, model) : LEVEL.resolver().resolveValue(context, model));
@@ -485,14 +546,37 @@ final class HandlerOperations {
         } else if (attribute.getName().equals(HANDLER_NAME.getName())) {
             // no-op just ignore the name attribute
         } else if (attribute.getName().equals(PROPERTIES.getName())) {
+            final PropertyConfigurable propertyConfigurable;
+            // A POJO configuration will have the same name as the handler
+            final PojoConfiguration pojoConfiguration = logContextConfiguration.getPojoConfiguration(configuration.getName());
+            if (pojoConfiguration == null) {
+                propertyConfigurable = configuration;
+            } else {
+                propertyConfigurable = pojoConfiguration;
+            }
+            // Should be safe here to only process defined properties. The write-attribute handler handles removing
+            // undefined properties
             if (model.hasDefined(PROPERTIES.getName())) {
-                for (Property property : PROPERTIES.resolveModelAttribute(context, model).asPropertyList()) {
-                    configuration.setPropertyValueString(property.getName(), property.getValue().asString());
+                final ModelNode resolvedValue = (resolveValue ? PROPERTIES.resolveModelAttribute(context, model) : model);
+                for (Property property : resolvedValue.asPropertyList()) {
+                    propertyConfigurable.setPropertyValueString(property.getName(), property.getValue().asString());
                 }
             }
         } else {
-            if (attribute instanceof ConfigurationProperty<?>) {
-                ((ConfigurationProperty<?>) attribute).setPropertyValue(context, model, configuration);
+            if (attribute instanceof ConfigurationProperty) {
+                @SuppressWarnings("unchecked")
+                final ConfigurationProperty<String> configurationProperty = (ConfigurationProperty<String>) attribute;
+                if (resolveValue) {
+                    configurationProperty.setPropertyValue(context, model, configuration);
+                } else {
+                    // Get the resolver
+                    final ModelNodeResolver<String> resolver = configurationProperty.resolver();
+                    // Resolve the value
+                    final String resolvedValue = (resolver == null ? model.asString() : resolver.resolveValue(context, model));
+                    // Set the string value
+                    configuration.setPropertyValueString(configurationProperty.getPropertyName(),
+                            (resolvedValue == null ? null : resolvedValue));
+                }
             } else {
                 LoggingLogger.ROOT_LOGGER.invalidPropertyAttribute(attribute.getName());
             }
@@ -517,7 +601,16 @@ final class HandlerOperations {
                                       final LogContextConfiguration logContextConfiguration, final HandlerConfiguration configuration)
             throws OperationFailedException {
         final boolean result;
-        if (attribute.getName().equals(ENCODING.getName())) {
+        if (attribute.getName().equals(ENABLED.getName())) {
+            final boolean resolvedValue = ENABLED.resolveModelAttribute(context, model).asBoolean();
+            final boolean currentValue;
+            if (configuration.hasProperty(ENABLED.getPropertyName())) {
+                currentValue = Boolean.parseBoolean(configuration.getPropertyValueString(ENABLED.getPropertyName()));
+            } else {
+                currentValue = isDisabledHandler(logContextConfiguration.getLogContext(), configuration.getName());
+            }
+            result = resolvedValue == currentValue;
+        } else if (attribute.getName().equals(ENCODING.getName())) {
             final String resolvedValue = ENCODING.resolvePropertyValue(context, model);
             final String currentValue = configuration.getEncoding();
             result = (resolvedValue == null ? currentValue == null : resolvedValue.equals(currentValue));
@@ -532,9 +625,9 @@ final class HandlerOperations {
             } else {
                 result = false;
             }
-        } else if (attribute.getName().equals(FILTER.getName())) {
-            final ModelNode valueNode = FILTER.resolveModelAttribute(context, model);
-            final String resolvedValue = FilterResolver.INSTANCE.resolveValue(context, valueNode);
+        } else if (attribute.getName().equals(FILTER_SPEC.getName())) {
+            final ModelNode valueNode = FILTER_SPEC.resolveModelAttribute(context, model);
+            final String resolvedValue = (valueNode.isDefined() ? valueNode.asString() : null);
             final String currentValue = configuration.getFilter();
             result = (resolvedValue == null ? currentValue == null : resolvedValue.equals(currentValue));
         } else if (attribute.getName().equals(LEVEL.getName())) {
@@ -547,11 +640,27 @@ final class HandlerOperations {
             result = (resolvedValue == null ? currentValue == null : resolvedValue.containsAll(currentValue));
         } else if (attribute.getName().equals(PROPERTIES.getName())) {
             result = true;
+            final PropertyConfigurable propertyConfigurable;
+            // A POJO configuration will have the same name as the handler
+            final PojoConfiguration pojoConfiguration = logContextConfiguration.getPojoConfiguration(configuration.getName());
+            if (pojoConfiguration == null) {
+                propertyConfigurable = configuration;
+            } else {
+                propertyConfigurable = pojoConfiguration;
+            }
             if (model.hasDefined(PROPERTIES.getName())) {
                 for (Property property : PROPERTIES.resolveModelAttribute(context, model).asPropertyList()) {
                     final String resolvedValue = property.getValue().asString();
-                    final String currentValue = configuration.getPropertyValueString(property.getName());
+                    final String currentValue = propertyConfigurable.getPropertyValueString(property.getName());
                     if (!(resolvedValue == null ? currentValue == null : resolvedValue.equals(currentValue))) {
+                        return false;
+                    }
+                }
+            } else if (model.has(PROPERTIES.getName())) {
+                final List<String> propertyNames = propertyConfigurable.getPropertyNames();
+                for (String propertyName : propertyNames) {
+                    final String propertyValue = propertyConfigurable.getPropertyValueString(propertyName);
+                    if (propertyValue != null) {
                         return false;
                     }
                 }
@@ -567,6 +676,17 @@ final class HandlerOperations {
             }
         }
         return result;
+    }
+
+
+    /**
+     * Checks to see if a handler is disabled
+     *
+     * @param handlerName   the name of the handler to enable.
+     */
+    static boolean isDisabledHandler(final LogContext logContext, final String handlerName) {
+        final Map<String, String> disableHandlers = logContext.getAttachment(CommonAttributes.ROOT_LOGGER_NAME, DISABLED_HANDLERS_KEY);
+        return disableHandlers != null && disableHandlers.containsKey(handlerName);
     }
 
 

@@ -22,10 +22,10 @@
 
 package org.jboss.as.logging;
 
-import org.jboss.as.controller.AttributeDefinition;
-
 import java.util.HashMap;
 import java.util.Map;
+
+import org.jboss.as.controller.AttributeDefinition;
 
 /**
  *
@@ -37,38 +37,48 @@ enum Element {
     ACCEPT(CommonAttributes.ACCEPT),
     ALL(CommonAttributes.ALL),
     ANY(CommonAttributes.ANY),
+    APP_NAME(SyslogHandlerResourceDefinition.APP_NAME),
     APPEND(CommonAttributes.APPEND),
-    ASYNC_HANDLER(CommonAttributes.ASYNC_HANDLER),
+    ASYNC_HANDLER(AsyncHandlerResourceDefinition.ASYNC_HANDLER),
     CHANGE_LEVEL(CommonAttributes.CHANGE_LEVEL),
-    CONSOLE_HANDLER(CommonAttributes.CONSOLE_HANDLER),
-    CUSTOM_HANDLER(CommonAttributes.CUSTOM_HANDLER),
+    CONSOLE_HANDLER(ConsoleHandlerResourceDefinition.CONSOLE_HANDLER),
+    CUSTOM_HANDLER(CustomHandlerResourceDefinition.CUSTOM_HANDLER),
     DENY(CommonAttributes.DENY),
     ENCODING(CommonAttributes.ENCODING),
+    FACILITY(SyslogHandlerResourceDefinition.FACILITY),
     FILE(CommonAttributes.FILE),
-    FILE_HANDLER(CommonAttributes.FILE_HANDLER),
+    FILE_HANDLER(FileHandlerResourceDefinition.FILE_HANDLER),
     FILTER(CommonAttributes.FILTER),
+    FILTER_SPEC(CommonAttributes.FILTER_SPEC),
     FORMATTER(CommonAttributes.FORMATTER),
     HANDLER(CommonAttributes.HANDLER),
     HANDLERS(CommonAttributes.HANDLERS),
+    HOSTNAME(SyslogHandlerResourceDefinition.HOSTNAME),
     LEVEL(CommonAttributes.LEVEL),
-    LEVEL_RANGE(CommonAttributes.LEVEL_RANGE),
-    LOGGER(CommonAttributes.LOGGER),
+    LEVEL_RANGE(CommonAttributes.LEVEL_RANGE_LEGACY),
+    LOGGER(LoggerResourceDefinition.LOGGER),
+    LOGGING_PROFILE(CommonAttributes.LOGGING_PROFILE),
+    LOGGING_PROFILES(CommonAttributes.LOGGING_PROFILES),
     MATCH(CommonAttributes.MATCH),
-    MAX_BACKUP_INDEX(CommonAttributes.MAX_BACKUP_INDEX),
+    MAX_BACKUP_INDEX(SizeRotatingHandlerResourceDefinition.MAX_BACKUP_INDEX),
     NOT(CommonAttributes.NOT),
-    OVERFLOW_ACTION(CommonAttributes.OVERFLOW_ACTION),
+    OVERFLOW_ACTION(AsyncHandlerResourceDefinition.OVERFLOW_ACTION),
     PATTERN_FORMATTER(CommonAttributes.PATTERN_FORMATTER),
-    PERIODIC_ROTATING_FILE_HANDLER(CommonAttributes.PERIODIC_ROTATING_FILE_HANDLER),
-    PROPERTIES(CommonAttributes.PROPERTIES),
-    PROPERTY(CommonAttributes.PROPERTY),
-    QUEUE_LENGTH(CommonAttributes.QUEUE_LENGTH),
+    PERIODIC_ROTATING_FILE_HANDLER(PeriodicHandlerResourceDefinition.PERIODIC_ROTATING_FILE_HANDLER),
+    PORT(SyslogHandlerResourceDefinition.PORT),
+    PROPERTIES(CustomHandlerResourceDefinition.PROPERTIES),
+    PROPERTY("property"),
+    QUEUE_LENGTH(AsyncHandlerResourceDefinition.QUEUE_LENGTH),
     REPLACE(CommonAttributes.REPLACE),
-    ROOT_LOGGER(CommonAttributes.ROOT_LOGGER),
-    ROTATE_SIZE(CommonAttributes.ROTATE_SIZE),
-    SIZE_ROTATING_FILE_HANDLER(CommonAttributes.SIZE_ROTATING_FILE_HANDLER),
-    SUBHANDLERS(CommonAttributes.SUBHANDLERS),
-    SUFFIX(CommonAttributes.SUFFIX),
-    TARGET(CommonAttributes.TARGET),;
+    ROOT_LOGGER(RootLoggerResourceDefinition.ROOT_LOGGER_PATH_NAME),
+    ROTATE_SIZE(SizeRotatingHandlerResourceDefinition.ROTATE_SIZE),
+    SERVER_ADDRESS(SyslogHandlerResourceDefinition.SERVER_ADDRESS),
+    SIZE_ROTATING_FILE_HANDLER(SizeRotatingHandlerResourceDefinition.SIZE_ROTATING_FILE_HANDLER),
+    SUBHANDLERS(AsyncHandlerResourceDefinition.SUBHANDLERS),
+    SUFFIX(PeriodicHandlerResourceDefinition.SUFFIX),
+    SYSLOG_FORMATTER(SyslogHandlerResourceDefinition.SYSLOG_FORMATTER),
+    SYSLOG_HANDLER(SyslogHandlerResourceDefinition.SYSLOG_HANDLER),
+    TARGET(ConsoleHandlerResourceDefinition.TARGET),;
 
     private final String name;
     private final AttributeDefinition definition;

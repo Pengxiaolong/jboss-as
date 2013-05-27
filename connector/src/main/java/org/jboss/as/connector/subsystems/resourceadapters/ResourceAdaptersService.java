@@ -22,10 +22,11 @@
 
 package org.jboss.as.connector.subsystems.resourceadapters;
 
-import java.util.ArrayList;
-import java.util.Collection;
+import static org.jboss.as.connector.logging.ConnectorLogger.SUBSYSTEM_RA_LOGGER;
+
 import java.util.Collections;
 import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
 
 import org.jboss.jca.common.api.metadata.resourceadapter.ResourceAdapter;
 import org.jboss.jca.common.api.metadata.resourceadapter.ResourceAdapters;
@@ -33,8 +34,6 @@ import org.jboss.msc.service.Service;
 import org.jboss.msc.service.StartContext;
 import org.jboss.msc.service.StartException;
 import org.jboss.msc.service.StopContext;
-
-import static org.jboss.as.connector.logging.ConnectorLogger.SUBSYSTEM_RA_LOGGER;
 
 /**
  * A ResourceAdaptersService.
@@ -63,7 +62,7 @@ public final class ResourceAdaptersService implements Service<ResourceAdaptersSe
     public static final class ModifiableResourceAdaptors implements ResourceAdapters {
 
         private static final long serialVersionUID = 9096011997958619051L;
-        private final ArrayList<ResourceAdapter> resourceAdapters = new ArrayList<ResourceAdapter>(0);
+        private final List<ResourceAdapter> resourceAdapters = new CopyOnWriteArrayList<ResourceAdapter>();
 
         /**
          * Get the resourceAdapters.
@@ -72,23 +71,15 @@ public final class ResourceAdaptersService implements Service<ResourceAdaptersSe
          */
         @Override
         public List<ResourceAdapter> getResourceAdapters() {
-            return (List<ResourceAdapter>) Collections.unmodifiableList(resourceAdapters);
+            return Collections.unmodifiableList(resourceAdapters);
         }
 
         public boolean addResourceAdapter(ResourceAdapter ra) {
             return resourceAdapters.add(ra);
         }
 
-        public boolean addAllResourceAdapters(Collection<ResourceAdapter> ras) {
-            return resourceAdapters.addAll(ras);
-        }
-
         public boolean removeResourceAdapter(ResourceAdapter ra) {
             return resourceAdapters.remove(ra);
-        }
-
-        public boolean removeAllResourceAdapters(Collection<ResourceAdapter> ras) {
-            return resourceAdapters.removeAll(ras);
         }
 
     }

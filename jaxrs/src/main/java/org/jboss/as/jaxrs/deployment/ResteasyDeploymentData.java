@@ -1,10 +1,31 @@
-package org.jboss.as.jaxrs.deployment;
+/*
+ * JBoss, Home of Professional Open Source.
+ * Copyright 2012, Red Hat, Inc., and individual contributors
+ * as indicated by the @author tags. See the copyright.txt file in the
+ * distribution for a full listing of individual contributors.
+ *
+ * This is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU Lesser General Public License as
+ * published by the Free Software Foundation; either version 2.1 of
+ * the License, or (at your option) any later version.
+ *
+ * This software is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with this software; if not, write to the Free
+ * Software Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA
+ * 02110-1301 USA, or see the FSF site: http://www.fsf.org.
+ */
 
-import static org.jboss.as.jaxrs.JaxrsMessages.MESSAGES;
+package org.jboss.as.jaxrs.deployment;
 
 import org.jboss.as.server.deployment.DeploymentUnitProcessingException;
 
 import javax.ws.rs.core.Application;
+import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
@@ -19,7 +40,7 @@ public class ResteasyDeploymentData {
     private boolean dispatcherCreated;
     private final Set<String> scannedResourceClasses = new LinkedHashSet<String>();
     private final Set<String> scannedProviderClasses = new LinkedHashSet<String>();
-    private Class<? extends Application> scannedApplicationClass;
+    private List<Class<? extends Application>> scannedApplicationClasses = new ArrayList<>();
     private boolean bootClasses;
     private boolean unwrappedExceptionsParameterSet;
     private final Set<String> scannedJndiComponentResources = new LinkedHashSet<String>();
@@ -30,16 +51,8 @@ public class ResteasyDeploymentData {
      * @param deploymentData
      */
     public void merge(final List<ResteasyDeploymentData> deploymentData) throws DeploymentUnitProcessingException {
-        Class<? extends Application> application = null;
         for (ResteasyDeploymentData data : deploymentData) {
-            if (!dispatcherCreated && scannedApplicationClass == null) {
-                if (data.getScannedApplicationClass() != null) {
-                    if (application != null) {
-                        throw MESSAGES.moreThanOneApplicationClassFound(application, data.getScannedApplicationClass());
-                    }
-                    application = data.getScannedApplicationClass();
-                }
-            }
+            scannedApplicationClasses.addAll(data.getScannedApplicationClasses());
             if (scanResources) {
                 scannedResourceClasses.addAll(data.getScannedResourceClasses());
                 scannedJndiComponentResources.addAll(data.getScannedJndiComponentResources());
@@ -47,9 +60,6 @@ public class ResteasyDeploymentData {
             if (scanProviders) {
                 scannedProviderClasses.addAll(data.getScannedProviderClasses());
             }
-        }
-        if (scannedApplicationClass == null) {
-            scannedApplicationClass = application;
         }
     }
 
@@ -66,12 +76,8 @@ public class ResteasyDeploymentData {
         this.dispatcherCreated = dispatcherCreated;
     }
 
-    public Class<? extends Application> getScannedApplicationClass() {
-        return scannedApplicationClass;
-    }
-
-    public void setScannedApplicationClass(Class<? extends Application> scannedApplicationClass) {
-        this.scannedApplicationClass = scannedApplicationClass;
+    public List<Class<? extends Application>> getScannedApplicationClasses() {
+        return scannedApplicationClasses;
     }
 
     public boolean hasBootClasses() {

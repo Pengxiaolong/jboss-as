@@ -18,25 +18,24 @@
  */
 package org.jboss.as.controller.services.path;
 
+import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.ADD;
+import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.OP_ADDR;
+import static org.jboss.as.controller.services.path.PathResourceDefinition.PATH_SPECIFIED;
+import static org.jboss.as.controller.services.path.PathResourceDefinition.RELATIVE_TO;
+
 import org.jboss.as.controller.OperationContext;
 import org.jboss.as.controller.OperationFailedException;
 import org.jboss.as.controller.OperationStepHandler;
 import org.jboss.as.controller.PathAddress;
 import org.jboss.as.controller.ServiceVerificationHandler;
 import org.jboss.as.controller.SimpleAttributeDefinition;
+import org.jboss.as.controller.operations.common.Util;
 import org.jboss.as.controller.registry.Resource;
 import org.jboss.as.controller.services.path.PathManager.Event;
 import org.jboss.as.controller.services.path.PathManagerService.PathEventContextImpl;
 import org.jboss.dmr.ModelNode;
 import org.jboss.msc.service.ServiceController;
 import org.jboss.msc.service.ServiceTarget;
-
-import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.ADD;
-import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.NAME;
-import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.OP;
-import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.OP_ADDR;
-import static org.jboss.as.controller.services.path.PathResourceDefinition.PATH_SPECIFIED;
-import static org.jboss.as.controller.services.path.PathResourceDefinition.RELATIVE_TO;
 
 /**
  * Handler for the path resource add operation.
@@ -47,10 +46,8 @@ public class PathAddHandler implements OperationStepHandler {
 
     public static final String OPERATION_NAME = ADD;
 
-    public static ModelNode getAddPathOperation(ModelNode address, ModelNode path, ModelNode relativeTo) {
-        ModelNode op = new ModelNode();
-        op.get(OP).set(OPERATION_NAME);
-        op.get(OP_ADDR).set(address);
+    public static ModelNode getAddPathOperation(PathAddress address, ModelNode path, ModelNode relativeTo) {
+        ModelNode op = Util.createAddOperation(address);
         if (path.isDefined()) {
             op.get(PATH_SPECIFIED.getName()).set(path);
         }
@@ -93,7 +90,6 @@ public class PathAddHandler implements OperationStepHandler {
         final ModelNode model = resource.getModel();
         PathAddress address = PathAddress.pathAddress(operation.get(OP_ADDR));
         final String name = address.getLastElement().getValue();
-        model.get(NAME).set(name);
         pathAttribute.validateAndSet(operation, model);
         RELATIVE_TO.validateAndSet(operation, model);
 

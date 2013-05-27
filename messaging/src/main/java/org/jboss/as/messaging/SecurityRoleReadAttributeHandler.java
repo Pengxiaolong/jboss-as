@@ -23,7 +23,7 @@
 package org.jboss.as.messaging;
 
 import static org.jboss.as.messaging.CommonAttributes.NAME;
-import static org.jboss.as.messaging.ManagementUtil.rollbackOperationWithNoHandler;
+import static org.jboss.as.messaging.ManagementUtil.rollbackOperationWithResourceNotFound;
 import static org.jboss.as.messaging.MessagingMessages.MESSAGES;
 
 import org.hornetq.api.core.management.AddressControl;
@@ -48,6 +48,11 @@ public class SecurityRoleReadAttributeHandler extends AbstractRuntimeOnlyHandler
     }
 
     @Override
+    protected boolean resourceMustExist(OperationContext context, ModelNode operation) {
+        return false;
+    }
+
+    @Override
     public void executeRuntimeStep(OperationContext context, ModelNode operation) throws OperationFailedException {
         final String attributeName = operation.require(ModelDescriptionConstants.NAME).asString();
 
@@ -61,7 +66,7 @@ public class SecurityRoleReadAttributeHandler extends AbstractRuntimeOnlyHandler
         AddressControl control = AddressControl.class.cast(hqServer.getManagementService().getResource(ResourceNames.CORE_ADDRESS + addressName));
 
         if (control == null) {
-            rollbackOperationWithNoHandler(context, operation);
+            rollbackOperationWithResourceNotFound(context, operation);
             return;
         }
 
@@ -78,7 +83,7 @@ public class SecurityRoleReadAttributeHandler extends AbstractRuntimeOnlyHandler
         } catch (Exception e) {
             context.getFailureDescription().set(e.getLocalizedMessage());
         } finally {
-            context.completeStep();
+            context.stepCompleted();
         }
     }
 

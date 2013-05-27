@@ -21,149 +21,25 @@
  */
 package org.jboss.as.cli.impl;
 
-import java.security.AccessController;
-import java.security.PrivilegedAction;
+import org.wildfly.security.manager.AddShutdownHookAction;
+import org.wildfly.security.manager.WildFlySecurityManager;
 
+import static java.lang.Runtime.getRuntime;
+import static java.security.AccessController.doPrivileged;
 
 /**
  * Package privileged actions
  *
+ * @author <a href="mailto:david.lloyd@redhat.com">David M. Lloyd</a>
  * @author Scott.Stark@jboss.org
  * @author Alexey Loubyansky
  */
 class SecurityActions {
-    private interface TCLAction {
-        class UTIL {
-            static TCLAction getTCLAction() {
-                return System.getSecurityManager() == null ? NON_PRIVILEGED : PRIVILEGED;
-            }
-
-            static void addShutdownHook(Thread hook) {
-                getTCLAction().addShutdownHook(hook);
-            }
-
-            public static String getSystemProperty(String name) {
-                return getTCLAction().getSystemProperty(name);
-            }
-
-            public static void setSystemProperty(String name, String value) {
-                getTCLAction().setSystemProperty(name, value);
-            }
-
-            public static ClassLoader getClassLoader(Class<?> cls) {
-                return getTCLAction().getClassLoader(cls);
-            }
-
-            public static String getEnvironmentVariable(String name) {
-                return getTCLAction().getEnvironmentVariable(name);
-            }
+    static void addShutdownHook(Thread hook) {
+        if (! WildFlySecurityManager.isChecking()) {
+            getRuntime().addShutdownHook(hook);
+        } else {
+            doPrivileged(new AddShutdownHookAction(hook));
         }
-
-        TCLAction NON_PRIVILEGED = new TCLAction() {
-
-            @Override
-            public void addShutdownHook(Thread t) {
-                Runtime.getRuntime().addShutdownHook(t);
-            }
-
-            @Override
-            public String getSystemProperty(String name) {
-                return System.getProperty(name);
-            }
-
-            @Override
-            public void setSystemProperty(String name, String value) {
-                System.setProperty(name, value);
-            }
-
-            @Override
-            public ClassLoader getClassLoader(Class<?> cls) {
-                return cls.getClassLoader();
-            }
-
-            @Override
-            public String getEnvironmentVariable(String name) {
-                return System.getenv(name);
-            }
-        };
-
-        TCLAction PRIVILEGED = new TCLAction() {
-
-            public void addShutdownHook(final Thread thread) {
-                AccessController.doPrivileged(new PrivilegedAction<Object>() {
-                    public Object run() {
-                        Runtime.getRuntime().addShutdownHook(thread);
-                        return null;
-                    }
-                });
-            }
-
-            @Override
-            public String getSystemProperty(final String name) {
-                return (String) AccessController.doPrivileged(new PrivilegedAction<Object>() {
-                    public Object run() {
-                        return System.getProperty(name);
-                    }
-                });
-            }
-
-            @Override
-            public void setSystemProperty(final String name, final String value) {
-                AccessController.doPrivileged(new PrivilegedAction<Object>() {
-                    public Object run() {
-                        System.setProperty(name, value);
-                        return null;
-                    }
-                });
-            }
-
-            @Override
-            public ClassLoader getClassLoader(final Class<?> cls) {
-                return (ClassLoader) AccessController.doPrivileged(new PrivilegedAction<Object>() {
-                    public Object run() {
-                        return cls.getClassLoader();
-                    }
-                });
-            }
-
-            @Override
-            public String getEnvironmentVariable(final String name) {
-                return (String) AccessController.doPrivileged(new PrivilegedAction<Object>() {
-                    public Object run() {
-                        return System.getenv(name);
-                    }
-                });
-            }
-        };
-
-        void addShutdownHook(Thread t);
-
-        ClassLoader getClassLoader(Class<?> cls);
-
-        String getSystemProperty(String name);
-
-        void setSystemProperty(String name, String value);
-
-        String getEnvironmentVariable(String name);
-    }
-
-    protected static void addShutdownHook(Thread hook) {
-        TCLAction.UTIL.addShutdownHook(hook);
-    }
-
-    protected static String getSystemProperty(String name) {
-        return TCLAction.UTIL.getSystemProperty(name);
-    }
-
-    protected static void setSystemProperty(String name, String value) {
-        TCLAction.UTIL.setSystemProperty(name, value);
-    }
-
-    protected static ClassLoader getClassLoader(Class<?> cls) {
-        return TCLAction.UTIL.getClassLoader(cls);
-    }
-
-    protected static String getEnvironmentVariable(String name) {
-        return TCLAction.UTIL.getEnvironmentVariable(name);
     }
 }

@@ -31,7 +31,7 @@ if "%OS%" == "Windows_NT" (
 
 rem Read command-line args.
 :READ-ARGS
-if "%1" == "" ( 
+if "%1" == "" (
    goto MAIN
 ) else if "%1" == "--debug" (
    goto READ-DEBUG-PORT
@@ -58,19 +58,19 @@ if not "x%DEBUG_ARG" == "x" (
 rem $Id$
 )
 
-if "%DEBUG_MODE%" == "true" (
-   set "JAVA_OPTS=%JAVA_OPTS% -Xrunjdwp:transport=dt_socket,address=%DEBUG_PORT%,server=y,suspend=n"
-)
-
 pushd %DIRNAME%..
 set "RESOLVED_JBOSS_HOME=%CD%"
 popd
-
-if "x%JBOSS_HOME%" == "x" (
-  set "JBOSS_HOME=%RESOLVED_JBOSS_HOME%"
+set UNQUOTED_JBOSS_HOME=%JBOSS_HOME:"=%
+rem attempt to unquote again to remove quote if envvar was not set
+set UNQUOTED_JBOSS_HOME=%UNQUOTED_JBOSS_HOME:"=%
+set QUOTED_JBOSS_HOME="%UNQUOTED_JBOSS_HOME%"
+rem should only a = if envvar was not set
+if "%UNQUOTED_JBOSS_HOME%" == "=" (
+  set "UNQUOTED_JBOSS_HOME=%RESOLVED_JBOSS_HOME%"
+  set QUOTED_JBOSS_HOME="%RESOLVED_JBOSS_HOME%"
 )
-
-pushd "%JBOSS_HOME%"
+pushd %QUOTED_JBOSS_HOME%
 set "SANITIZED_JBOSS_HOME=%CD%"
 popd
 
@@ -78,10 +78,8 @@ if /i "%RESOLVED_JBOSS_HOME%" NEQ "%SANITIZED_JBOSS_HOME%" (
    echo.
    echo   WARNING:  JBOSS_HOME may be pointing to a different installation - unpredictable results may occur.
    echo.
-   echo             JBOSS_HOME: %JBOSS_HOME%
+   echo       JBOSS_HOME: %QUOTED_JBOSS_HOME%
    echo.
-   rem 2 seconds pause
-   ping 127.0.0.1 -n 3 > nul
 )
 
 rem Read an optional configuration file.
@@ -93,6 +91,17 @@ if exist "%STANDALONE_CONF%" (
    call "%STANDALONE_CONF%" %*
 ) else (
    echo Config file not found "%STANDALONE_CONF%"
+)
+
+
+rem Set debug settings if not already set
+if "%DEBUG_MODE%" == "true" (
+   echo "%JAVA_OPTS%" | findstr /I "\-agentlib:jdwp" > nul
+  if errorlevel == 1 (
+     set "JAVA_OPTS=%JAVA_OPTS% -agentlib:jdwp=transport=dt_socket,address=%DEBUG_PORT%,server=y,suspend=n"
+  ) else (
+     echo Debug already enabled in JAVA_OPTS, ignoring --debug argument
+  )
 )
 
 set DIRNAME=
@@ -142,27 +151,54 @@ if not "%PRESERVE_JAVA_OPTS%" == "true" (
 )
 
 rem Find jboss-modules.jar, or we can't continue
-if exist "%JBOSS_HOME%\jboss-modules.jar" (
-    set "RUNJAR=%JBOSS_HOME%\jboss-modules.jar"
+if exist "%UNQUOTED_JBOSS_HOME%\jboss-modules.jar" (
+    set RUNJAR="%UNQUOTED_JBOSS_HOME%\jboss-modules.jar"
 ) else (
-  echo Could not locate "%JBOSS_HOME%\jboss-modules.jar".
+  echo Could not locate "%UNQUOTED_JBOSS_HOME%\jboss-modules.jar".
   echo Please check that you are in the bin directory when running this script.
   goto END
 )
 
 rem Setup JBoss specific properties
 
-rem Setup the java endorsed dirs
-set JBOSS_ENDORSED_DIRS=%JBOSS_HOME%\lib\endorsed
+rem Setup directories, note directories with spaces do not work
+set "CONSOLIDATED_OPTS=%JAVA_OPTS% %SERVER_OPTS%"
+:DIRLOOP
+echo(%CONSOLIDATED_OPTS% | findstr /r /c:"^-Djboss.server.base.dir" > nul && (
+  for /f "tokens=1,2* delims==" %%a IN ("%CONSOLIDATED_OPTS%") DO (
+    for /f %%i IN ("%%b") DO set "JBOSS_BASE_DIR=%%~fi"
+  )
+)
+echo(%CONSOLIDATED_OPTS% | findstr /r /c:"^-Djboss.server.config.dir" > nul && (
+  for /f "tokens=1,2* delims==" %%a IN ("%CONSOLIDATED_OPTS%") DO (
+    for /f %%i IN ("%%b") DO set "JBOSS_CONFIG_DIR=%%~fi"
+  )
+)
+echo(%CONSOLIDATED_OPTS% | findstr /r /c:"^-Djboss.server.log.dir" > nul && (
+  for /f "tokens=1,2* delims==" %%a IN ("%CONSOLIDATED_OPTS%") DO (
+    for /f %%i IN ("%%b") DO set "JBOSS_LOG_DIR=%%~fi"
+  )
+)
+
+for /f "tokens=1* delims= " %%i IN ("%CONSOLIDATED_OPTS%") DO (
+  if %%i == "" (
+    goto ENDDIRLOOP
+  ) else (
+    set CONSOLIDATED_OPTS=%%j
+    GOTO DIRLOOP
+  )
+)
+
+:ENDDIRLOOP
 
 rem Set default module root paths
 if "x%JBOSS_MODULEPATH%" == "x" (
-  set  "JBOSS_MODULEPATH=%JBOSS_HOME%\modules"
+  set  "JBOSS_MODULEPATH=%UNQUOTED_JBOSS_HOME%\modules"
 )
 
 rem Set the standalone base dir
 if "x%JBOSS_BASE_DIR%" == "x" (
-  set  "JBOSS_BASE_DIR=%JBOSS_HOME%\standalone"
+  set  "JBOSS_BASE_DIR=%UNQUOTED_JBOSS_HOME%\standalone"
 )
 rem Set the standalone log dir
 if "x%JBOSS_LOG_DIR%" == "x" (
@@ -170,14 +206,14 @@ if "x%JBOSS_LOG_DIR%" == "x" (
 )
 rem Set the standalone configuration dir
 if "x%JBOSS_CONFIG_DIR%" == "x" (
-  set  "JBOSS_CONFIG_DIR=%JBOSS_BASE_DIR%/configuration"
+  set  "JBOSS_CONFIG_DIR=%JBOSS_BASE_DIR%\configuration"
 )
 
 echo ===============================================================================
 echo.
 echo   JBoss Bootstrap Environment
 echo.
-echo   JBOSS_HOME: %JBOSS_HOME%
+echo   JBOSS_HOME: %UNQUOTED_JBOSS_HOME%
 echo.
 echo   JAVA: %JAVA%
 echo.
@@ -188,13 +224,12 @@ echo.
 
 :RESTART
 "%JAVA%" %JAVA_OPTS% ^
- "-Dorg.jboss.boot.log.file=%JBOSS_LOG_DIR%\boot.log" ^
+ "-Dorg.jboss.boot.log.file=%JBOSS_LOG_DIR%\server.log" ^
  "-Dlogging.configuration=file:%JBOSS_CONFIG_DIR%/logging.properties" ^
-    -jar "%JBOSS_HOME%\jboss-modules.jar" ^
+    -jar "%UNQUOTED_JBOSS_HOME%\jboss-modules.jar" ^
     -mp "%JBOSS_MODULEPATH%" ^
-    -jaxpmodule "javax.xml.jaxp-provider" ^
      org.jboss.as.standalone ^
-    -Djboss.home.dir="%JBOSS_HOME%" ^
+    -Djboss.home.dir="%UNQUOTED_JBOSS_HOME%" ^
      %SERVER_OPTS%
 
 if ERRORLEVEL 10 goto RESTART

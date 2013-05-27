@@ -22,6 +22,8 @@
 
 package org.jboss.as.webservices.dmr;
 
+import static org.jboss.as.webservices.WSLogger.ROOT_LOGGER;
+
 import java.util.List;
 
 import org.jboss.as.server.DeploymentProcessorTarget;
@@ -29,12 +31,11 @@ import org.jboss.as.server.deployment.Phase;
 import org.jboss.as.webservices.deployers.AspectDeploymentProcessor;
 import org.jboss.as.webservices.deployers.JBossWebservicesDescriptorDeploymentProcessor;
 import org.jboss.as.webservices.deployers.WSDependenciesProcessor;
-import org.jboss.as.webservices.deployers.WSIntegrationProcessorJAXRPC_EJB;
-import org.jboss.as.webservices.deployers.WSIntegrationProcessorJAXRPC_POJO;
 import org.jboss.as.webservices.deployers.WSIntegrationProcessorJAXWS_EJB;
 import org.jboss.as.webservices.deployers.WSIntegrationProcessorJAXWS_HANDLER;
 import org.jboss.as.webservices.deployers.WSIntegrationProcessorJAXWS_JMS;
 import org.jboss.as.webservices.deployers.WSIntegrationProcessorJAXWS_POJO;
+import org.jboss.as.webservices.deployers.WSLibraryFilterProcessor;
 import org.jboss.as.webservices.deployers.WSModelDeploymentProcessor;
 import org.jboss.as.webservices.deployers.WebServicesContextJndiSetupProcessor;
 import org.jboss.as.webservices.deployers.WebservicesDescriptorDeploymentProcessor;
@@ -43,8 +44,6 @@ import org.jboss.as.webservices.injection.WSHandlerChainAnnotationProcessor;
 import org.jboss.as.webservices.webserviceref.WSRefAnnotationProcessor;
 import org.jboss.as.webservices.webserviceref.WSRefDDProcessor;
 import org.jboss.wsf.spi.deployment.DeploymentAspect;
-
-import static org.jboss.as.webservices.WSLogger.ROOT_LOGGER;
 
 /**
  * @author alessio.soldano@jboss.com
@@ -57,11 +56,10 @@ final class WSDeploymentActivator {
         processorTarget.addDeploymentProcessor(WSExtension.SUBSYSTEM_NAME, Phase.POST_MODULE, Phase.POST_MODULE_WS_REF_ANNOTATION, new WSRefAnnotationProcessor());
         if (!appclient) {
             processorTarget.addDeploymentProcessor(WSExtension.SUBSYSTEM_NAME, Phase.PARSE, Phase.PARSE_WEBSERVICES_CONTEXT_INJECTION, new WebServicesContextJndiSetupProcessor());
+            processorTarget.addDeploymentProcessor(WSExtension.SUBSYSTEM_NAME, Phase.PARSE, Phase.PARSE_WEBSERVICES_LIBRARY_FILTER, new WSLibraryFilterProcessor());
             processorTarget.addDeploymentProcessor(WSExtension.SUBSYSTEM_NAME, Phase.PARSE, Phase.PARSE_WEBSERVICES_XML, new WebservicesDescriptorDeploymentProcessor());
             processorTarget.addDeploymentProcessor(WSExtension.SUBSYSTEM_NAME, Phase.PARSE, Phase.PARSE_JBOSS_WEBSERVICES_XML, new JBossWebservicesDescriptorDeploymentProcessor());
             processorTarget.addDeploymentProcessor(WSExtension.SUBSYSTEM_NAME, Phase.PARSE, Phase.PARSE_JAXWS_EJB_INTEGRATION, new WSIntegrationProcessorJAXWS_EJB());
-            processorTarget.addDeploymentProcessor(WSExtension.SUBSYSTEM_NAME, Phase.PARSE, Phase.PARSE_JAXRPC_POJO_INTEGRATION, new WSIntegrationProcessorJAXRPC_POJO());
-            processorTarget.addDeploymentProcessor(WSExtension.SUBSYSTEM_NAME, Phase.PARSE, Phase.PARSE_JAXRPC_EJB_INTEGRATION, new WSIntegrationProcessorJAXRPC_EJB());
             processorTarget.addDeploymentProcessor(WSExtension.SUBSYSTEM_NAME, Phase.PARSE, Phase.PARSE_JAXWS_HANDLER_CHAIN_ANNOTATION, new WSHandlerChainAnnotationProcessor());
             processorTarget.addDeploymentProcessor(WSExtension.SUBSYSTEM_NAME, Phase.PARSE, Phase.PARSE_WS_JMS_INTEGRATION, new WSIntegrationProcessorJAXWS_JMS());
             processorTarget.addDeploymentProcessor(WSExtension.SUBSYSTEM_NAME, Phase.PARSE, Phase.PARSE_JAXWS_ENDPOINT_CREATE_COMPONENT_DESCRIPTIONS, new WSIntegrationProcessorJAXWS_POJO());

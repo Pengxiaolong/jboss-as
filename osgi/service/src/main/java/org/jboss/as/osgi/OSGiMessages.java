@@ -26,10 +26,10 @@ import java.io.File;
 
 import org.jboss.as.server.deployment.DeploymentUnit;
 import org.jboss.as.server.deployment.DeploymentUnitProcessingException;
+import org.jboss.logging.Messages;
 import org.jboss.logging.annotations.Cause;
 import org.jboss.logging.annotations.Message;
 import org.jboss.logging.annotations.MessageBundle;
-import org.jboss.logging.Messages;
 import org.jboss.modules.Module;
 import org.jboss.msc.service.StartException;
 import org.jboss.osgi.deployment.deployer.Deployment;
@@ -56,8 +56,8 @@ public interface OSGiMessages {
     @Message(id = 11951, value = "Cannot create bundle deployment from: %s")
     DeploymentUnitProcessingException cannotCreateBundleDeployment(@Cause Throwable th, DeploymentUnit deploymentUnit);
 
-    @Message(id = 11952, value = "Cannot deploy bundle: %s")
-    BundleException cannotDeployBundle(@Cause Throwable th, Deployment deployment);
+    @Message(id = 11952, value = "Cannot deploy bundle revision: %s")
+    BundleException cannotDeployBundleRevision(@Cause Throwable th, Deployment deployment);
 
     @Message(id = 11953, value = "Cannot find bundles directory: %s")
     IllegalStateException illegalStateCannotFindBundleDir(File dir);
@@ -106,4 +106,22 @@ public interface OSGiMessages {
 
     @Message(id = 11968, value = "Cannot start bundle: %s")
     StartException cannotStartBundle(@Cause Throwable cause, Bundle bundle);
+
+    @Message(id = 11969, value = "Cannot activate deferred module phase for: %s")
+    BundleException cannotActivateDeferredModulePhase(@Cause Throwable cause, Bundle bundle);
+
+    @Message(id = 11970, value = "Cannot deactivate deferred module phase for: %s")
+    BundleException cannotDeactivateDeferredModulePhase(@Cause Throwable cause, Bundle bundle);
+
+    @Message(id = 11971, value = "Servlet %s already registered with HttpService")
+    String servletAlreadyRegistered(String info);
+
+    @Message(id = 11972, value = "No layers directory found at %s")
+    IllegalStateException illegalStateNoLayersDirectoryFound(File dir);
+
+    @Message(id = 11973, value = "Cannot find layer %s under directory %s")
+    IllegalStateException illegalStateCannotFindLayer(String layer, File dir);
+
+    @Message(id = 11974, value = "Starting web context failed")
+    String startContextFailed();
 }

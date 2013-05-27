@@ -27,15 +27,17 @@ import java.util.logging.Logger;
 import javax.ejb.EJBAccessException;
 import javax.naming.InitialContext;
 
-import junit.framework.Assert;
+import org.junit.Assert;
 import org.jboss.arquillian.container.test.api.Deployment;
 import org.jboss.arquillian.junit.Arquillian;
+import org.jboss.as.test.categories.CommonCriteria;
 import org.jboss.security.client.SecurityClient;
 import org.jboss.security.client.SecurityClientFactory;
 import org.jboss.shrinkwrap.api.Archive;
 import org.jboss.shrinkwrap.api.ShrinkWrap;
 import org.jboss.shrinkwrap.api.spec.JavaArchive;
 import org.junit.Test;
+import org.junit.experimental.categories.Category;
 import org.junit.runner.RunWith;
 
 /**
@@ -45,6 +47,7 @@ import org.junit.runner.RunWith;
  * @author Jaikiran Pai, Ondrej Chaloupka
  */
 @RunWith(Arquillian.class)
+@Category(CommonCriteria.class)
 public class SingletonSecurityTestCase {
     private static final Logger log = Logger.getLogger(SingletonSecurityTestCase.class.getName());
 
@@ -52,6 +55,7 @@ public class SingletonSecurityTestCase {
     public static Archive<?> deploy() {
         JavaArchive jar = ShrinkWrap.create(JavaArchive.class, "ejb3-singleton-security.jar");
         jar.addPackage(SingletonSecurityTestCase.class.getPackage());
+        jar.addPackage(CommonCriteria.class.getPackage());
         log.info(jar.toString(true));
         return jar;
     }

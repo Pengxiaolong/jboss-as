@@ -17,14 +17,14 @@ do
           if [ -n "$1" ] && [ "${1#*-}" = "$1" ]; then
               DEBUG_PORT=$1
           else
-              SERVER_OPTS="$SERVER_OPTS $1"
+              SERVER_OPTS="$SERVER_OPTS \"$1\""
           fi
           ;;
       --)
-          shift 
+          shift
           break;;
       *)
-          SERVER_OPTS="$SERVER_OPTS $1"
+          SERVER_OPTS="$SERVER_OPTS \"$1\""
           ;;
     esac
     shift
@@ -41,6 +41,7 @@ MAX_FD="maximum"
 cygwin=false;
 darwin=false;
 linux=false;
+solaris=false;
 case "`uname`" in
     CYGWIN*)
         cygwin=true
@@ -53,12 +54,10 @@ case "`uname`" in
     Linux)
         linux=true
         ;;
+    SunOS*)
+        solaris=true
+        ;;
 esac
-
-
-if [ "$DEBUG_MODE" = "true" ]; then
-    JAVA_OPTS="$JAVA_OPTS -Xrunjdwp:transport=dt_socket,address=$DEBUG_PORT,server=y,suspend=n"
-fi
 
 # For Cygwin, ensure paths are in UNIX format before anything is touched
 if $cygwin ; then
@@ -94,6 +93,16 @@ if [ "x$RUN_CONF" = "x" ]; then
 fi
 if [ -r "$RUN_CONF" ]; then
     . "$RUN_CONF"
+fi
+
+# Set debug settings if not already set
+if [ "$DEBUG_MODE" = "true" ]; then
+    DEBUG_OPT=`echo $JAVA_OPTS | $GREP "\-agentlib:jdwp"`
+    if [ "x$DEBUG_OPT" = "x" ]; then
+        JAVA_OPTS="$JAVA_OPTS -agentlib:jdwp=transport=dt_socket,address=$DEBUG_PORT,server=y,suspend=n"
+    else
+        echo "Debug already enabled in JAVA_OPTS, ignoring --debug argument"
+    fi
 fi
 
 # Setup the JVM
@@ -150,25 +159,51 @@ if [ "x$JBOSS_MODULEPATH" = "x" ]; then
     JBOSS_MODULEPATH="$JBOSS_HOME/modules"
 fi
 
-if $linux; then
+if $linux || $solaris; then
     # consolidate the server and command line opts
     CONSOLIDATED_OPTS="$JAVA_OPTS $SERVER_OPTS"
     # process the standalone options
     for var in $CONSOLIDATED_OPTS
     do
-       case $var in
+       # Remove quotes
+       p=`echo $var | tr -d '"'`
+       case $p in
          -Djboss.server.base.dir=*)
-              JBOSS_BASE_DIR=`readlink -m ${var#*=}`
+              JBOSS_BASE_DIR=`readlink -m ${p#*=}`
               ;;
          -Djboss.server.log.dir=*)
-              JBOSS_LOG_DIR=`readlink -m ${var#*=}`
+              JBOSS_LOG_DIR=`readlink -m ${p#*=}`
               ;;
          -Djboss.server.config.dir=*)
-              JBOSS_CONFIG_DIR=`readlink -m ${var#*=}`
+              JBOSS_CONFIG_DIR=`readlink -m ${p#*=}`
               ;;
        esac
     done
 fi
+
+# No readlink -m on BSD
+if $darwin; then
+    # consolidate the server and command line opts
+    CONSOLIDATED_OPTS="$JAVA_OPTS $SERVER_OPTS"
+    # process the standalone options
+    for var in $CONSOLIDATED_OPTS
+    do
+       # Remove quotes
+       p=`echo $var | tr -d '"'`
+       case $p in
+         -Djboss.server.base.dir=*)
+              JBOSS_BASE_DIR=`cd ${p#*=} ; pwd -P`
+              ;;
+         -Djboss.server.log.dir=*)
+              JBOSS_LOG_DIR=`cd ${p#*=} ; pwd -P`
+              ;;
+         -Djboss.server.config.dir=*)
+              JBOSS_CONFIG_DIR=`cd ${p#*=} ; pwd -P`
+              ;;
+       esac
+    done
+fi
+
 # determine the default base dir, if not set
 if [ "x$JBOSS_BASE_DIR" = "x" ]; then
    JBOSS_BASE_DIR="$JBOSS_HOME/standalone"
@@ -210,11 +245,10 @@ while true; do
    if [ "x$LAUNCH_JBOSS_IN_BACKGROUND" = "x" ]; then
       # Execute the JVM in the foreground
       eval \"$JAVA\" -D\"[Standalone]\" $JAVA_OPTS \
-         \"-Dorg.jboss.boot.log.file=$JBOSS_LOG_DIR/boot.log\" \
+         \"-Dorg.jboss.boot.log.file=$JBOSS_LOG_DIR/server.log\" \
          \"-Dlogging.configuration=file:$JBOSS_CONFIG_DIR/logging.properties\" \
          -jar \"$JBOSS_HOME/jboss-modules.jar\" \
          -mp \"${JBOSS_MODULEPATH}\" \
-         -jaxpmodule "javax.xml.jaxp-provider" \
          org.jboss.as.standalone \
          -Djboss.home.dir=\"$JBOSS_HOME\" \
          -Djboss.server.base.dir=\"$JBOSS_BASE_DIR\" \
@@ -223,11 +257,10 @@ while true; do
    else
       # Execute the JVM in the background
       eval \"$JAVA\" -D\"[Standalone]\" $JAVA_OPTS \
-         \"-Dorg.jboss.boot.log.file=$JBOSS_LOG_DIR/boot.log\" \
+         \"-Dorg.jboss.boot.log.file=$JBOSS_LOG_DIR/server.log\" \
          \"-Dlogging.configuration=file:$JBOSS_CONFIG_DIR/logging.properties\" \
          -jar \"$JBOSS_HOME/jboss-modules.jar\" \
          -mp \"${JBOSS_MODULEPATH}\" \
-         -jaxpmodule "javax.xml.jaxp-provider" \
          org.jboss.as.standalone \
          -Djboss.home.dir=\"$JBOSS_HOME\" \
          -Djboss.server.base.dir=\"$JBOSS_BASE_DIR\" \

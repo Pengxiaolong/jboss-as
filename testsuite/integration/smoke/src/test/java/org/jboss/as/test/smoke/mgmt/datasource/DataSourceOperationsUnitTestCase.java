@@ -23,15 +23,23 @@
 package org.jboss.as.test.smoke.mgmt.datasource;
 
 
-import java.util.List;
-import java.util.Properties;
+import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.ALLOW_RESOURCE_SERVICE_RESTART;
+import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.OP;
+import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.OPERATION_HEADERS;
+import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.OP_ADDR;
+import static org.jboss.as.test.integration.management.jca.ComplexPropertiesParseUtils.addExtensionProperties;
+import static org.jboss.as.test.integration.management.jca.ComplexPropertiesParseUtils.checkModelParams;
+import static org.jboss.as.test.integration.management.jca.ComplexPropertiesParseUtils.nonXaDsProperties;
+import static org.jboss.as.test.integration.management.jca.ComplexPropertiesParseUtils.setOperationParams;
+import static org.jboss.as.test.integration.management.jca.ComplexPropertiesParseUtils.xaDsProperties;
 
 import javax.management.MBeanServerConnection;
 import javax.management.ObjectName;
 import javax.management.remote.JMXConnectorFactory;
 import javax.management.remote.JMXServiceURL;
+import java.util.List;
+import java.util.Properties;
 
-import junit.framework.Assert;
 import org.jboss.arquillian.container.test.api.Deployment;
 import org.jboss.arquillian.container.test.api.RunAsClient;
 import org.jboss.arquillian.junit.Arquillian;
@@ -42,18 +50,9 @@ import org.jboss.dmr.ModelNode;
 import org.jboss.shrinkwrap.api.Archive;
 import org.jboss.shrinkwrap.api.ShrinkWrap;
 import org.jboss.shrinkwrap.api.spec.JavaArchive;
+import org.junit.Assert;
 import org.junit.Test;
 import org.junit.runner.RunWith;
-
-import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.ALLOW_RESOURCE_SERVICE_RESTART;
-import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.OP;
-import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.OPERATION_HEADERS;
-import static org.jboss.as.controller.descriptions.ModelDescriptionConstants.OP_ADDR;
-import static org.jboss.as.test.integration.management.jca.ComplexPropertiesParseUtils.addExtensionProperties;
-import static org.jboss.as.test.integration.management.jca.ComplexPropertiesParseUtils.checkModelParams;
-import static org.jboss.as.test.integration.management.jca.ComplexPropertiesParseUtils.nonXaDsProperties;
-import static org.jboss.as.test.integration.management.jca.ComplexPropertiesParseUtils.setOperationParams;
-import static org.jboss.as.test.integration.management.jca.ComplexPropertiesParseUtils.xaDsProperties;
 
 
 /**
@@ -533,16 +532,6 @@ public class DataSourceOperationsUnitTestCase extends DsMgmtTestBase {
 
         Assert.assertNotNull("Reparsing failed:", newList);
 
-
-        try {
-            ModifiableXaDataSource jxaDS = lookup(getModelControllerClient(), xaDsJndi, ModifiableXaDataSource.class);
-
-            Assert.fail("found datasource after it was unbounded");
-        } catch (Exception e) {
-            // must be thrown NameNotFound exception - datasource is unbounded
-
-        }
-
         Assert.assertNotNull(findNodeWithProperty(newList, "jndi-name", xaDsJndi));
 
     }
@@ -771,15 +760,6 @@ public class DataSourceOperationsUnitTestCase extends DsMgmtTestBase {
         remove(address);
         remove(propAddress);
 
-    }
-
-    private static <T> T lookup(ModelControllerClient client, String name, Class<T> expected) throws Exception {
-        //TODO Don't do this FakeJndi stuff once we have remote JNDI working
-
-        MBeanServerConnection mbeanServer = JMXConnectorFactory.connect(new JMXServiceURL("service:jmx:remoting-jmx://127.0.0.1:9999")).getMBeanServerConnection();
-        ObjectName objectName = new ObjectName("jboss:name=test,type=fakejndi");
-        Object o = mbeanServer.invoke(objectName, "lookup", new Object[]{name}, new String[]{"java.lang.String"});
-        return expected.cast(o);
     }
 
 

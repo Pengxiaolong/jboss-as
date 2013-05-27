@@ -24,13 +24,10 @@ package org.jboss.as.controller.interfaces;
 import java.net.Inet4Address;
 import java.util.regex.Pattern;
 
-import junit.framework.Assert;
-
+import org.jboss.as.controller.ExpressionResolver;
 import org.jboss.as.controller.parsing.Element;
 import org.jboss.dmr.ModelNode;
-import org.junit.After;
-import org.junit.Before;
-import org.junit.Ignore;
+import org.junit.Assert;
 import org.junit.Test;
 
 /**
@@ -54,7 +51,7 @@ public class ParsedInterfaceCriteriaTestCase {
         ModelNode op = new ModelNode();
         op.get(Element.LOOPBACK.getLocalName()).set(true);
         op.get(Element.NOT.getLocalName(), Element.LOOPBACK.getLocalName()).set(true);
-        ParsedInterfaceCriteria criteria = ParsedInterfaceCriteria.parse(op, true);
+        ParsedInterfaceCriteria criteria = ParsedInterfaceCriteria.parse(op, true, ExpressionResolver.TEST_RESOLVER);
         Assert.assertNotNull(criteria.getFailureMessage());
     }
 
@@ -63,7 +60,7 @@ public class ParsedInterfaceCriteriaTestCase {
         ModelNode op = new ModelNode();
         op.get(Element.LOOPBACK.getLocalName()).set(true);
         op.get(Element.NOT.getLocalName(), Element.INET_ADDRESS.getLocalName()).set("127.0.0.1");
-        ParsedInterfaceCriteria criteria = ParsedInterfaceCriteria.parse(op, true);
+        ParsedInterfaceCriteria criteria = ParsedInterfaceCriteria.parse(op, true, ExpressionResolver.TEST_RESOLVER);
         Assert.assertNull(criteria.getFailureMessage());
     }
 
@@ -74,11 +71,7 @@ public class ParsedInterfaceCriteriaTestCase {
         //TODO Not
         Assert.assertTrue(new InetAddressMatchInterfaceCriteria("127.0.0.1").equals(new InetAddressMatchInterfaceCriteria("127.0.0.1")));
         Assert.assertFalse(new InetAddressMatchInterfaceCriteria("127.0.0.1").equals(new InetAddressMatchInterfaceCriteria("127.0.0.2")));
-        Assert.assertTrue(new InetAddressMatchInterfaceCriteria(new ModelNode("127.0.0.1")).equals(new InetAddressMatchInterfaceCriteria(new ModelNode("127.0.0.1"))));
-        Assert.assertFalse(new InetAddressMatchInterfaceCriteria(new ModelNode("127.0.0.1")).equals(new InetAddressMatchInterfaceCriteria(new ModelNode("127.0.0.2"))));
         Assert.assertTrue(LinkLocalInterfaceCriteria.INSTANCE.equals(LinkLocalInterfaceCriteria.INSTANCE));
-        Assert.assertTrue(new LoopbackAddressInterfaceCriteria(new ModelNode("127.0.0.1")).equals(new LoopbackAddressInterfaceCriteria(new ModelNode("127.0.0.1"))));
-        Assert.assertFalse(new LoopbackAddressInterfaceCriteria(new ModelNode("127.0.0.1")).equals(new LoopbackAddressInterfaceCriteria(new ModelNode("127.0.0.2"))));
         Assert.assertTrue(LoopbackInterfaceCriteria.INSTANCE.equals(LoopbackInterfaceCriteria.INSTANCE));
         Assert.assertTrue(new NicInterfaceCriteria("en1").equals(new NicInterfaceCriteria("en1")));
         Assert.assertFalse(new NicInterfaceCriteria("en1").equals(new NicInterfaceCriteria("en2")));
@@ -97,9 +90,7 @@ public class ParsedInterfaceCriteriaTestCase {
 
 
         Assert.assertFalse(new InetAddressMatchInterfaceCriteria("127.0.0.1").equals(LoopbackInterfaceCriteria.INSTANCE));
-        Assert.assertFalse(new InetAddressMatchInterfaceCriteria(new ModelNode("127.0.0.1")).equals(LoopbackInterfaceCriteria.INSTANCE));
         Assert.assertFalse(LinkLocalInterfaceCriteria.INSTANCE.equals(LoopbackInterfaceCriteria.INSTANCE));
-        Assert.assertFalse(new LoopbackAddressInterfaceCriteria(new ModelNode("127.0.0.1")).equals(LoopbackInterfaceCriteria.INSTANCE));
         Assert.assertFalse(new NicInterfaceCriteria("en1").equals(LoopbackInterfaceCriteria.INSTANCE));
         Assert.assertFalse(new NicMatchInterfaceCriteria(Pattern.compile(".")).equals(LoopbackInterfaceCriteria.INSTANCE));
         Assert.assertFalse(PointToPointInterfaceCriteria.INSTANCE.equals(LoopbackInterfaceCriteria.INSTANCE));

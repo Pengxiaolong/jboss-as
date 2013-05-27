@@ -21,11 +21,13 @@
  */
 package org.jboss.as.webservices.tomcat;
 
+import static org.jboss.as.webservices.WSLogger.ROOT_LOGGER;
+
 import java.util.Arrays;
 import java.util.List;
 
 import org.jboss.as.server.deployment.DeploymentUnit;
-import org.jboss.as.web.deployment.WarMetaData;
+import org.jboss.as.web.common.WarMetaData;
 import org.jboss.as.webservices.util.ASHelper;
 import org.jboss.as.webservices.util.WebMetaDataHelper;
 import org.jboss.metadata.ear.spec.EarMetaData;
@@ -42,16 +44,12 @@ import org.jboss.wsf.spi.deployment.Deployment;
 import org.jboss.wsf.spi.deployment.Endpoint;
 import org.jboss.wsf.spi.deployment.HttpEndpoint;
 
-import static org.jboss.as.webservices.WSLogger.ROOT_LOGGER;
-
 /**
  * @author <a href="mailto:ropalka@redhat.com">Richard Opalka</a>
  */
 final class WebMetaDataCreator {
 
     private static final String EJB_WEBSERVICE_REALM = "EJBWebServiceEndpointServlet Realm";
-
-    private final SecurityMetaDataAccessorEJB ejb21SecurityAccessor = new SecurityMetaDataAccessorEJB21();
 
     private final SecurityMetaDataAccessorEJB ejb3SecurityAccessor = new SecurityMetaDataAccessorEJB3();
 
@@ -117,10 +115,9 @@ final class WebMetaDataCreator {
      */
     private void createJBossWebAppDescriptor(final Deployment dep, final JBossWebMetaData jbossWebMD) {
         ROOT_LOGGER.creatingJBossWebXmlDescriptor();
-        final SecurityMetaDataAccessorEJB ejbMDAccessor = getEjbSecurityMetaDataAccessor(dep);
 
         // Set security domain
-        final String securityDomain = ejbMDAccessor.getSecurityDomain(dep);
+        final String securityDomain = ejb3SecurityAccessor.getSecurityDomain(dep);
         final boolean hasSecurityDomain = securityDomain != null;
 
         if (hasSecurityDomain) {
@@ -215,13 +212,11 @@ final class WebMetaDataCreator {
      */
     private void createSecurityConstraints(final Deployment dep, final JBossWebMetaData jbossWebMD) {
         ROOT_LOGGER.creatingSecurityConstraints();
-        final SecurityMetaDataAccessorEJB ejbMDAccessor = getEjbSecurityMetaDataAccessor(dep);
-
         for (final Endpoint ejbEndpoint : dep.getService().getEndpoints()) {
-            final boolean secureWsdlAccess = ejbMDAccessor.isSecureWsdlAccess(ejbEndpoint);
-            final String transportGuarantee = ejbMDAccessor.getTransportGuarantee(ejbEndpoint);
+            final boolean secureWsdlAccess = ejb3SecurityAccessor.isSecureWsdlAccess(ejbEndpoint);
+            final String transportGuarantee = ejb3SecurityAccessor.getTransportGuarantee(ejbEndpoint);
             final boolean hasTransportGuarantee = transportGuarantee != null;
-            final String authMethod = ejbMDAccessor.getAuthMethod(ejbEndpoint);
+            final String authMethod = ejb3SecurityAccessor.getAuthMethod(ejbEndpoint);
             final boolean hasAuthMethod = authMethod != null;
 
             if (ejbEndpoint instanceof HttpEndpoint && (hasAuthMethod || hasTransportGuarantee)) {
@@ -300,9 +295,8 @@ final class WebMetaDataCreator {
         final boolean hasAuthMethod = authMethod != null;
 
         if (hasAuthMethod) {
-            final SecurityMetaDataAccessorEJB ejbMDAccessor = getEjbSecurityMetaDataAccessor(dep);
-            final SecurityRolesMetaData securityRolesMD = ejbMDAccessor.getSecurityRoles(dep);
-            final boolean hasSecurityRolesMD = securityRolesMD != null;
+            final SecurityRolesMetaData securityRolesMD = ejb3SecurityAccessor.getSecurityRoles(dep);
+            final boolean hasSecurityRolesMD = securityRolesMD != null && !securityRolesMD.isEmpty();
 
             if (hasSecurityRolesMD) {
                 ROOT_LOGGER.creatingSecurityRoles();
@@ -336,10 +330,8 @@ final class WebMetaDataCreator {
      * @return deployment authentication method
      */
     private String getAuthMethod(final Deployment dep) {
-        final SecurityMetaDataAccessorEJB ejbMDAccessor = getEjbSecurityMetaDataAccessor(dep);
-
         for (final Endpoint ejbEndpoint : dep.getService().getEndpoints()) {
-            final String beanAuthMethod = ejbMDAccessor.getAuthMethod(ejbEndpoint);
+            final String beanAuthMethod = ejb3SecurityAccessor.getAuthMethod(ejbEndpoint);
             final boolean hasBeanAuthMethod = beanAuthMethod != null;
 
             if (hasBeanAuthMethod) {
@@ -352,15 +344,4 @@ final class WebMetaDataCreator {
         return null;
     }
 
-    /**
-     * Returns security builder associated with EJB deployment.
-     *
-     * @param dep webservice EJB deployment
-     * @return security builder for EJB deployment
-     */
-    private SecurityMetaDataAccessorEJB getEjbSecurityMetaDataAccessor(final Deployment dep) {
-        final boolean isJaxws = WSHelper.isJaxwsDeployment(dep);
-
-        return isJaxws ? ejb3SecurityAccessor : ejb21SecurityAccessor;
-    }
 }

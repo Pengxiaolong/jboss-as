@@ -29,10 +29,8 @@ import static org.jboss.as.server.mgmt.HttpManagementResourceDefinition.SECURE_S
 import static org.jboss.as.server.mgmt.HttpManagementResourceDefinition.SECURITY_REALM;
 import static org.jboss.as.server.mgmt.HttpManagementResourceDefinition.SOCKET_BINDING;
 
-import java.security.AccessController;
 import java.util.Arrays;
 import java.util.List;
-import java.util.concurrent.Executors;
 
 import org.jboss.as.controller.AbstractAddStepHandler;
 import org.jboss.as.controller.AttributeDefinition;
@@ -49,13 +47,16 @@ import org.jboss.as.network.NetworkInterfaceBinding;
 import org.jboss.as.network.SocketBinding;
 import org.jboss.as.network.SocketBindingManager;
 import org.jboss.as.network.SocketBindingManagerImpl;
+import org.jboss.as.remoting.RemotingHttpUpgradeService;
+import org.jboss.as.remoting.RemotingServices;
+import org.jboss.as.remoting.management.ManagementRemotingServices;
 import org.jboss.as.server.ServerEnvironment;
 import org.jboss.as.server.ServerEnvironmentService;
 import org.jboss.as.server.ServerLogger;
 import org.jboss.as.server.ServerMessages;
 import org.jboss.as.server.Services;
 import org.jboss.as.server.mgmt.HttpManagementResourceDefinition;
-import org.jboss.as.server.mgmt.HttpManagementService;
+import org.jboss.as.server.mgmt.UndertowHttpManagementService;
 import org.jboss.as.server.mgmt.domain.HttpManagement;
 import org.jboss.as.server.services.net.NetworkInterfaceService;
 import org.jboss.dmr.ModelNode;
@@ -63,7 +64,8 @@ import org.jboss.msc.service.ServiceBuilder;
 import org.jboss.msc.service.ServiceController;
 import org.jboss.msc.service.ServiceName;
 import org.jboss.msc.service.ServiceTarget;
-import org.jboss.threads.JBossThreadFactory;
+import org.xnio.OptionMap;
+import org.wildfly.security.manager.WildFlySecurityManager;
 
 /**
  * A handler that activates the HTTP management API on a Server.
@@ -90,7 +92,7 @@ public class HttpManagementAddHandler extends AbstractAddStepHandler {
         //The core model testing currently uses RunningMode.ADMIN_ONLY, but in the real world
         //the http interface needs to be enabled even when that happens.
         //I don't want to wire up all the services unless I can avoid it, so for now the tests set this system property
-        if (SecurityActions.getSystemProperty("jboss.as.test.disable.runtime") != null) {
+        if (WildFlySecurityManager.getPropertyPrivileged("jboss.as.test.disable.runtime", null) != null) {
             return false;
         }
         return true;
@@ -100,7 +102,9 @@ public class HttpManagementAddHandler extends AbstractAddStepHandler {
     protected void performRuntime(final OperationContext context, final ModelNode operation, final ModelNode model,
                                   final ServiceVerificationHandler verificationHandler, final List<ServiceController<?>> newControllers)
             throws OperationFailedException {
-        installHttpManagementConnector(context, model, context.getServiceTarget(), verificationHandler, newControllers);
+
+        boolean httpUpgrade = HttpManagementResourceDefinition.HTTP_UPGRADE_ENABLED.resolveModelAttribute(context, model).asBoolean();
+        installHttpManagementConnector(context, model, context.getServiceTarget(), verificationHandler, newControllers, httpUpgrade);
     }
 
     // TODO move this kind of logic into AttributeDefinition itself
@@ -151,7 +155,7 @@ public class HttpManagementAddHandler extends AbstractAddStepHandler {
 
     static void installHttpManagementConnector(final OperationContext context, final ModelNode model, final ServiceTarget serviceTarget,
                                                final ServiceVerificationHandler verificationHandler,
-                                               final List<ServiceController<?>> newControllers) throws OperationFailedException {
+                                               final List<ServiceController<?>> newControllers, final boolean httpUpgrade) throws OperationFailedException {
 
         ServiceName socketBindingServiceName = null;
         ServiceName secureSocketBindingServiceName = null;
@@ -221,36 +225,47 @@ public class HttpManagementAddHandler extends AbstractAddStepHandler {
         }
 
         ServerEnvironment environment = (ServerEnvironment) context.getServiceRegistry(false).getRequiredService(ServerEnvironmentService.SERVICE_NAME).getValue();
-        final HttpManagementService service = new HttpManagementService(consoleMode, environment.getProductConfig().getConsoleSlot());
-        ServiceBuilder<HttpManagement> builder = serviceTarget.addService(HttpManagementService.SERVICE_NAME, service)
-                .addDependency(Services.JBOSS_SERVER_CONTROLLER, ModelController.class, service.getModelControllerInjector())
-                .addDependency(SocketBindingManagerImpl.SOCKET_BINDING_MANAGER, SocketBindingManager.class, service.getSocketBindingManagerInjector())
-                .addDependency(ControlledProcessStateService.SERVICE_NAME, ControlledProcessStateService.class, service.getControlledProcessStateServiceInjector())
-                .addInjection(service.getExecutorServiceInjector(), Executors.newCachedThreadPool(new JBossThreadFactory(new ThreadGroup("HttpManagementService-threads"), Boolean.FALSE, null, "%G - %t", null, null, AccessController.getContext())));
+        final UndertowHttpManagementService undertowService = new UndertowHttpManagementService(consoleMode, environment.getProductConfig().getConsoleSlot(), httpUpgrade);
+        ServiceBuilder<HttpManagement> undertowBuilder = serviceTarget.addService(UndertowHttpManagementService.SERVICE_NAME, undertowService)
+                .addDependency(Services.JBOSS_SERVER_CONTROLLER, ModelController.class, undertowService.getModelControllerInjector())
+                .addDependency(SocketBindingManagerImpl.SOCKET_BINDING_MANAGER, SocketBindingManager.class, undertowService.getSocketBindingManagerInjector())
+                .addDependency(ControlledProcessStateService.SERVICE_NAME, ControlledProcessStateService.class, undertowService.getControlledProcessStateServiceInjector());
 
         if (interfaceSvcName != null) {
-            builder.addDependency(interfaceSvcName, NetworkInterfaceBinding.class, service.getInterfaceInjector())
-                .addInjection(service.getPortInjector(), port)
-                .addInjection(service.getSecurePortInjector(), securePort);
+            undertowBuilder.addDependency(interfaceSvcName, NetworkInterfaceBinding.class, undertowService.getInterfaceInjector())
+            .addInjection(undertowService.getPortInjector(), port)
+            .addInjection(undertowService.getSecurePortInjector(), securePort);
         } else {
             if (socketBindingServiceName != null) {
-                builder.addDependency(socketBindingServiceName, SocketBinding.class, service.getSocketBindingInjector());
+                undertowBuilder.addDependency(socketBindingServiceName, SocketBinding.class, undertowService.getSocketBindingInjector());
             }
             if (secureSocketBindingServiceName != null) {
-                builder.addDependency(secureSocketBindingServiceName, SocketBinding.class, service.getSecureSocketBindingInjector());
+                undertowBuilder.addDependency(secureSocketBindingServiceName, SocketBinding.class, undertowService.getSecureSocketBindingInjector());
             }
         }
 
         if (realmSvcName != null) {
-            builder.addDependency(realmSvcName, SecurityRealmService.class, service.getSecurityRealmInjector());
+            undertowBuilder.addDependency(realmSvcName, SecurityRealmService.class, undertowService.getSecurityRealmInjector());
         }
 
         if (verificationHandler != null) {
-            builder.addListener(verificationHandler);
+            undertowBuilder.addListener(verificationHandler);
         }
-        ServiceController<?> controller = builder.install();
+        ServiceController<?> controller = undertowBuilder.install();
         if (newControllers != null) {
             newControllers.add(controller);
         }
+
+
+        if(httpUpgrade) {
+            final String hostName = WildFlySecurityManager.getPropertyPrivileged(ServerEnvironment.NODE_NAME, null);
+
+
+            ServiceName tmpDirPath = ServiceName.JBOSS.append("server", "path", "jboss.server.temp.dir");
+            RemotingServices.installSecurityServices(serviceTarget, ManagementRemotingServices.HTTP_CONNECTOR, realmSvcName, null, tmpDirPath, verificationHandler, newControllers);
+            NativeManagementServices.installRemotingServicesIfNotInstalled(serviceTarget, hostName, verificationHandler, null, context.getServiceRegistry(false));
+            RemotingHttpUpgradeService.installServices(serviceTarget, ManagementRemotingServices.HTTP_CONNECTOR,  ManagementRemotingServices.MANAGEMENT_ENDPOINT, OptionMap.EMPTY, verificationHandler);
+        }
+
     }
 }

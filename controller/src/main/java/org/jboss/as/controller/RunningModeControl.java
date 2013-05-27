@@ -49,9 +49,8 @@ public class RunningModeControl {
         return reloaded;
     }
 
-    public void setReloaded(boolean reloaded) {
-        assert !reloaded : "Once a process is reloaded, always reloaded!";
-        this.reloaded = reloaded;
+    public void setReloaded() {
+        this.reloaded = true;
     }
 
     public void setUseCurrentConfig(boolean useCurrentConfig) {

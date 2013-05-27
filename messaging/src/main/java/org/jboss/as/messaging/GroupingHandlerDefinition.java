@@ -24,7 +24,6 @@ package org.jboss.as.messaging;
 
 import static org.jboss.as.controller.SimpleAttributeDefinitionBuilder.create;
 import static org.jboss.as.controller.client.helpers.MeasurementUnit.MILLISECONDS;
-import static org.jboss.as.controller.registry.AttributeAccess.Flag.RESTART_ALL_SERVICES;
 import static org.jboss.as.controller.registry.AttributeAccess.Flag.STORAGE_RUNTIME;
 import static org.jboss.dmr.ModelType.INT;
 import static org.jboss.dmr.ModelType.STRING;
@@ -34,6 +33,7 @@ import org.jboss.as.controller.AttributeDefinition;
 import org.jboss.as.controller.PathElement;
 import org.jboss.as.controller.SimpleAttributeDefinition;
 import org.jboss.as.controller.SimpleResourceDefinition;
+import org.jboss.as.controller.operations.validation.EnumValidator;
 import org.jboss.as.controller.registry.ManagementResourceRegistration;
 import org.jboss.dmr.ModelNode;
 
@@ -44,34 +44,38 @@ import org.jboss.dmr.ModelNode;
  */
 public class GroupingHandlerDefinition extends SimpleResourceDefinition {
 
+    public static final PathElement PATH = PathElement.pathElement(CommonAttributes.GROUPING_HANDLER);
+
     public static final SimpleAttributeDefinition GROUPING_HANDLER_ADDRESS = create("grouping-handler-address", STRING)
             .setXmlName(CommonAttributes.ADDRESS)
-            .setDefaultValue(null)
-            .setFlags(RESTART_ALL_SERVICES)
+            .setAllowExpression(true)
+            .setRestartAllServices()
             .build();
 
-    // FIXME GroupiongHanderConfiguration timeout is a int (instead of a long). Use a INT until HornetQ conf is fixed
+    // FIXME GroupingHanderConfiguration timeout is a int (instead of a long). Use a INT until HornetQ conf is fixed
     // [HORNETQ-885]
     public static final SimpleAttributeDefinition TIMEOUT = create("timeout", INT)
-            .setDefaultValue(new ModelNode().set(GroupingHandlerConfiguration.DEFAULT_TIMEOUT))
+            .setDefaultValue(new ModelNode(GroupingHandlerConfiguration.DEFAULT_TIMEOUT))
             .setMeasurementUnit(MILLISECONDS)
             .setAllowNull(true)
-            .setFlags(RESTART_ALL_SERVICES)
+            .setAllowExpression(true)
+            .setRestartAllServices()
             .build();
 
     public static final SimpleAttributeDefinition TYPE = create("type", STRING)
-            .setDefaultValue(null)
-            .setAllowNull(true)
-            .setValidator(GroupingHandlerTypeValidator.INSTANCE)
-            .setFlags(RESTART_ALL_SERVICES)
+            .setAllowExpression(true)
+            .setValidator(new EnumValidator<GroupingHandlerConfiguration.TYPE>(GroupingHandlerConfiguration.TYPE.class, false, true))
+            .setRestartAllServices()
             .build();
 
     public static final AttributeDefinition[] ATTRIBUTES = { TYPE, GROUPING_HANDLER_ADDRESS, TIMEOUT };
 
+    public static final AttributeDefinition[] ATTRIBUTES_WITH_EXPRESSION_ALLOWED_IN_1_2_0 = { TYPE, GROUPING_HANDLER_ADDRESS, TIMEOUT };
+
     private final boolean registerRuntimeOnly;
 
     public GroupingHandlerDefinition(final boolean registerRuntimeOnly) {
-        super(PathElement.pathElement(CommonAttributes.GROUPING_HANDLER),
+        super(PATH,
                 MessagingExtension.getResourceDescriptionResolver(CommonAttributes.GROUPING_HANDLER),
                 GroupingHandlerAdd.INSTANCE,
                 GroupingHandlerRemove.INSTANCE);
